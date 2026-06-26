@@ -852,9 +852,31 @@ class HuggingFaceProvider(BaseProvider):
 
         # 3. Assemble chat structure
         if messages is not None:
-            final_messages = list(messages)
+            final_messages = copy.deepcopy(messages)
         else:
             final_messages = self.build_messages(system=system_prompt, user=prompt)
+
+        # Inject images into the last user message content if present for multimodal compatibility
+        images = images or kwargs.get("images", None)
+        if images:
+            for i in range(len(final_messages) - 1, -1, -1):
+                if final_messages[i]["role"] == "user":
+                    content = final_messages[i]["content"]
+                    if isinstance(content, str):
+                        multimodal_content = []
+                        for _ in images:
+                            multimodal_content.append({"type": "image"})
+                        multimodal_content.append({"type": "text", "text": content})
+                        final_messages[i]["content"] = multimodal_content
+                    elif isinstance(content, list):
+                        has_image = any(isinstance(c, dict) and c.get("type") == "image" for c in content)
+                        if not has_image:
+                            multimodal_content = []
+                            for _ in images:
+                                multimodal_content.append({"type": "image"})
+                            multimodal_content.extend(content)
+                            final_messages[i]["content"] = multimodal_content
+                    break
 
         # 4. Automatic Context Truncation
         final_messages = self._truncate_messages(final_messages, max_new)
@@ -952,8 +974,16 @@ class HuggingFaceProvider(BaseProvider):
                     else:
                         raise oom_err
 
+                # Support GenerateOutput wrappers
+                if hasattr(outputs, "sequences"):
+                    output_sequences = outputs.sequences
+                elif isinstance(outputs, dict) and "sequences" in outputs:
+                    output_sequences = outputs["sequences"]
+                else:
+                    output_sequences = outputs
+
                 # Decoding
-                generated_ids = [out_ids[input_length:] for out_ids in outputs]
+                generated_ids = [out_ids[input_length:] for out_ids in output_sequences]
                 response_text = self.tokenizer.batch_decode(
                     generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
                 )[0].strip()

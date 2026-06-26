@@ -19,7 +19,8 @@ DTYPE = torch.float16
 QUANTIZATION = "AUTO"
 
 import os
-HF_CACHE_DIR = "/root/.cache/huggingface/hub" if os.path.exists("/root/.cache/huggingface/hub") else "hf_cache"
+is_kaggle = os.path.exists("/kaggle") or "KAGGLE_KERNEL_RUN_TYPE" in os.environ
+HF_CACHE_DIR = "/root/.cache/huggingface/hub" if is_kaggle else "hf_cache"
 
 # torch.compile is disabled by default. For quantized BitsAndBytes models,
 # torch.compile often gives little benefit and can introduce issues depending on the backend.
