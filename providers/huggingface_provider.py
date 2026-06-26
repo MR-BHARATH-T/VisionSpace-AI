@@ -358,7 +358,7 @@ class HuggingFaceProvider(BaseProvider):
                     self.after_loading()
                 return
 
-            print(f"[Loading] Loading/Downloading Hugging Face model config & weights for: {model_name}...")
+            print(f"[Loading] Loading Hugging Face model config & weights from cache/hub for: {model_name}...")
             logger.info("HuggingFaceProvider loading '%s' for task '%s'", model_name, task)
             cache_dir = getattr(config, "HF_CACHE_DIR", None)
             auth_token = getattr(config, "HF_TOKEN", None)
@@ -979,6 +979,8 @@ class HuggingFaceProvider(BaseProvider):
                     output_sequences = outputs.sequences
                 elif isinstance(outputs, dict) and "sequences" in outputs:
                     output_sequences = outputs["sequences"]
+                elif isinstance(outputs, (tuple, list)):
+                    output_sequences = outputs[0]
                 else:
                     output_sequences = outputs
 

@@ -688,6 +688,8 @@ class ModelManager:
 
         except Exception as e:
             self._set_state(task, "Error")
+            import traceback
+            traceback.print_exc()
             logger.error("Inference failure during generate: %s", str(e))
             return {
                 "success": False,
