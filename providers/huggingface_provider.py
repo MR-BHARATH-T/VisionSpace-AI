@@ -760,33 +760,93 @@ class HuggingFaceProvider(BaseProvider):
 
         if self.processor is not None:
             # --- Multimodal path (Qwen VL and similar) ---
-            # Let the processor render the chat template AND expand image tokens.
-            # Passing already-rendered text here would break the feature count.
             #
-            # Collect PIL images from messages if caller did not supply them
-            # separately (they may be embedded as {"type": "image", "image": pil}).
-            collected_images: List[Any] = list(images) if images else []
-            if not collected_images:
-                for msg in messages:
-                    content = msg.get("content", "")
-                    if isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict) and block.get("type") in ("image", "image_url"):
-                                img_val = block.get("image") or block.get("url")
-                                if img_val is not None:
-                                    collected_images.append(img_val)
+            # CRITICAL: The Qwen VL Jinja chat-template only recognises image
+            # blocks whose "image" value is a string (file path or URL).  When a
+            # PIL Image object is embedded as {"type": "image", "image": <PIL>}
+            # the template silently skips vision-token insertion → tokens: 0.
+            #
+            # Strategy:
+            #   1. Walk the messages, extract every PIL (or other) image value
+            #      into `collected_images` in order.
+            #   2. Replace each image block in a COPY of the messages with
+            #      {"type": "image"} (no "image" key) so the Jinja template
+            #      emits the correct <|vision_start|><|image_pad|><|vision_end|>
+            #      placeholder for every image.
+            #   3. Pass the sanitised messages to apply_chat_template.
+            #   4. Pass `collected_images` (PIL list) to processor() for
+            #      feature computation — counts will match.
 
-            # Render text via processor (handles <|vision_start|>...<|vision_end|> expansion)
+            collected_images: List[Any] = list(images) if images else []
+
+            # Build a template-safe copy of messages.
+            # The Qwen VL Jinja template only emits <|image_pad|> for image
+            # blocks whose "image" value is a STRING (path/URL).  PIL objects
+            # embedded as {"type": "image", "image": <PIL>} are silently ignored
+            # → tokens: 0.  We extract PIL values into collected_images and
+            # replace those blocks with {"type": "image"} (no value key).
+            template_messages: List[Dict[str, Any]] = []
+            for msg in messages:
+                new_msg = dict(msg)
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    new_content: List[Any] = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") in ("image", "image_url"):
+                            img_val = block.get("image") or block.get("url")
+                            if img_val is not None and not isinstance(img_val, str):
+                                # Non-string (PIL Image, ndarray, …) — extract
+                                # and leave a bare {"type": "image"} placeholder.
+                                collected_images.append(img_val)
+                                new_content.append({"type": "image"})
+                            else:
+                                # String path/URL — template handles it directly.
+                                new_content.append(block)
+                        else:
+                            new_content.append(block)
+                    new_msg["content"] = new_content
+                template_messages.append(new_msg)
+
+            # Render text via processor.  The sanitised template_messages ensure
+            # the Jinja template outputs <|vision_start|><|image_pad|><|vision_end|>
+            # for every image position.
             try:
                 rendered_text = self.processor.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
+                    template_messages, tokenize=False, add_generation_prompt=True
                 )
+                # Sanity-check: must contain at least one vision token per image.
+                if collected_images and "<|image_pad|>" not in rendered_text:
+                    raise ValueError(
+                        "apply_chat_template produced 0 <|image_pad|> tokens "
+                        "despite images being present. Falling back to manual render."
+                    )
             except Exception as tmpl_err:
                 logger.warning(
-                    "Processor apply_chat_template failed (%s). Falling back to manual render.",
+                    "Processor apply_chat_template failed (%s). "
+                    "Using manual vision placeholder render.",
                     str(tmpl_err),
                 )
-                rendered_text = self._apply_chat_template_cached(messages)
+                # Manual fallback: emit one <|image_pad|> per image block.
+                rendered_text = ""
+                for msg in template_messages:
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        block_text = ""
+                        for block in content:
+                            if isinstance(block, dict):
+                                if block.get("type") == "image":
+                                    block_text += "<|vision_start|><|image_pad|><|vision_end|>"
+                                elif block.get("type") == "text":
+                                    block_text += block.get("text", "")
+                        content = block_text
+                    rendered_text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+                rendered_text += "<|im_start|>assistant\n"
+
+            logger.debug(
+                "prepare_inputs: rendered_text[:200]=%r  collected_images=%d",
+                rendered_text[:200], len(collected_images),
+            )
 
             proc_kwargs: Dict[str, Any] = {
                 "text": [rendered_text],
