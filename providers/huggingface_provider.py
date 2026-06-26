@@ -549,10 +549,20 @@ class HuggingFaceProvider(BaseProvider):
         self.processor = None
         self.loaded = False
 
-    def _apply_chat_template_cached(self, messages: List[Dict[str, Any]]) -> str:
-        """Applies chat template with in-memory serialization caching."""
+    def _apply_chat_template_cached(
+        self,
+        messages: List[Dict[str, Any]],
+        add_generation_prompt: bool = True,
+    ) -> str:
+        """Applies chat template with in-memory serialization caching.
+
+        For vision tasks this should only be called when NO processor is
+        available (i.e. text-only fallback).  When a processor is present,
+        call prepare_inputs() directly so the processor can expand image
+        tokens itself.
+        """
         try:
-            msg_str = json.dumps(messages, sort_keys=True)
+            msg_str = json.dumps(messages, sort_keys=True, default=str)
         except Exception:
             msg_str = str(messages)
 
@@ -566,10 +576,15 @@ class HuggingFaceProvider(BaseProvider):
             self._chat_template_cache.pop(next(iter(self._chat_template_cache)))
 
         if self.processor is not None and hasattr(self.processor, "apply_chat_template"):
-            text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            text = self.processor.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=add_generation_prompt
+            )
         elif self.tokenizer is not None and hasattr(self.tokenizer, "apply_chat_template"):
-            text = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            text = self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=add_generation_prompt
+            )
         else:
+            # Manual fallback — strip image blocks to plain text
             text = ""
             for msg in messages:
                 role = msg.get("role", "user")
@@ -581,26 +596,8 @@ class HuggingFaceProvider(BaseProvider):
                             text_content += c.get("text", "")
                     content = text_content
                 text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
-            text += "<|im_start|>assistant\n"
-
-        # Safely enforce image placeholders for Qwen VL models if chat template outputs are missing them
-        if self.task == "vision" and "<|image_pad|>" not in text:
-            logger.info("Chat template did not render vision placeholders. Formatting manually.")
-            text = ""
-            for msg in messages:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                if isinstance(content, list):
-                    block_text = ""
-                    for block in content:
-                        if isinstance(block, dict):
-                            if block.get("type") in ("image", "image_url"):
-                                block_text += "<|vision_start|><|image_pad|><|vision_end|>"
-                            elif block.get("type") == "text":
-                                block_text += block.get("text", "")
-                    content = block_text
-                text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
-            text += "<|im_start|>assistant\n"
+            if add_generation_prompt:
+                text += "<|im_start|>assistant\n"
 
         self._chat_template_cache[msg_str] = text
         return text
@@ -751,21 +748,60 @@ class HuggingFaceProvider(BaseProvider):
         images: Optional[List[Any]] = None,
         videos: Optional[List[Any]] = None,
     ) -> Dict[str, Any]:
-        """Formats and registers prompt texts into model tensor layouts."""
+        """Formats and registers prompt texts into model tensor layouts.
+
+        For vision tasks (processor present), the processor's apply_chat_template
+        is used to expand image tokens correctly from the raw messages structure.
+        The pre-rendered _apply_chat_template_cached path is used only for
+        text-only (no processor) inference.
+        """
         if not self.loaded or (self.tokenizer is None and self.processor is None):
             raise RuntimeError("Model parameters must be loaded before preparing inputs.")
 
-        text = self._apply_chat_template_cached(messages)
-
-        # Support multimodal inputs if processor is defined
         if self.processor is not None:
-            proc_kwargs = {"text": [text], "padding": True, "return_tensors": "pt"}
-            if images is not None and len(images) > 0:
-                proc_kwargs["images"] = images
+            # --- Multimodal path (Qwen VL and similar) ---
+            # Let the processor render the chat template AND expand image tokens.
+            # Passing already-rendered text here would break the feature count.
+            #
+            # Collect PIL images from messages if caller did not supply them
+            # separately (they may be embedded as {"type": "image", "image": pil}).
+            collected_images: List[Any] = list(images) if images else []
+            if not collected_images:
+                for msg in messages:
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        for block in content:
+                            if isinstance(block, dict) and block.get("type") in ("image", "image_url"):
+                                img_val = block.get("image") or block.get("url")
+                                if img_val is not None:
+                                    collected_images.append(img_val)
+
+            # Render text via processor (handles <|vision_start|>...<|vision_end|> expansion)
+            try:
+                rendered_text = self.processor.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            except Exception as tmpl_err:
+                logger.warning(
+                    "Processor apply_chat_template failed (%s). Falling back to manual render.",
+                    str(tmpl_err),
+                )
+                rendered_text = self._apply_chat_template_cached(messages)
+
+            proc_kwargs: Dict[str, Any] = {
+                "text": [rendered_text],
+                "padding": True,
+                "return_tensors": "pt",
+            }
+            if collected_images:
+                proc_kwargs["images"] = collected_images
             if videos is not None and len(videos) > 0:
                 proc_kwargs["videos"] = videos
+
             inputs = self.processor(**proc_kwargs)
         else:
+            # --- Text-only path ---
+            text = self._apply_chat_template_cached(messages)
             inputs = self.tokenizer([text], padding=True, return_tensors="pt")
 
         target_device = self.model.device if hasattr(self.model, "device") else DEVICE
@@ -908,7 +944,24 @@ class HuggingFaceProvider(BaseProvider):
         final_messages = self._truncate_messages(final_messages, max_new)
 
         # 5. Prompt Hash Cache checking
-        prompt_cache_key = self.tokenizer.apply_chat_template(final_messages, tokenize=False)
+        # Use processor if available (multimodal), else tokenizer; fall back to repr().
+        try:
+            if self.processor is not None and hasattr(self.processor, "apply_chat_template"):
+                prompt_cache_key = self.processor.apply_chat_template(
+                    final_messages, tokenize=False, add_generation_prompt=True
+                )
+            elif self.tokenizer is not None and hasattr(self.tokenizer, "apply_chat_template"):
+                prompt_cache_key = self.tokenizer.apply_chat_template(
+                    final_messages, tokenize=False, add_generation_prompt=True
+                )
+            else:
+                prompt_cache_key = repr(final_messages)
+        except Exception:
+            prompt_cache_key = repr(final_messages)
+        # Include image fingerprint so cached results are not confused across calls
+        if images:
+            img_repr = ",".join(str(getattr(img, 'size', id(img))) for img in images)
+            prompt_cache_key += f"||images:{img_repr}"
         prompt_cache_hash = hashlib.sha256(prompt_cache_key.encode('utf-8')).hexdigest()
         
         with self._cache_lock:
