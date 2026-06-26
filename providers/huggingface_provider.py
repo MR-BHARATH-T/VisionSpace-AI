@@ -840,11 +840,25 @@ class HuggingFaceProvider(BaseProvider):
             for msg in messages:
                 role    = msg.get("role", "user")
                 content = msg.get("content", "")
+                if content is None:
+                    content = ""
 
                 # <|im_start|>role\n
                 all_tokens += tokenizer.encode(
                     f"<|im_start|>{role}\n", add_special_tokens=False
                 )
+
+                # Prepend remaining images if this is a user message and no image blocks are present in its content
+                if role == "user" and image_grid_thw is not None and img_blk_idx < len(image_grid_thw):
+                    has_image_blocks = False
+                    if isinstance(content, list):
+                        has_image_blocks = any(isinstance(b, dict) and b.get("type") in ("image", "image_url") for b in content)
+                    
+                    if not has_image_blocks:
+                        while img_blk_idx < len(image_grid_thw):
+                            n_pad = int(image_grid_thw[img_blk_idx].prod().item()) // (merge_size ** 2)
+                            img_blk_idx += 1
+                            all_tokens += [vision_start_id] + [image_pad_id] * n_pad + [vision_end_id]
 
                 if isinstance(content, str):
                     all_tokens += tokenizer.encode(content, add_special_tokens=False)
