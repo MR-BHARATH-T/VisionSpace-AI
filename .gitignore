@@ -1,0 +1,46 @@
+# Python caches and outputs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# Model Caches
+hf_cache/
+.cache/
+
+# Project Outputs
+outputs/
+outputs_test/
+
+# Secrets and Environment Variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+*.key
+*.pem
+
+# IDE & Editor files
+.vscode/
+.idea/
+.project
+.pydevproject
+.settings/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*~
+
+# OS Files
+.DS_Store
+Thumbs.db
