@@ -761,31 +761,38 @@ class HuggingFaceProvider(BaseProvider):
         if self.processor is not None:
             # --- Multimodal path (Qwen VL and similar) ---
             #
-            # CRITICAL: The Qwen VL Jinja chat-template only recognises image
-            # blocks whose "image" value is a string (file path or URL).  When a
-            # PIL Image object is embedded as {"type": "image", "image": <PIL>}
-            # the template silently skips vision-token insertion → tokens: 0.
+            # ROOT CAUSE of "tokens: 0, features: N" crash:
+            #   The Qwen VL Jinja chat-template only emits <|image_pad|> when
+            #   the image block's "image" value is a STRING (path or URL).
+            #   PIL Image objects embedded as {"type":"image","image":<PIL>}
+            #   are silently skipped by the template → zero vision tokens.
             #
-            # Strategy:
-            #   1. Walk the messages, extract every PIL (or other) image value
-            #      into `collected_images` in order.
-            #   2. Replace each image block in a COPY of the messages with
-            #      {"type": "image"} (no "image" key) so the Jinja template
-            #      emits the correct <|vision_start|><|image_pad|><|vision_end|>
-            #      placeholder for every image.
-            #   3. Pass the sanitised messages to apply_chat_template.
-            #   4. Pass `collected_images` (PIL list) to processor() for
-            #      feature computation — counts will match.
+            # FIX: Convert PIL images to base64 data URIs (valid strings) for
+            #   the template call, then pass the original PIL objects to the
+            #   processor's __call__ for actual feature computation.
 
-            collected_images: List[Any] = list(images) if images else []
+            import base64 as _b64
+            import io as _io
 
-            # Build a template-safe copy of messages.
-            # The Qwen VL Jinja template only emits <|image_pad|> for image
-            # blocks whose "image" value is a STRING (path/URL).  PIL objects
-            # embedded as {"type": "image", "image": <PIL>} are silently ignored
-            # → tokens: 0.  We extract PIL values into collected_images and
-            # replace those blocks with {"type": "image"} (no value key).
+            def _pil_to_b64_uri(img: Any) -> str:
+                """Encode PIL image as a JPEG base64 data URI string."""
+                try:
+                    buf = _io.BytesIO()
+                    img.save(buf, format="JPEG", quality=85)
+                    b64 = _b64.b64encode(buf.getvalue()).decode("ascii")
+                    return f"data:image/jpeg;base64,{b64}"
+                except Exception:
+                    buf = _io.BytesIO()
+                    img.save(buf, format="PNG")
+                    b64 = _b64.b64encode(buf.getvalue()).decode("ascii")
+                    return f"data:image/png;base64,{b64}"
+
+            # Step 1: Walk messages, collect PIL images in order, build a
+            # template-safe copy where PIL objects are replaced with data URIs.
+            collected_images: List[Any] = []
+            has_embedded_images = False
             template_messages: List[Dict[str, Any]] = []
+
             for msg in messages:
                 new_msg = dict(msg)
                 content = msg.get("content", "")
@@ -793,40 +800,52 @@ class HuggingFaceProvider(BaseProvider):
                     new_content: List[Any] = []
                     for block in content:
                         if isinstance(block, dict) and block.get("type") in ("image", "image_url"):
+                            has_embedded_images = True
                             img_val = block.get("image") or block.get("url")
                             if img_val is not None and not isinstance(img_val, str):
-                                # Non-string (PIL Image, ndarray, …) — extract
-                                # and leave a bare {"type": "image"} placeholder.
+                                # PIL / ndarray — convert to data URI for template,
+                                # keep original PIL for processor feature computation.
+                                try:
+                                    b64_uri = _pil_to_b64_uri(img_val)
+                                    new_content.append({"type": "image", "image": b64_uri})
+                                except Exception as enc_err:
+                                    logger.warning("PIL→base64 failed: %s; using bare block.", enc_err)
+                                    new_content.append({"type": "image"})
                                 collected_images.append(img_val)
-                                new_content.append({"type": "image"})
                             else:
-                                # String path/URL — template handles it directly.
+                                # String path/URL — template handles directly.
                                 new_content.append(block)
+                                if img_val:
+                                    collected_images.append(img_val)
                         else:
                             new_content.append(block)
                     new_msg["content"] = new_content
                 template_messages.append(new_msg)
 
-            # Render text via processor.  The sanitised template_messages ensure
-            # the Jinja template outputs <|vision_start|><|image_pad|><|vision_end|>
-            # for every image position.
+            # Step 2: If no images found in messages, fall back to the images param.
+            if not has_embedded_images and images:
+                collected_images = list(images)
+
+            # Step 3: Render text via processor using the sanitised template.
             try:
                 rendered_text = self.processor.apply_chat_template(
                     template_messages, tokenize=False, add_generation_prompt=True
                 )
-                # Sanity-check: must contain at least one vision token per image.
                 if collected_images and "<|image_pad|>" not in rendered_text:
-                    raise ValueError(
-                        "apply_chat_template produced 0 <|image_pad|> tokens "
-                        "despite images being present. Falling back to manual render."
+                    logger.warning(
+                        "apply_chat_template produced no <|image_pad|> tokens "
+                        "despite %d images. Manual vision placeholder injected.",
+                        len(collected_images),
                     )
+                    raise ValueError("No vision tokens in template output.")
             except Exception as tmpl_err:
                 logger.warning(
-                    "Processor apply_chat_template failed (%s). "
-                    "Using manual vision placeholder render.",
+                    "apply_chat_template failed (%s). Using manual vision placeholder render.",
                     str(tmpl_err),
                 )
-                # Manual fallback: emit one <|image_pad|> per image block.
+                # Manual fallback: one <|image_pad|> per image block.
+                # Use the processor's own image_token attribute if available.
+                image_token = getattr(self.processor, "image_token", "<|image_pad|>")
                 rendered_text = ""
                 for msg in template_messages:
                     role = msg.get("role", "user")
@@ -836,7 +855,7 @@ class HuggingFaceProvider(BaseProvider):
                         for block in content:
                             if isinstance(block, dict):
                                 if block.get("type") == "image":
-                                    block_text += "<|vision_start|><|image_pad|><|vision_end|>"
+                                    block_text += f"<|vision_start|>{image_token}<|vision_end|>"
                                 elif block.get("type") == "text":
                                     block_text += block.get("text", "")
                         content = block_text
@@ -844,10 +863,12 @@ class HuggingFaceProvider(BaseProvider):
                 rendered_text += "<|im_start|>assistant\n"
 
             logger.debug(
-                "prepare_inputs: rendered_text[:200]=%r  collected_images=%d",
-                rendered_text[:200], len(collected_images),
+                "prepare_inputs vision_tokens_present=%s collected_images=%d",
+                "<|image_pad|>" in rendered_text,
+                len(collected_images),
             )
 
+            # Step 4: Call the processor with the rendered text + original PIL images.
             proc_kwargs: Dict[str, Any] = {
                 "text": [rendered_text],
                 "padding": True,
@@ -873,6 +894,8 @@ class HuggingFaceProvider(BaseProvider):
                 for k, v in inputs.items()
             }
         return inputs
+
+
 
     @staticmethod
     def estimate_cost(tokens: int, mode: str = "input") -> float:

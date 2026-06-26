@@ -360,6 +360,13 @@ class VisionAgent:
             if progress_callback:
                 progress_callback(f"Parsing JSON (Image {idx + 1}/{len(preprocessed_images)})...")
 
+            # Guard: raise early if inference failed (provider returns success=False)
+            if not response_data.get("success", True) or not response_data.get("response", "").strip():
+                provider_error = response_data.get("error", "Unknown inference error")
+                raise RuntimeError(
+                    f"VisionModel inference failed for image {idx + 1}: {provider_error}"
+                )
+
             # Validate schema format
             parsed_json = self._validate_and_repair_json(response_data.get("response", ""))
             
