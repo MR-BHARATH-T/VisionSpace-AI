@@ -551,7 +551,11 @@ class HuggingFaceProvider(BaseProvider):
 
     def _apply_chat_template_cached(self, messages: List[Dict[str, Any]]) -> str:
         """Applies chat template with in-memory serialization caching."""
-        msg_str = json.dumps(messages, sort_keys=True)
+        try:
+            msg_str = json.dumps(messages, sort_keys=True)
+        except Exception:
+            msg_str = str(messages)
+
         if hasattr(self, "_chat_template_cache") and msg_str in self._chat_template_cache:
             return self._chat_template_cache[msg_str]
 
@@ -576,6 +580,25 @@ class HuggingFaceProvider(BaseProvider):
                         if isinstance(c, dict) and c.get("type") == "text":
                             text_content += c.get("text", "")
                     content = text_content
+                text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+            text += "<|im_start|>assistant\n"
+
+        # Safely enforce image placeholders for Qwen VL models if chat template outputs are missing them
+        if self.task == "vision" and "<|image_pad|>" not in text:
+            logger.info("Chat template did not render vision placeholders. Formatting manually.")
+            text = ""
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    block_text = ""
+                    for block in content:
+                        if isinstance(block, dict):
+                            if block.get("type") in ("image", "image_url"):
+                                block_text += "<|vision_start|><|image_pad|><|vision_end|>"
+                            elif block.get("type") == "text":
+                                block_text += block.get("text", "")
+                    content = block_text
                 text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
             text += "<|im_start|>assistant\n"
 
