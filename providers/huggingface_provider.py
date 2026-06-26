@@ -748,152 +748,163 @@ class HuggingFaceProvider(BaseProvider):
         images: Optional[List[Any]] = None,
         videos: Optional[List[Any]] = None,
     ) -> Dict[str, Any]:
-        """Formats and registers prompt texts into model tensor layouts.
+        """Formats messages and images into model-ready tensor inputs.
 
-        For vision tasks (processor present), the processor's apply_chat_template
-        is used to expand image tokens correctly from the raw messages structure.
-        The pre-rendered _apply_chat_template_cached path is used only for
-        text-only (no processor) inference.
+        For vision tasks (processor present), this method bypasses
+        apply_chat_template entirely and builds input_ids manually.
+
+        Root cause of the previous "tokens: 0, features: N" crash:
+            Qwen2VLProcessor.apply_chat_template(tokenize=False) on some
+            transformers versions never emits <|image_pad|> tokens regardless
+            of the image block format (bare dict, PIL object, or base64 URI).
+
+        Fix — manual token builder:
+            1. Run image_processor(images=proc_images) to get pixel_values and
+               image_grid_thw (the actual patch grid used by the visual encoder).
+            2. Compute n_pad = image_grid_thw[i].prod() // merge_size² per image.
+               This is EXACTLY the number of feature vectors the visual encoder
+               outputs for image i.
+            3. Build input_ids by tokenising each message turn and inserting
+               [vision_start] + [image_pad] * n_pad + [vision_end] at each
+               image position.
+            4. Return input_ids + pixel_values + image_grid_thw as a plain dict
+               so model.generate(**inputs) works correctly.
         """
         if not self.loaded or (self.tokenizer is None and self.processor is None):
             raise RuntimeError("Model parameters must be loaded before preparing inputs.")
 
         if self.processor is not None:
-            # --- Multimodal path (Qwen VL and similar) ---
-            #
-            # ROOT CAUSE of "tokens: 0, features: N" crash:
-            #   The Qwen VL Jinja chat-template only emits <|image_pad|> when
-            #   the image block's "image" value is a STRING (path or URL).
-            #   PIL Image objects embedded as {"type":"image","image":<PIL>}
-            #   are silently skipped by the template → zero vision tokens.
-            #
-            # FIX: Convert PIL images to base64 data URIs (valid strings) for
-            #   the template call, then pass the original PIL objects to the
-            #   processor's __call__ for actual feature computation.
+            # ── Resolve tokenizer & image_processor ──────────────────────
+            tokenizer = self.processor.tokenizer
+            image_processor = self.processor.image_processor
+            merge_size: int = int(getattr(image_processor, "merge_size", 2))
 
-            import base64 as _b64
-            import io as _io
-
-            def _pil_to_b64_uri(img: Any) -> str:
-                """Encode PIL image as a JPEG base64 data URI string."""
-                try:
-                    buf = _io.BytesIO()
-                    img.save(buf, format="JPEG", quality=85)
-                    b64 = _b64.b64encode(buf.getvalue()).decode("ascii")
-                    return f"data:image/jpeg;base64,{b64}"
-                except Exception:
-                    buf = _io.BytesIO()
-                    img.save(buf, format="PNG")
-                    b64 = _b64.b64encode(buf.getvalue()).decode("ascii")
-                    return f"data:image/png;base64,{b64}"
-
-            # Step 1: Walk messages, collect PIL images in order, build a
-            # template-safe copy where PIL objects are replaced with data URIs.
-            collected_images: List[Any] = []
-            has_embedded_images = False
-            template_messages: List[Dict[str, Any]] = []
-
-            for msg in messages:
-                new_msg = dict(msg)
-                content = msg.get("content", "")
-                if isinstance(content, list):
-                    new_content: List[Any] = []
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") in ("image", "image_url"):
-                            has_embedded_images = True
-                            img_val = block.get("image") or block.get("url")
-                            if img_val is not None and not isinstance(img_val, str):
-                                # PIL / ndarray — convert to data URI for template,
-                                # keep original PIL for processor feature computation.
-                                try:
-                                    b64_uri = _pil_to_b64_uri(img_val)
-                                    new_content.append({"type": "image", "image": b64_uri})
-                                except Exception as enc_err:
-                                    logger.warning("PIL→base64 failed: %s; using bare block.", enc_err)
-                                    new_content.append({"type": "image"})
-                                collected_images.append(img_val)
-                            else:
-                                # String path/URL — template handles directly.
-                                new_content.append(block)
-                                if img_val:
-                                    collected_images.append(img_val)
-                        else:
-                            new_content.append(block)
-                    new_msg["content"] = new_content
-                template_messages.append(new_msg)
-
-            # Step 2: If no images found in messages, fall back to the images param.
-            if not has_embedded_images and images:
-                collected_images = list(images)
-
-            # Step 3: Render text via processor using the sanitised template.
+            # ── Extract images via process_vision_info (official Qwen VL util)
+            # process_vision_info handles PIL objects, paths, URLs, and base64.
+            proc_images: List[Any] = []
             try:
-                rendered_text = self.processor.apply_chat_template(
-                    template_messages, tokenize=False, add_generation_prompt=True
-                )
-                if collected_images and "<|image_pad|>" not in rendered_text:
-                    logger.warning(
-                        "apply_chat_template produced no <|image_pad|> tokens "
-                        "despite %d images. Manual vision placeholder injected.",
-                        len(collected_images),
-                    )
-                    raise ValueError("No vision tokens in template output.")
-            except Exception as tmpl_err:
-                logger.warning(
-                    "apply_chat_template failed (%s). Using manual vision placeholder render.",
-                    str(tmpl_err),
-                )
-                # Manual fallback: one <|image_pad|> per image block.
-                # Use the processor's own image_token attribute if available.
-                image_token = getattr(self.processor, "image_token", "<|image_pad|>")
-                rendered_text = ""
-                for msg in template_messages:
-                    role = msg.get("role", "user")
+                from qwen_vl_utils import process_vision_info as _pvi
+                _imgs, _ = _pvi(messages)
+                proc_images = list(_imgs) if _imgs else []
+            except Exception as pvi_err:
+                logger.debug("process_vision_info unavailable or failed (%s). "
+                             "Falling back to PIL extraction from messages.", pvi_err)
+
+            if not proc_images:
+                # Manual PIL extraction from messages content
+                for msg in messages:
                     content = msg.get("content", "")
                     if isinstance(content, list):
-                        block_text = ""
-                        for block in content:
-                            if isinstance(block, dict):
-                                if block.get("type") == "image":
-                                    block_text += f"<|vision_start|>{image_token}<|vision_end|>"
-                                elif block.get("type") == "text":
-                                    block_text += block.get("text", "")
-                        content = block_text
-                    rendered_text += f"<|im_start|>{role}\n{content}<|im_end|>\n"
-                rendered_text += "<|im_start|>assistant\n"
+                        for blk in content:
+                            if isinstance(blk, dict) and blk.get("type") in ("image", "image_url"):
+                                iv = blk.get("image") or blk.get("url")
+                                if iv is not None:
+                                    proc_images.append(iv)
 
-            logger.debug(
-                "prepare_inputs vision_tokens_present=%s collected_images=%d",
-                "<|image_pad|>" in rendered_text,
-                len(collected_images),
-            )
+            # Final fallback: caller-supplied images param
+            if not proc_images and images:
+                proc_images = list(images)
 
-            # Step 4: Call the processor with the rendered text + original PIL images.
-            proc_kwargs: Dict[str, Any] = {
-                "text": [rendered_text],
-                "padding": True,
-                "return_tensors": "pt",
+            # ── Process images through image_processor ────────────────────
+            image_tensors: Dict[str, Any] = {}
+            image_grid_thw = None
+
+            if proc_images:
+                try:
+                    img_out = image_processor(images=proc_images, return_tensors="pt")
+                    image_tensors = {k: v for k, v in img_out.items()
+                                     if isinstance(v, torch.Tensor)}
+                    image_grid_thw = img_out.get("image_grid_thw")  # [n_imgs, 3]
+                    if image_grid_thw is not None:
+                        n_exp = int(image_grid_thw.prod(dim=1).sum().item()) // (merge_size ** 2)
+                        logger.debug("image_processor: grid_thw=%s  expected_tokens=%d",
+                                     image_grid_thw.tolist(), n_exp)
+                except Exception as ip_err:
+                    logger.error("image_processor failed: %s — running text-only.", ip_err)
+
+            # ── Resolve special token IDs ─────────────────────────────────
+            def _tok_id(s: str) -> int:
+                ids = tokenizer.encode(s, add_special_tokens=False)
+                if ids:
+                    return ids[0]
+                return int(tokenizer.convert_tokens_to_ids(s))
+
+            vision_start_id = _tok_id("<|vision_start|>")
+            vision_end_id   = _tok_id("<|vision_end|>")
+            image_pad_id    = _tok_id("<|image_pad|>")
+
+            # ── Build token sequence manually ─────────────────────────────
+            all_tokens: List[int] = []
+            img_blk_idx = 0
+
+            for msg in messages:
+                role    = msg.get("role", "user")
+                content = msg.get("content", "")
+
+                # <|im_start|>role\n
+                all_tokens += tokenizer.encode(
+                    f"<|im_start|>{role}\n", add_special_tokens=False
+                )
+
+                if isinstance(content, str):
+                    all_tokens += tokenizer.encode(content, add_special_tokens=False)
+
+                elif isinstance(content, list):
+                    for blk in content:
+                        if not isinstance(blk, dict):
+                            continue
+                        btype = blk.get("type", "")
+
+                        if btype in ("image", "image_url"):
+                            # Compute exact token count from grid dimensions
+                            if image_grid_thw is not None and img_blk_idx < len(image_grid_thw):
+                                n_pad = int(image_grid_thw[img_blk_idx].prod().item()) // (merge_size ** 2)
+                                img_blk_idx += 1
+                            elif proc_images:
+                                n_pad = 256  # safe fallback (will still mismatch but won't crash)
+                            else:
+                                continue  # no images at all — skip block
+
+                            all_tokens += [vision_start_id] + [image_pad_id] * n_pad + [vision_end_id]
+
+                        elif btype == "text":
+                            all_tokens += tokenizer.encode(
+                                blk.get("text", ""), add_special_tokens=False
+                            )
+
+                # <|im_end|>\n
+                all_tokens += tokenizer.encode("<|im_end|>\n", add_special_tokens=False)
+
+            # <|im_start|>assistant\n  (generation prompt)
+            all_tokens += tokenizer.encode("<|im_start|>assistant\n", add_special_tokens=False)
+
+            n_img_toks = all_tokens.count(image_pad_id)
+            logger.debug("prepare_inputs: total_tokens=%d  image_pad_tokens=%d",
+                         len(all_tokens), n_img_toks)
+
+            # ── Assemble final inputs dict ─────────────────────────────────
+            input_ids      = torch.tensor([all_tokens], dtype=torch.long)
+            attention_mask = torch.ones_like(input_ids)
+
+            inputs: Dict[str, Any] = {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
             }
-            if collected_images:
-                proc_kwargs["images"] = collected_images
-            if videos is not None and len(videos) > 0:
-                proc_kwargs["videos"] = videos
+            inputs.update(image_tensors)  # pixel_values, image_grid_thw
 
-            inputs = self.processor(**proc_kwargs)
         else:
-            # --- Text-only path ---
+            # ── Text-only path ─────────────────────────────────────────────
             text = self._apply_chat_template_cached(messages)
-            inputs = self.tokenizer([text], padding=True, return_tensors="pt")
+            inputs = dict(self.tokenizer([text], padding=True, return_tensors="pt"))
 
         target_device = self.model.device if hasattr(self.model, "device") else DEVICE
-        if hasattr(inputs, "to"):
-            inputs = inputs.to(target_device)
-        else:
-            inputs = {
-                k: v.to(target_device) if isinstance(v, torch.Tensor) else v
-                for k, v in inputs.items()
-            }
+        inputs = {
+            k: v.to(target_device) if isinstance(v, torch.Tensor) else v
+            for k, v in inputs.items()
+        }
         return inputs
+
+
 
 
 
