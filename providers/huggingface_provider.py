@@ -24,6 +24,7 @@ from transformers import (
     AutoTokenizer,
     AutoProcessor,
     AutoModelForImageTextToText,
+    AutoModelForCausalLM,
     BitsAndBytesConfig,
     GenerationConfig,
     TextIteratorStreamer,
@@ -47,7 +48,7 @@ if HF_VISION_MODEL is None:
 HF_TEXT_MODEL = getattr(config, "HF_TEXT_MODEL", None)
 if HF_TEXT_MODEL is None:
     models_dict = getattr(config, "MODELS", {})
-    HF_TEXT_MODEL = models_dict.get("text", {}).get("model", "Qwen/Qwen3-VL-4B-Instruct")
+    HF_TEXT_MODEL = models_dict.get("text", {}).get("model", "Qwen/Qwen2.5-7B-Instruct")
 
 MAX_NEW_TOKENS = getattr(config, "MAX_NEW_TOKENS", 2048)
 TEMPERATURE = getattr(config, "TEMPERATURE", 0.2)
@@ -71,8 +72,8 @@ MODEL_REGISTRY = {
     },
     "reasoning": {
         "model": HF_TEXT_MODEL,
-        "loader": AutoModelForImageTextToText,
-        "processor": AutoProcessor,
+        "loader": AutoModelForCausalLM,
+        "processor": None,
     }
 }
 
@@ -933,7 +934,7 @@ class HuggingFaceProvider(BaseProvider):
             try:
                 # Prepare inputs
                 inputs = self.prepare_inputs(final_messages, images=images, videos=videos)
-                input_length = inputs["input_ids"].shape[1]
+                input_length = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
 
                 try:
                     with torch.inference_mode():
@@ -965,7 +966,7 @@ class HuggingFaceProvider(BaseProvider):
                         self.load(self.model_name, self.task)
                         
                         inputs = self.prepare_inputs(final_messages, images=images, videos=videos)
-                        input_length = inputs["input_ids"].shape[1]
+                        input_length = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
                         
                         with torch.inference_mode():
                             outputs = self.model.generate(

@@ -32,7 +32,7 @@ if HF_VISION_MODEL is None:
 HF_TEXT_MODEL = getattr(config, "HF_TEXT_MODEL", None)
 if HF_TEXT_MODEL is None:
     models_dict = getattr(config, "MODELS", {})
-    HF_TEXT_MODEL = models_dict.get("text", {}).get("model", "Qwen/Qwen3-VL-4B-Instruct")
+    HF_TEXT_MODEL = models_dict.get("text", {}).get("model", "Qwen/Qwen2.5-7B-Instruct")
 
 # Model Profile mapping table
 MODEL_PROFILES = {
@@ -66,11 +66,11 @@ MODEL_METADATA_CACHE = {
         "embedding_size": 3584,
         "generation_limit": 4096
     },
-    "Qwen/Qwen3-VL-4B-Instruct": {
+    "Qwen/Qwen2.5-7B-Instruct": {
         "context_length": 32768,
-        "supports_images": True,
-        "supports_videos": True,
-        "embedding_size": 2560,
+        "supports_images": False,
+        "supports_videos": False,
+        "embedding_size": 3584,
         "generation_limit": 4096
     },
     "default": {
@@ -247,12 +247,6 @@ class ModelManager:
             task: time.time() for task in MODEL_REGISTRY
         }
 
-        # Active loaded tasks -> loaded model identifier
-        self._active_loaded_models: Dict[str, str] = {}
-
-        # Shared Tokenizer/Processor Cache
-        self.shared_processor_cache: Dict[str, Dict[str, Any]] = {}
-
         # Session metrics tracking
         self.session_id = str(uuid.uuid4())
         self.prompt_count = 0
@@ -298,17 +292,18 @@ class ModelManager:
     # =========================================================================
     # Provider Loader Delegation
     # =========================================================================
-    def _get_provider(self, provider_name: str) -> Any:
+    def _get_provider(self, provider_name: str, task: Optional[str] = None) -> Any:
         """Retrieves or instantiates provider implementation wrapper."""
-        if provider_name not in self.providers:
+        key = f"{provider_name}:{task or 'reasoning'}"
+        if key not in self.providers:
             with self._init_lock:
-                if provider_name not in self.providers:
+                if key not in self.providers:
                     if provider_name == "huggingface":
                         from providers.huggingface_provider import HuggingFaceProvider
-                        self.providers[provider_name] = HuggingFaceProvider()
+                        self.providers[key] = HuggingFaceProvider()
                     else:
                         raise ValueError(f"Provider '{provider_name}' is currently unsupported.")
-        return self.providers[provider_name]
+        return self.providers[key]
 
     # =========================================================================
     # Context Budget & Token utilities
@@ -400,9 +395,9 @@ class ModelManager:
             # If free memory is below 6.5 GB, evict other loaded models
             if free_vram_gb < 6.5:
                 logger.warning("VRAM headroom is low (%.2f GB). Evicting inactive models from memory.", free_vram_gb)
-                for task, model_name in list(self._active_loaded_models.items()):
-                    if task != target_task:
-                        logger.info("Preemptively unloading model for task '%s' (%s)", task, model_name)
+                for task in list(MODEL_REGISTRY.keys()):
+                    if task != target_task and self.is_loaded(task):
+                        logger.info("Preemptively unloading model for task '%s'", task)
                         self.unload_model(task)
 
                 # Force device cleanup
@@ -437,15 +432,17 @@ class ModelManager:
             model_name = MODEL_PROFILES[task][profile]
             logger.info("Dynamic Profile '%s' selected model: %s", profile, model_name)
 
+        provider = self._get_provider(provider_name, task)
+
         # If already loaded
-        if self._active_loaded_models.get(task) == model_name:
+        if provider.loaded and provider.model_name == model_name:
             self._set_state(task, "Ready")
             self._last_used_time[task] = time.time()
             return True
 
         with self._init_lock:
             # Recheck status inside lock
-            if self._active_loaded_models.get(task) == model_name:
+            if provider.loaded and provider.model_name == model_name:
                 return True
 
             logger.info("Requesting model load for task '%s' (%s) via provider '%s'", task, model_name, provider_name)
@@ -463,8 +460,6 @@ class ModelManager:
 
             start_time = time.perf_counter()
             try:
-                provider = self._get_provider(provider_name)
-                
                 # Fetch tokenizer and processor from central pools and configure provider
                 provider.tokenizer = self.tokenizer_pool.get(model_name)
                 provider.processor = self.processor_pool.get(model_name)
@@ -472,7 +467,6 @@ class ModelManager:
                 # Load provider weights
                 provider.load(model_name, task)
 
-                self._active_loaded_models[task] = model_name
                 self._set_state(task, "Ready")
                 self._last_used_time[task] = time.time()
 
@@ -493,22 +487,21 @@ class ModelManager:
 
     def unload_model(self, task: str) -> None:
         """Removes model reference and triggers memory garbage collection."""
-        if task not in self._active_loaded_models:
+        if not self.is_loaded(task):
             self._set_state(task, "Cold")
             return
 
         with self._init_lock:
-            if task in self._active_loaded_models:
+            if self.is_loaded(task):
                 logger.info("Unloading model for task '%s'", task)
                 self._set_state(task, "Unloading")
                 
                 meta = MODEL_REGISTRY[task]
-                provider = self._get_provider(meta["provider"])
+                provider = self._get_provider(meta["provider"], task)
                 provider.unload()
 
-                model_name = self._active_loaded_models.pop(task, None)
                 self._set_state(task, "Cold")
-                self.events.emit("model_unloaded", task=task, model_name=model_name)
+                self.events.emit("model_unloaded", task=task, model_name=meta["model_name"])
 
                 # Cleanup device caches
                 if torch.cuda.is_available():
@@ -620,7 +613,7 @@ class ModelManager:
         self.prompt_count += 1
         
         meta = MODEL_REGISTRY[task]
-        provider = self._get_provider(meta["provider"])
+        provider = self._get_provider(meta["provider"], task)
 
         # Centralized Context Budget Trim/Prune step
         if messages:
@@ -722,8 +715,8 @@ class ModelManager:
                 except Exception as retry_err:
                     # Tier 2 Recovery: Evict other models
                     logger.warning("Tier 1 recovery failed. Attempting Tier 2 (Evicting other models).")
-                    for active_task in list(self._active_loaded_models.keys()):
-                        if active_task != task:
+                    for active_task in list(MODEL_REGISTRY.keys()):
+                        if active_task != task and self.is_loaded(active_task):
                             self.unload_model(active_task)
                     
                     try:
@@ -760,7 +753,7 @@ class ModelManager:
         self._last_used_time[task] = time.time()
         
         meta = MODEL_REGISTRY[task]
-        provider = self._get_provider(meta["provider"])
+        provider = self._get_provider(meta["provider"], task)
         kwargs["stream"] = True
 
         req_id = self._next_request_id(task)
@@ -1003,7 +996,7 @@ class ModelManager:
             now = time.time()
             with self._init_lock:
                 for task, last_used in list(self._last_used_time.items()):
-                    if task in self._active_loaded_models:
+                    if self.is_loaded(task):
                         # 15 minutes = 900 seconds
                         if (now - last_used) > 900:
                             logger.info("Model for task '%s' has been idle for 15 minutes. Unloading automatically.", task)
@@ -1014,7 +1007,14 @@ class ModelManager:
     # =========================================================================
     def is_loaded(self, task: str) -> bool:
         """Checks if model weights for task are active in VRAM."""
-        return task in self._active_loaded_models
+        if task not in MODEL_REGISTRY:
+            return False
+        meta = MODEL_REGISTRY[task]
+        provider_name = meta["provider"]
+        if provider_name == "future":
+            return False
+        provider = self._get_provider(provider_name, task)
+        return provider.loaded
 
     def is_ready(self, task: str) -> bool:
         """Checks if lifecycle state is Ready or Idle."""
@@ -1035,7 +1035,7 @@ class ModelManager:
         try:
             self.load_model(task)
             meta = MODEL_REGISTRY[task]
-            provider = self._get_provider(meta["provider"])
+            provider = self._get_provider(meta["provider"], task)
             return provider.health_check() if hasattr(provider, "health_check") else True
         except Exception as e:
             logger.error("Health check failed for task '%s': %s", task, str(e))
@@ -1046,12 +1046,12 @@ class ModelManager:
         if not self.is_loaded(task):
             return {"status": "Model not loaded", "task": task}
         meta = MODEL_REGISTRY[task]
-        provider = self._get_provider(meta["provider"])
+        provider = self._get_provider(meta["provider"], task)
         return provider.get_model_info()
 
     def get_memory_usage(self) -> Dict[str, Any]:
         """Provides CPU and GPU diagnostics."""
-        active_provider = self._get_provider("huggingface")
+        active_provider = self._get_provider("huggingface", "reasoning")
         return active_provider.get_memory_usage()
 
     def get_analytics_report(self) -> Dict[str, Any]:
@@ -1063,17 +1063,17 @@ class ModelManager:
     # =========================================================================
     def clear_cache(self) -> bool:
         """Safely cleans cache repository directories."""
-        active_provider = self._get_provider("huggingface")
+        active_provider = self._get_provider("huggingface", "reasoning")
         return active_provider.clear_cache()
 
     def cache_size(self) -> float:
         """Gets cache occupied storage size in GB."""
-        active_provider = self._get_provider("huggingface")
+        active_provider = self._get_provider("huggingface", "reasoning")
         return active_provider.cache_size()
 
     def list_models(self) -> List[Dict[str, Any]]:
         """Lists cached repository objects."""
-        active_provider = self._get_provider("huggingface")
+        active_provider = self._get_provider("huggingface", "reasoning")
         return active_provider.list_cached_models()
 
     # =========================================================================
@@ -1082,13 +1082,13 @@ class ModelManager:
     def shutdown(self) -> None:
         """Performs clean orchestrator shutdown unloading all loaded instances."""
         logger.info("Initiating model manager shutdown procedures.")
-        for task in list(self._active_loaded_models.keys()):
+        for task in list(MODEL_REGISTRY.keys()):
             try:
-                self.unload_model(task)
+                if self.is_loaded(task):
+                    self.unload_model(task)
             except Exception as e:
                 logger.error("Error unloading task '%s' during shutdown: %s", task, str(e))
         self.providers.clear()
-        self.shared_processor_cache.clear()
         logger.info("Shutdown completed successfully.")
 
     # =========================================================================

@@ -26,7 +26,7 @@ class VisionModel:
         """Initializes the VisionModel facade structure and references ModelManager."""
         self.provider_name = provider
         self.manager = ModelManager()
-        self.provider = self.manager._get_provider(provider)
+        self.provider = self.manager._get_provider(provider, "vision")
 
         # Preprocessor subsystem
         self.preprocessor = VisionImagePreprocessor()

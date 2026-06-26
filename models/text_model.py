@@ -22,7 +22,7 @@ class TextModel:
         """Initializes the TextModel referencing the central ModelManager orchestrator."""
         self.provider_name = provider
         self.manager = ModelManager()
-        self.provider = self.manager._get_provider(provider)
+        self.provider = self.manager._get_provider(provider, "reasoning")
 
         # Hook placeholders
         self.before_generation = None
