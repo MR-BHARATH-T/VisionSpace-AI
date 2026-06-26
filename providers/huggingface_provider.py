@@ -693,6 +693,8 @@ class HuggingFaceProvider(BaseProvider):
         # Scan for images inside the messages content
         num_images = 0
         if isinstance(text, list):
+            if not text:
+                return 0
             for msg in text:
                 content = msg.get("content", "")
                 if isinstance(content, list):
@@ -851,7 +853,7 @@ class HuggingFaceProvider(BaseProvider):
                 prompt = format_prompt(prompt, variables)
 
         # 3. Assemble chat structure
-        if messages is not None:
+        if messages is not None and len(messages) > 0:
             final_messages = copy.deepcopy(messages)
         else:
             final_messages = self.build_messages(system=system_prompt, user=prompt)
