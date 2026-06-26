@@ -32,11 +32,11 @@ HF_REVISION = "main"
 
 GENERATION_CONFIG = {
 
-    "temperature": 0.2,
+    "temperature": 0.1,
 
-    "top_p": 0.95,
+    "top_p": 0.9,
 
-    "max_new_tokens": 2048,
+    "max_new_tokens": 1024,
 
     "do_sample": False
 
@@ -55,6 +55,7 @@ SUPPORTED_IMAGE_TYPES = [
 ]
 
 OUTPUT_DIR = "outputs"
+
 
 VERBOSE = True
 
