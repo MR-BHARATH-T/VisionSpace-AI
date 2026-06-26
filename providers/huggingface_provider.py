@@ -866,16 +866,16 @@ class HuggingFaceProvider(BaseProvider):
                     content = final_messages[i]["content"]
                     if isinstance(content, str):
                         multimodal_content = []
-                        for _ in images:
-                            multimodal_content.append({"type": "image"})
+                        for img in images:
+                            multimodal_content.append({"type": "image", "image": img})
                         multimodal_content.append({"type": "text", "text": content})
                         final_messages[i]["content"] = multimodal_content
                     elif isinstance(content, list):
                         has_image = any(isinstance(c, dict) and c.get("type") == "image" for c in content)
                         if not has_image:
                             multimodal_content = []
-                            for _ in images:
-                                multimodal_content.append({"type": "image"})
+                            for img in images:
+                                multimodal_content.append({"type": "image", "image": img})
                             multimodal_content.extend(content)
                             final_messages[i]["content"] = multimodal_content
                     break
