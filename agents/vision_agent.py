@@ -520,6 +520,8 @@ class VisionAgent:
             "max_new_tokens", "temperature", "top_p", "do_sample", "stream", "profile", "response_format"
         }
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in allowed_keys}
+        if "profile" not in filtered_kwargs and self.model_profile:
+            filtered_kwargs["profile"] = self.model_profile
 
         try:
             # Route to VisionModel facade
@@ -580,10 +582,13 @@ class VisionAgent:
         except json.JSONDecodeError:
             pass
 
-        # Strategy 2: Remove trailing commas
+        # Strategy 2: Remove trailing commas and replace empty values after colons
         if data is None:
             try:
                 repaired = re.sub(r',\s*([\]}])', r'\1', clean_text)
+                # Replace empty values after colons, e.g. ": ," or ": }" with ": null"
+                repaired = re.sub(r':\s*(,)', r': null\1', repaired)
+                repaired = re.sub(r':\s*(\})', r': null\1', repaired)
                 data = json.loads(repaired)
             except Exception:
                 pass
@@ -627,8 +632,10 @@ class VisionAgent:
             except Exception:
                 pass
 
-        # If all repairs failed, run direct parse to raise the original JSONDecodeError for debugging
+        # If all repairs failed, log the raw response and run direct parse to raise the original JSONDecodeError for debugging
         if data is None:
+            logger.error("JSON repair failed. Raw response text:\n%s", clean_text)
+            print("--> [DEBUG] Failed Raw JSON Response from Model:\n", clean_text)
             data = json.loads(clean_text)
 
         # Conform output payload structures
