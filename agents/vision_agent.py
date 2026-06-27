@@ -593,34 +593,47 @@ class VisionAgent:
             except Exception:
                 pass
 
-        # Strategy 3: Balance braces and brackets (handles truncated JSON from max tokens limit)
+        # Strategy 3: Truncation boundary recovery
         if data is None:
-            try:
-                temp = clean_text.strip()
-                # Strip trailing incomplete characters
-                while temp and temp[-1] not in ("}", "]", '"', 'true', 'false', 'null', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'):
-                    temp = temp[:-1].strip()
-                if temp.endswith(","):
-                    temp = temp[:-1].strip()
-
-                stack = []
-                for char in temp:
-                    if char == "{":
-                        stack.append("}")
-                    elif char == "[":
-                        stack.append("]")
-                    elif char == "}" and stack and stack[-1] == "}":
-                        stack.pop()
-                    elif char == "]" and stack and stack[-1] == "]":
-                        stack.pop()
-                
-                repaired_balanced = temp
-                while stack:
-                    repaired_balanced += stack.pop()
-                
-                data = json.loads(repaired_balanced)
-            except Exception:
-                pass
+            candidates = ["},", "}", "],", "]"]
+            for cand in candidates:
+                idx = clean_text.rfind(cand)
+                if idx == -1:
+                    continue
+                try:
+                    prefix = clean_text[:idx + len(cand)].strip()
+                    if prefix.endswith(","):
+                        prefix = prefix[:-1].strip()
+                        
+                    stack = []
+                    in_string = False
+                    escape = False
+                    for char in prefix:
+                        if char == '"' and not escape:
+                            in_string = not in_string
+                        elif not in_string:
+                            if char == "{":
+                                stack.append("}")
+                            elif char == "[":
+                                stack.append("]")
+                            elif char == "}" and stack and stack[-1] == "}":
+                                stack.pop()
+                            elif char == "]" and stack and stack[-1] == "]":
+                                stack.pop()
+                        if char == "\\" and not escape:
+                            escape = True
+                        else:
+                            escape = False
+                            
+                    repaired_balanced = prefix
+                    while stack:
+                        repaired_balanced += stack.pop()
+                        
+                    data = json.loads(repaired_balanced)
+                    if data is not None:
+                        break
+                except Exception:
+                    pass
 
         # Strategy 4: Fallback to json-repair library if installed
         if data is None:
