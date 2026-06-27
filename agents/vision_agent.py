@@ -707,29 +707,223 @@ class VisionAgent:
 
         # Base merge dictionary using the first scene
         base_scene = dict(scenes[0])
-        base_scene["objects"] = merged_objects
+        
+        # 1. Door & Window Extraction & Classification
+        doors_list = []
+        windows_list = []
+        furniture_objects = []
+        
+        # Scan individual scenes for doors/windows if they have been outputted
+        for scene in scenes:
+            for d in scene.get("doors", []):
+                if d and isinstance(d, dict) and d.get("id") not in [x.get("id") for x in doors_list]:
+                    doors_list.append(d)
+            for w in scene.get("windows", []):
+                if w and isinstance(w, dict) and w.get("id") not in [x.get("id") for x in windows_list]:
+                    windows_list.append(w)
+                    
+        # Extract doors and windows that were placed in objects list by the model
+        for obj in merged_objects:
+            name = obj.get("name", "").lower()
+            category = obj.get("category", "").lower()
+            subcategory = obj.get("subcategory", "").lower()
+            combined = f"{name} {category} {subcategory}"
+            
+            if "door" in combined:
+                d_id = obj["id"]
+                d = {
+                    "id": d_id,
+                    "type": obj.get("subcategory") or "swing",
+                    "opens": "unknown",
+                    "estimated_width_cm": obj.get("estimated_dimensions", {}).get("width_cm") or 100.0,
+                    "estimated_height_cm": obj.get("estimated_dimensions", {}).get("height_cm") or 200.0,
+                    "blocked": False,
+                    "bbox": obj.get("bbox", {"x": 0, "y": 0, "width": 100, "height": 100})
+                }
+                if d_id not in [x.get("id") for x in doors_list]:
+                    doors_list.append(d)
+            elif "window" in combined:
+                w_id = obj["id"]
+                w = {
+                    "id": w_id,
+                    "type": obj.get("subcategory") or "sliding",
+                    "estimated_width_cm": obj.get("estimated_dimensions", {}).get("width_cm") or 120.0,
+                    "estimated_height_cm": obj.get("estimated_dimensions", {}).get("height_cm") or 120.0,
+                    "natural_light_contribution": "high" if "exposure" in str(obj) else "medium",
+                    "curtains": True if "curtain" in str(obj) else False,
+                    "blinds": False,
+                    "glass_type": "clear_glass",
+                    "bbox": obj.get("bbox", {"x": 0, "y": 0, "width": 100, "height": 100})
+                }
+                if w_id not in [x.get("id") for x in windows_list]:
+                    windows_list.append(w)
+            else:
+                furniture_objects.append(obj)
+                
+        base_scene["doors"] = doors_list
+        base_scene["windows"] = windows_list
+        base_scene["objects"] = furniture_objects
 
-        # Merge room understanding parameters using vote/averages
+        # 2. Relative Room Coordinates Calculation
+        r_size = base_scene.get("room_understanding", {}).get("room_size", "medium").lower()
+        if r_size == "large":
+            room_width, room_depth = 500, 600
+        elif r_size == "small":
+            room_width, room_depth = 300, 400
+        else:
+            room_width, room_depth = 400, 500
+            
+        img_w, img_h = 800, 600
+        meta = base_scene.get("image_metadata", [])
+        if meta and isinstance(meta, list) and isinstance(meta[0], dict):
+            img_w = meta[0].get("image_width") or 800
+            img_h = meta[0].get("image_height") or 600
+            
+        for obj in base_scene["objects"]:
+            bbox = obj.get("bbox", {"x": 100, "y": 100, "width": 200, "height": 200})
+            cx = bbox["x"] + bbox["width"] / 2
+            cy = bbox["y"] + bbox["height"] / 2
+            
+            x_cm = int((cx / img_w) * room_width)
+            y_cm = int((cy / img_h) * room_depth)
+            
+            name_cat = f"{obj.get('name', '')} {obj.get('category', '')}".lower()
+            if "lamp" in name_cat or "sconce" in name_cat or "light" in name_cat:
+                if "table" in name_cat or "desk" in name_cat:
+                    z_cm = 75
+                elif "ceiling" in name_cat:
+                    z_cm = 220
+                else:
+                    z_cm = 120
+            elif "painting" in name_cat or "frame" in name_cat or "decor" in name_cat:
+                z_cm = 140
+            else:
+                z_cm = 0
+                
+            obj["position"] = {
+                "x_cm": x_cm,
+                "y_cm": y_cm,
+                "z_cm": z_cm
+            }
+            obj["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), round(z_cm / 100.0, 2)]
+
+        # 3. Generate Spatial Relationships
+        relationships = []
+        objs_list = base_scene["objects"]
+        
+        for i in range(len(objs_list)):
+            for j in range(i + 1, len(objs_list)):
+                o1 = objs_list[i]
+                o2 = objs_list[j]
+                
+                pos1 = o1["position"]
+                pos2 = o2["position"]
+                
+                dx = pos1["x_cm"] - pos2["x_cm"]
+                dy = pos1["y_cm"] - pos2["y_cm"]
+                
+                if dx > 80:
+                    relationships.append({"object1": o1["id"], "object2": o2["id"], "relation": "right_of"})
+                    relationships.append({"object1": o2["id"], "object2": o1["id"], "relation": "left_of"})
+                elif dx < -80:
+                    relationships.append({"object1": o1["id"], "object2": o2["id"], "relation": "left_of"})
+                    relationships.append({"object1": o2["id"], "object2": o1["id"], "relation": "right_of"})
+                    
+                if dy > 80:
+                    relationships.append({"object1": o1["id"], "object2": o2["id"], "relation": "behind"})
+                    relationships.append({"object1": o2["id"], "object2": o1["id"], "relation": "in_front_of"})
+                elif dy < -80:
+                    relationships.append({"object1": o1["id"], "object2": o2["id"], "relation": "in_front_of"})
+                    relationships.append({"object1": o2["id"], "object2": o1["id"], "relation": "behind"})
+
+        # Map wall alignments
+        for o in objs_list:
+            pos = o["position"]
+            if pos["x_cm"] < 80:
+                relationships.append({"object1": o["id"], "object2": "wall_west", "relation": "against_wall"})
+            if pos["x_cm"] > (room_width - 80):
+                relationships.append({"object1": o["id"], "object2": "wall_east", "relation": "against_wall"})
+            if pos["y_cm"] > (room_depth - 80):
+                relationships.append({"object1": o["id"], "object2": "wall_north", "relation": "against_wall"})
+            if pos["y_cm"] < 80:
+                relationships.append({"object1": o["id"], "object2": "wall_south", "relation": "against_wall"})
+                
+            for w in windows_list:
+                w_pos_x = int((w.get("bbox", {}).get("x", 0) / img_w) * room_width)
+                if abs(pos["x_cm"] - w_pos_x) < 150:
+                    relationships.append({"object1": o["id"], "object2": w["id"], "relation": "near_window"})
+            for d in doors_list:
+                d_pos_x = int((d.get("bbox", {}).get("x", 0) / img_w) * room_width)
+                if abs(pos["x_cm"] - d_pos_x) < 150:
+                    relationships.append({"object1": o["id"], "object2": d["id"], "relation": "near_door"})
+                    
+        base_scene["spatial_relationships"] = relationships
+
+        # 4. Generate Empty Regions & Free-Space Polygons
+        occupied_sectors = set()
+        for o in objs_list:
+            pos = o["position"]
+            px, py = pos["x_cm"], pos["y_cm"]
+            
+            sector_x = "left" if px < (room_width / 2) else "right"
+            sector_y = "front" if py < (room_depth / 2) else "back"
+            occupied_sectors.add((sector_x, sector_y))
+            
+        empty_regions = []
+        free_polygons = []
+        
+        sector_coords = {
+            ("left", "front"): {"x_range": (0, int(room_width/2)), "y_range": (0, int(room_depth/2))},
+            ("right", "front"): {"x_range": (int(room_width/2), room_width), "y_range": (0, int(room_depth/2))},
+            ("left", "back"): {"x_range": (0, int(room_width/2)), "y_range": (int(room_depth/2), room_depth)},
+            ("right", "back"): {"x_range": (int(room_width/2), room_width), "y_range": (int(room_depth/2), room_depth)},
+        }
+        
+        region_count = 1
+        for sector, coords in sector_coords.items():
+            if sector not in occupied_sectors:
+                w_cm = coords["x_range"][1] - coords["x_range"][0]
+                d_cm = coords["y_range"][1] - coords["y_range"][0]
+                
+                empty_regions.append({
+                    "id": f"region_{region_count:03d}",
+                    "width_cm": w_cm,
+                    "depth_cm": d_cm,
+                    "suitable_for": ["furniture", "seating", "storage"] if sector[1] == "front" else ["desk", "decor"]
+                })
+                
+                free_polygons.append([
+                    {"x": coords["x_range"][0], "y": coords["y_range"][0]},
+                    {"x": coords["x_range"][1], "y": coords["y_range"][0]},
+                    {"x": coords["x_range"][1], "y": coords["y_range"][1]},
+                    {"x": coords["x_range"][0], "y": coords["y_range"][1]}
+                ])
+                region_count += 1
+                
+        if not empty_regions:
+            empty_regions.append({
+                "id": "region_001",
+                "width_cm": int(room_width / 2),
+                "depth_cm": 150,
+                "suitable_for": ["seating", "decor"]
+            })
+            free_polygons.append([
+                {"x": 0, "y": 0},
+                {"x": int(room_width/2), "y": 0},
+                {"x": int(room_width/2), "y": 150},
+                {"x": 0, "y": 150}
+            ])
+            
+        base_scene["empty_regions"] = empty_regions
+        base_scene["free_space_polygons"] = free_polygons
+
+        # Average and merge room understanding parameters
         coverage_vals = [s.get("scene_coverage_percentage") for s in scenes if s.get("scene_coverage_percentage") is not None]
         if coverage_vals:
-            base_scene["scene_coverage_percentage"] = int(np.mean(coverage_vals))
+            base_scene["scene_coverage_percentage"] = int(sum(coverage_vals) / len(coverage_vals))
 
-        # Combine spatial relationships
-        all_relationships = []
-        seen_relationships = set()
-        for scene in scenes:
-            rels = scene.get("spatial_relationships", [])
-            for rel in rels:
-                o1, o2, r = rel.get("object1"), rel.get("object2"), rel.get("relation")
-                if o1 and o2 and r:
-                    key = f"{o1}|{o2}|{r}"
-                    if key not in seen_relationships:
-                        seen_relationships.add(key)
-                        all_relationships.append(rel)
-        base_scene["spatial_relationships"] = all_relationships
-
-        # Combine doors/windows/problems/safety lists
-        for key in ("doors", "windows", "layout_problems", "safety_analysis", "empty_regions", "candidate_furniture_locations", "image_metadata", "image_quality"):
+        # Combine meta and remaining metadata
+        for key in ("layout_problems", "safety_analysis", "candidate_furniture_locations", "image_metadata", "image_quality"):
             combined = []
             seen_ids = set()
             for scene in scenes:

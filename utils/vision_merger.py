@@ -171,54 +171,145 @@ class VisionMerger:
     # NMS Implementation
     # ------------------------------------------------------------------
 
+    def _normalize_label(self, obj: dict) -> str:
+        """Helper to extract a clean semantic label from object fields."""
+        name = (obj.get("name") or "").lower()
+        category = (obj.get("category") or "").lower()
+        subcategory = (obj.get("subcategory") or "").lower()
+        label = (obj.get("label") or "").lower()
+        
+        combined = f"{name} {category} {subcategory} {label}"
+        if "bed" in combined:
+            return "bed"
+        if "chair" in combined or "sofa" in combined or "seating" in combined:
+            return "chair"
+        if "desk" in combined or "table" in combined:
+            return "desk"
+        if "dresser" in combined or "wardrobe" in combined or "cabinet" in combined or "cupboard" in combined or "drawer" in combined:
+            return "dresser"
+        if "lamp" in combined or "light" in combined or "sconce" in combined or "lighting" in combined:
+            return "lamp"
+        if "door" in combined:
+            return "door"
+        if "window" in combined:
+            return "window"
+        if "plant" in combined or "flower" in combined:
+            return "plant"
+        if "painting" in combined or "frame" in combined or "art" in combined or "decor" in combined:
+            return "decor"
+            
+        for val in (name, category, label):
+            if val:
+                return val.strip().replace(" ", "_")
+        return "object"
+
     def _apply_nms(self, objects: list[dict]) -> list[dict]:
-        """Apply Non-Maximum Suppression per object class label.
-
-        For each label group, suppress lower-confidence boxes that overlap
-        with higher-confidence boxes above the IoU threshold.
-
-        Args:
-            objects: Flat list of detection dicts (all passes combined).
-
-        Returns:
-            Deduplicated list.
-        """
+        """Apply Semantic Deduplication and confidence-based attribute fusion across multi-view inputs."""
         if not objects:
             return []
 
-        # Group by label
-        by_label: dict[str, list[dict]] = defaultdict(list)
-        no_bbox: list[dict] = []
-
+        # Classify objects and normalize labels
+        no_bbox = []
+        labeled_objs = []
         for obj in objects:
-            if "bbox" not in obj:
-                no_bbox.append(obj)
-                continue
-            label = obj.get("label", "unknown").lower()
-            by_label[label].append(obj)
+            label = self._normalize_label(obj)
+            obj_copy = dict(obj)
+            obj_copy["_normalized_label"] = label
+            if "bbox" not in obj_copy:
+                no_bbox.append(obj_copy)
+            else:
+                labeled_objs.append(obj_copy)
 
-        kept: list[dict] = list(no_bbox)
+        # Unique single-instance classes in standard bedroom/living room contexts
+        unique_classes = {"bed", "desk", "dresser", "wardrobe", "sofa"}
 
+        # Group by normalized label
+        by_label = defaultdict(list)
+        for obj in labeled_objs:
+            by_label[obj["_normalized_label"]].append(obj)
+
+        kept: list[dict] = []
+
+        # Process each label group
         for label, group in by_label.items():
-            # Sort by confidence descending
-            group.sort(key=lambda o: float(o.get("confidence", 0)), reverse=True)
-            suppressed = set()
+            if label in unique_classes:
+                # Merge all instances of this label into one canonical object
+                group.sort(key=lambda o: float(o.get("confidence", 0)), reverse=True)
+                canonical = dict(group[0])
+                canonical["observed_in_views"] = [canonical.get("_pass", 0)]
+                
+                for other in group[1:]:
+                    canonical = self._merge_pair(canonical, other)
+                    view_idx = other.get("_pass", 0)
+                    if view_idx not in canonical["observed_in_views"]:
+                        canonical["observed_in_views"].append(view_idx)
+                
+                canonical.pop("_normalized_label", None)
+                canonical.pop("_pass", None)
+                kept.append(canonical)
+            else:
+                # Repeatable multi-instance classes: match across different views greedily
+                by_view = defaultdict(list)
+                for obj in group:
+                    by_view[obj.get("_pass", 0)].append(obj)
 
-            for i, obj_i in enumerate(group):
-                if i in suppressed:
+                view_ids = sorted(by_view.keys())
+                if not view_ids:
                     continue
-                kept.append(obj_i)
-                for j in range(i + 1, len(group)):
-                    if j in suppressed:
-                        continue
-                    iou = intersection_over_union(obj_i["bbox"], group[j]["bbox"])
-                    if iou >= self._nms_iou:
-                        # Merge attributes from suppressed box into kept box
-                        kept[-1] = self._merge_pair(kept[-1], group[j])
-                        suppressed.add(j)
+                
+                category_kept = []
+                for obj in by_view[view_ids[0]]:
+                    obj_copy = dict(obj)
+                    obj_copy["observed_in_views"] = [view_ids[0]]
+                    category_kept.append(obj_copy)
+
+                for v_idx in view_ids[1:]:
+                    view_objs = by_view[v_idx]
+                    for obj in view_objs:
+                        best_match_idx = -1
+                        best_score = -1.0
+                        
+                        for k_idx, k_obj in enumerate(category_kept):
+                            if v_idx in k_obj.get("observed_in_views", []):
+                                continue
+                                
+                            score = 0.0
+                            if k_obj.get("name", "").lower() == obj.get("name", "").lower():
+                                score += 0.2
+                            if k_obj.get("material") == obj.get("material"):
+                                score += 0.2
+                            if k_obj.get("color") == obj.get("color"):
+                                score += 0.2
+                            
+                            center_k = k_obj["bbox"]["x"] + k_obj["bbox"]["width"] / 2
+                            center_o = obj["bbox"]["x"] + obj["bbox"]["width"] / 2
+                            if (center_k < 400 and center_o < 400) or (center_k >= 400 and center_o >= 400):
+                                score += 0.4
+                                
+                            if score > best_score:
+                                best_score = score
+                                best_match_idx = k_idx
+                        
+                        if best_score >= 0.5 and best_match_idx != -1:
+                            category_kept[best_match_idx] = self._merge_pair(category_kept[best_match_idx], obj)
+                            category_kept[best_match_idx]["observed_in_views"].append(v_idx)
+                        else:
+                            obj_copy = dict(obj)
+                            obj_copy["observed_in_views"] = [v_idx]
+                            category_kept.append(obj_copy)
+
+                for k_obj in category_kept:
+                    k_obj.pop("_normalized_label", None)
+                    k_obj.pop("_pass", None)
+                    kept.append(k_obj)
+
+        for o in no_bbox:
+            o.pop("_normalized_label", None)
+            o.pop("_pass", None)
+            kept.append(o)
 
         logger.debug(
-            "NMS: %d → %d objects (%.0f%% deduplication)",
+            "Semantic Merger: %d -> %d objects (%.0f%% deduplication)",
             len(objects), len(kept),
             (1 - len(kept) / max(len(objects), 1)) * 100,
         )
@@ -340,23 +431,28 @@ def _normalise_ids(scene_dict: dict) -> dict:
 
 
 def _normalise_ids_list(objects: list[dict]) -> list[dict]:
-    """Assign or repair IDs so every object has a unique ``id`` field."""
+    """Assign or repair IDs so every object has a unique ``id`` field with standard 3-digit suffix (e.g. bed_001)."""
     seen_ids: dict[str, int] = {}
     normalised = []
 
     for obj in objects:
-        label = obj.get("label", "object").lower().replace(" ", "_")
-        base_id = obj.get("id") or label
-
-        # Strip existing suffix like "_02" to rebuild
-        # e.g., "sofa_01" → "sofa", "sofa" → "sofa"
-        if base_id.endswith(tuple(f"_{i:02d}" for i in range(1, 50))):
-            base_id = "_".join(base_id.split("_")[:-1])
-
+        name = (obj.get("name") or "").lower().replace(" ", "_")
+        category = (obj.get("category") or "").lower().replace(" ", "_")
+        fallback = name or category or "object"
+        
+        # Clean up existing ID to base
+        orig_id = obj.get("id") or fallback
+        base_id = orig_id
+        
+        # Strip trailing numeric suffixes (like _01, _001, etc.)
+        import re
+        base_id = re.sub(r'_\d+$', '', base_id)
+        
         count = seen_ids.get(base_id, 0) + 1
         seen_ids[base_id] = count
+        
         obj_copy = dict(obj)
-        obj_copy["id"] = f"{base_id}_{count:02d}"
+        obj_copy["id"] = f"{base_id}_{count:03d}"
         normalised.append(obj_copy)
 
     return normalised
