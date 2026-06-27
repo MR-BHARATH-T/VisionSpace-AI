@@ -934,13 +934,22 @@ class HuggingFaceProvider(BaseProvider):
 
     def _truncate_messages(self, messages: List[Dict[str, Any]], max_new_tokens: int) -> List[Dict[str, Any]]:
         """Iteratively drops middle dialog turns to keep conversation within context limits."""
-        limit = self.max_context_length - max_new_tokens - 100  # 100 token buffer
+        max_ctx = self.max_context_length
+        if self.task == "vision":
+            max_ctx = max(max_ctx, 32768)
+            
+        limit = max_ctx - max_new_tokens - 100  # 100 token buffer
         current_len = self.count_tokens(messages)
         if current_len <= limit:
             return messages
 
         logger.info("Context length exceeded (%d > %d). Truncating oldest message pairs.", current_len, limit)
         truncated = list(messages)
+        
+        # Keep at least system + user prompt for single-turn or basic dialogs
+        if len(truncated) <= 2:
+            return messages
+
         has_system = truncated[0]["role"] == "system" if truncated else False
 
         while self.count_tokens(truncated) > limit:
