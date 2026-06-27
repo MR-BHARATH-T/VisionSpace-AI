@@ -556,24 +556,80 @@ class VisionAgent:
         
         # Strip markdown frames if present
         if clean_text.startswith("```"):
-            clean_text = clean_text.split("```")[1]
-            if clean_text.startswith("json"):
-                clean_text = clean_text[4:]
+            lines = clean_text.splitlines()
+            if len(lines) > 1:
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].startswith("```"):
+                    lines = lines[:-1]
+                clean_text = "\n".join(lines).strip()
+            else:
+                clean_text = clean_text.split("```")[1]
+        
+        if clean_text.lower().startswith("json"):
+            clean_text = clean_text[4:].strip()
+            
         clean_text = clean_text.strip()
 
-        # Try to parse
+        # Try multiple parsing and repair strategies
+        data = None
+        
+        # Strategy 1: Direct parse
         try:
             data = json.loads(clean_text)
-        except json.JSONDecodeError as decode_err:
-            logger.warning("Initial JSON decode failed, attempting regex cleanup: %s", str(decode_err))
-            # Clean trailing commas or repair loose brackets if visible
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2: Remove trailing commas
+        if data is None:
             try:
-                # Basic comma clean
                 repaired = re.sub(r',\s*([\]}])', r'\1', clean_text)
                 data = json.loads(repaired)
             except Exception:
-                # Re-raise original error if regex clean fails
-                raise decode_err
+                pass
+
+        # Strategy 3: Balance braces and brackets (handles truncated JSON from max tokens limit)
+        if data is None:
+            try:
+                temp = clean_text.strip()
+                # Strip trailing incomplete characters
+                while temp and temp[-1] not in ("}", "]", '"', 'true', 'false', 'null', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'):
+                    temp = temp[:-1].strip()
+                if temp.endswith(","):
+                    temp = temp[:-1].strip()
+
+                stack = []
+                for char in temp:
+                    if char == "{":
+                        stack.append("}")
+                    elif char == "[":
+                        stack.append("]")
+                    elif char == "}" and stack and stack[-1] == "}":
+                        stack.pop()
+                    elif char == "]" and stack and stack[-1] == "]":
+                        stack.pop()
+                
+                repaired_balanced = temp
+                while stack:
+                    repaired_balanced += stack.pop()
+                
+                data = json.loads(repaired_balanced)
+            except Exception:
+                pass
+
+        # Strategy 4: Fallback to json-repair library if installed
+        if data is None:
+            try:
+                from json_repair import repair_json
+                repaired_lib = repair_json(clean_text, return_objects=True)
+                if isinstance(repaired_lib, dict):
+                    data = repaired_lib
+            except Exception:
+                pass
+
+        # If all repairs failed, run direct parse to raise the original JSONDecodeError for debugging
+        if data is None:
+            data = json.loads(clean_text)
 
         # Conform output payload structures
         schema_defaults = {
