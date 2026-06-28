@@ -114,17 +114,42 @@ class ObjectFusion:
                                 continue
                                 
                             score = 0.0
-                            if k_obj.get("name", "").lower() == obj.get("name", "").lower():
-                                score += 0.2
-                            if k_obj.get("material") == obj.get("material"):
-                                score += 0.2
-                            if k_obj.get("color") == obj.get("color"):
-                                score += 0.2
+                            name_k = k_obj.get("name", "").lower()
+                            name_o = obj.get("name", "").lower()
+                            cat_k = k_obj.get("category", "").lower()
+                            cat_o = obj.get("category", "").lower()
                             
-                            center_k = k_obj["bbox"]["x"] + k_obj["bbox"]["width"] / 2
-                            center_o = obj["bbox"]["x"] + obj["bbox"]["width"] / 2
-                            if (center_k < 400 and center_o < 400) or (center_k >= 400 and center_o >= 400):
-                                score += 0.4
+                            # 1. Semantic similarity (name and category word intersection)
+                            words_k = set(name_k.split())
+                            words_o = set(name_o.split())
+                            if name_k == name_o:
+                                score += 0.3
+                            elif words_k.intersection(words_o):
+                                score += 0.2
+                            elif cat_k == cat_o and cat_k != "":
+                                score += 0.15
+
+                            # 2. Material and color matching
+                            if k_obj.get("material") == obj.get("material") and k_obj.get("material") is not None:
+                                score += 0.15
+                            if k_obj.get("color") == obj.get("color") and k_obj.get("color") is not None:
+                                score += 0.15
+                            
+                            # 3. Position proximity (relative room-coordinate distance in cm)
+                            pos_k = k_obj.get("position")
+                            pos_o = obj.get("position")
+                            if pos_k and pos_o:
+                                dist = ((pos_k["x_cm"] - pos_o["x_cm"])**2 + (pos_k["y_cm"] - pos_o["y_cm"])**2)**0.5
+                                if dist < 120:
+                                    score += 0.5
+                                elif dist > 250:
+                                    score -= 0.5
+                            else:
+                                # Fallback to pixel bounding boxes centers
+                                center_k = k_obj["bbox"]["x"] + k_obj["bbox"]["width"] / 2
+                                center_o = obj["bbox"]["x"] + obj["bbox"]["width"] / 2
+                                if (center_k < 400 and center_o < 400) or (center_k >= 400 and center_o >= 400):
+                                    score += 0.3
                                 
                             if score > best_score:
                                 best_score = score

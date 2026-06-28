@@ -696,7 +696,25 @@ class VisionAgent:
     # -------------------------------------------------------------------------
     def _merge_multi_view(self, scenes: List[Dict[str, Any]], session_path: Optional[pathlib.Path] = None) -> Dict[str, Any]:
         """Combines multiple single-image scene graphs into one canonical room scene graph."""
-        # 1. Semantic Object Fusion & Deduplication
+        # 1. Project physical room coordinates for each individual viewpoint scene's objects first
+        r_size = scenes[0].get("room_understanding", {}).get("room_size", "medium").lower()
+        if r_size == "large":
+            room_width, room_depth = 500, 600
+        elif r_size == "small":
+            room_width, room_depth = 300, 400
+        else:
+            room_width, room_depth = 400, 500
+
+        mapper = RoomMapper()
+        for scene in scenes:
+            img_w = 800
+            meta = scene.get("image_metadata", [])
+            if meta and isinstance(meta, list) and isinstance(meta[0], dict):
+                img_w = meta[0].get("image_width") or 800
+            
+            mapper.map_single_scene_coordinates(scene, room_width, room_depth, img_w=img_w)
+
+        # 2. Semantic Object Fusion & Deduplication
         all_objects = []
         for i, scene in enumerate(scenes):
             objs = scene.get("objects", [])
@@ -712,18 +730,17 @@ class VisionAgent:
         # Base merge dictionary using the first scene
         base_scene = dict(scenes[0])
 
-        # 2. Structural Merger for doors/windows
+        # 3. Structural Merger for doors/windows
         struct_merger = StructuralMerger()
         doors, windows, furniture = struct_merger.merge_structures(scenes, merged_objects)
         base_scene["doors"] = doors
         base_scene["windows"] = windows
         base_scene["objects"] = furniture
 
-        # 3. Room Coordinates Mapping
-        mapper = RoomMapper()
+        # 4. Room Coordinates Mapping (Final update & Door/Window projections)
         room_w, room_d, room_h = mapper.map_room_coordinates(base_scene, doors, windows)
 
-        # 4. Occupancy Grid and Free Space Detection
+        # 5. Occupancy Grid and Free Space Detection
         detector = FreeSpaceDetector(resolution_cm=10)
         grid = detector.build_occupancy_grid(room_w, room_d, base_scene["objects"])
         empty_regions, free_polygons = detector.detect_free_regions(grid, room_w, room_d)

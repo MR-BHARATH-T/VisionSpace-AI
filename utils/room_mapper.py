@@ -82,7 +82,63 @@ class RoomMapper:
             obj["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), round(z_cm / 100.0, 2)]
             obj["rotation_deg"] = rotation_deg
 
+        # 4. Project doors
+        for door in doors:
+            bbox = door.get("bbox", {"x": 0, "y": 0, "width": 100, "height": 100})
+            cx = bbox["x"] + bbox["width"] / 2
+            cy = bbox["y"] + bbox["height"] / 2
+            
+            x_cm = int((cx / img_w) * room_width)
+            y_cm = int((cy / img_h) * room_depth)
+            
+            door["position"] = {"x_cm": x_cm, "y_cm": y_cm, "z_cm": 0}
+            door["room_position"] = {"x_cm": x_cm, "y_cm": y_cm, "rotation": 0}
+            door["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), 0.0]
+
+        # 5. Project windows
+        for window in windows:
+            bbox = window.get("bbox", {"x": 0, "y": 0, "width": 100, "height": 100})
+            cx = bbox["x"] + bbox["width"] / 2
+            cy = bbox["y"] + bbox["height"] / 2
+            
+            x_cm = int((cx / img_w) * room_width)
+            y_cm = int((cy / img_h) * room_depth)
+            
+            window["position"] = {"x_cm": x_cm, "y_cm": y_cm, "z_cm": 100}
+            window["room_position"] = {"x_cm": x_cm, "y_cm": y_cm, "rotation": 0}
+            window["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), 1.0]
+
         return room_width, room_depth, room_height
+
+    def map_single_scene_coordinates(
+        self, scene: Dict[str, Any], room_width: int, room_depth: int, img_w: int = 800, img_h: int = 600
+    ) -> None:
+        """Projects room coordinates for a single scene prior to fusion."""
+        for obj in scene.get("objects", []):
+            bbox = obj.get("bbox", {"x": 100, "y": 100, "width": 200, "height": 200})
+            cx = bbox["x"] + bbox["width"] / 2
+            cy = bbox["y"] + bbox["height"] / 2
+            
+            x_cm = int((cx / img_w) * room_width)
+            y_cm = int((cy / img_h) * room_depth)
+            
+            name_cat = f"{obj.get('name', '')} {obj.get('category', '')}".lower()
+            if "lamp" in name_cat or "sconce" in name_cat or "light" in name_cat:
+                z_cm = 75 if ("table" in name_cat or "desk" in name_cat) else 120
+            else:
+                z_cm = 0
+                
+            obj["position"] = {
+                "x_cm": x_cm,
+                "y_cm": y_cm,
+                "z_cm": z_cm
+            }
+            obj["room_position"] = {
+                "x_cm": x_cm,
+                "y_cm": y_cm,
+                "rotation": 0
+            }
+            obj["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), round(z_cm / 100.0, 2)]
 
     def generate_spatial_relationships(
         self, objects: List[Dict[str, Any]], doors: List[Dict[str, Any]], windows: List[Dict[str, Any]], room_width: int, room_depth: int, img_w: int = 800

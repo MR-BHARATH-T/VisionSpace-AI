@@ -733,7 +733,16 @@ def visualisation_prompt(
 # ---------------------------------------------------------------------------
 
 def _expert_system_prompt() -> str:
-    return _EXPERT_IDENTITY
+    return (
+        f"{_EXPERT_IDENTITY}\n\n"
+        "CRITICAL SYSTEM RULES:\n"
+        "1. DOOR AND WINDOW DETECTION: You must identify every visible door and window in the scene. "
+        "Do not ignore doors, glass doors, sliding doors, windows, skylights, or archways. You MUST populate "
+        "both the 'doors' and 'windows' lists in the JSON structure with their estimated dimensions and 2D bounding boxes.\n"
+        "2. SCENE BOUNDARIES & OBJECTS: Detect all core furniture items. Ensure that for each item "
+        "you provide high-confidence labels, styles, materials, and colors.\n"
+        "3. SPATIAL CONSISTENCY: Pay attention to depth, overlap, and relative directions (left_of, behind, against_wall, etc.)."
+    )
 
 
 def _summarise_objects(objects: list[dict], max_items: int = 20) -> str:
