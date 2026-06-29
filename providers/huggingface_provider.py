@@ -72,8 +72,8 @@ MODEL_REGISTRY = {
     },
     "reasoning": {
         "model": HF_TEXT_MODEL,
-        "loader": AutoModelForCausalLM,
-        "processor": None,
+        "loader": AutoModelForImageTextToText if "vl" in str(HF_TEXT_MODEL).lower() else AutoModelForCausalLM,
+        "processor": AutoProcessor if "vl" in str(HF_TEXT_MODEL).lower() else None,
     }
 }
 

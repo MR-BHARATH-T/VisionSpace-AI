@@ -7,7 +7,7 @@ MODELS = {
     },
 
     "text": {
-        "model": "Qwen/Qwen2.5-VL-7B-Instruct"
+        "model": "Qwen/Qwen3-VL-4B-Instruct"
     }
 
 }
