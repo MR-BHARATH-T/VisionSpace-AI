@@ -108,6 +108,7 @@ class RoomMapper:
             if "estimated_dimensions" not in obj or not obj["estimated_dimensions"]:
                 obj["estimated_dimensions"] = {"width_cm": 80, "depth_cm": 80, "height_cm": 80}
             obj["estimated_dimensions"]["dimension_confidence"] = dim_conf
+            obj["estimated_dimensions"]["measurement_source"] = "vision_estimation"
 
         # 4. Project doors
         for door in doors:
@@ -146,6 +147,7 @@ class RoomMapper:
             door["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), 0.0]
             door["rotation_deg"] = rotation_deg
             door["dimension_confidence"] = dim_conf
+            door["measurement_source"] = "vision_estimation"
 
         # 5. Project windows
         for window in windows:
@@ -184,6 +186,7 @@ class RoomMapper:
             window["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), 1.0]
             window["rotation_deg"] = rotation_deg
             window["dimension_confidence"] = dim_conf
+            window["measurement_source"] = "vision_estimation"
 
         return room_width, room_depth, room_height
 
@@ -240,6 +243,7 @@ class RoomMapper:
             if "estimated_dimensions" not in obj or not obj["estimated_dimensions"]:
                 obj["estimated_dimensions"] = {"width_cm": 80, "depth_cm": 80, "height_cm": 80}
             obj["estimated_dimensions"]["dimension_confidence"] = dim_conf
+            obj["estimated_dimensions"]["measurement_source"] = "vision_estimation"
 
     def generate_spatial_relationships(
         self, objects: List[Dict[str, Any]], doors: List[Dict[str, Any]], windows: List[Dict[str, Any]], room_width: int, room_depth: int, img_w: int = 800

@@ -95,6 +95,7 @@ def vision_analysis_prompt(
                 "estimated_width_cm": "number|null",
                 "estimated_height_cm": "number|null",
                 "dimension_confidence": "number|null (0.0-1.0)",
+                "measurement_source": "string (vision_estimation)",
                 "blocked": "boolean|null",
                 "room_position": {
                     "x_cm": "number|null",
@@ -119,6 +120,7 @@ def vision_analysis_prompt(
                 "estimated_width_cm": "number|null",
                 "estimated_height_cm": "number|null",
                 "dimension_confidence": "number|null (0.0-1.0)",
+                "measurement_source": "string (vision_estimation)",
                 "natural_light_contribution": "string (high|medium|low)",
                 "curtains": "boolean|null",
                 "blinds": "boolean|null",
@@ -188,7 +190,8 @@ def vision_analysis_prompt(
                     "width_cm": "number|null",
                     "depth_cm": "number|null",
                     "height_cm": "number|null",
-                    "dimension_confidence": "number|null (0.0-1.0)"
+                    "dimension_confidence": "number|null (0.0-1.0)",
+                    "measurement_source": "string (vision_estimation)"
                 },
                 "estimated_weight": "string (light|medium|heavy)|null",
                 "movable": "boolean|null",
@@ -238,7 +241,8 @@ def vision_analysis_prompt(
             "largest_rectangle": {
                 "width_cm": "number|null",
                 "depth_cm": "number|null"
-            }
+            },
+            "free_space_confidence": "number|null (0.0-1.0)"
         },
         "accessibility": {
             "walking_width_cm": "number|null",
