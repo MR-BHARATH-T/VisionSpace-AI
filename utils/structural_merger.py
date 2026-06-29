@@ -41,7 +41,10 @@ class StructuralMerger:
             subcategory = obj.get("subcategory", "").lower()
             combined = f"{name} {category} {subcategory}"
 
-            if "door" in combined:
+            is_door = any(k in combined for k in ["door", "doorway", "entry", "entrance", "gate", "portal", "exit", "threshold"])
+            is_window = any(k in combined for k in ["window", "glass", "pane", "curtain", "drape", "blind", "shutter", "sill", "skylight"])
+
+            if is_door:
                 d_id = obj["id"]
                 d = {
                     "id": d_id,
@@ -54,16 +57,16 @@ class StructuralMerger:
                 }
                 if d_id not in [x.get("id") for x in doors_list]:
                     doors_list.append(d)
-            elif "window" in combined:
+            elif is_window:
                 w_id = obj["id"]
                 w = {
                     "id": w_id,
                     "type": obj.get("subcategory") or "sliding",
                     "estimated_width_cm": obj.get("estimated_dimensions", {}).get("width_cm") or 120.0,
                     "estimated_height_cm": obj.get("estimated_dimensions", {}).get("height_cm") or 120.0,
-                    "natural_light_contribution": "high" if "exposure" in str(obj) else "medium",
-                    "curtains": True if "curtain" in str(obj) else False,
-                    "blinds": False,
+                    "natural_light_contribution": "high" if any(k in str(obj) for k in ["exposure", "light", "sun"]) else "medium",
+                    "curtains": True if any(k in str(obj) for k in ["curtain", "drape", "curtains", "drapes"]) else False,
+                    "blinds": True if any(k in str(obj) for k in ["blind", "blinds", "shutter", "shutters"]) else False,
                     "glass_type": "clear_glass",
                     "bbox": obj.get("bbox", {"x": 0, "y": 0, "width": 100, "height": 100})
                 }

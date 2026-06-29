@@ -87,6 +87,40 @@ def vision_analysis_prompt(
             "floor_finish": "string|null",
             "interior_theme": "string|null"
         },
+        "doors": [
+            {
+                "id": "string",
+                "type": "string (swing|sliding|folding|other)",
+                "opens": "string (inside|outside|unknown)",
+                "estimated_width_cm": "number|null",
+                "estimated_height_cm": "number|null",
+                "blocked": "boolean|null",
+                "bbox": {
+                    "x": "number",
+                    "y": "number",
+                    "width": "number",
+                    "height": "number"
+                }
+            }
+        ],
+        "windows": [
+            {
+                "id": "string",
+                "type": "string",
+                "estimated_width_cm": "number|null",
+                "estimated_height_cm": "number|null",
+                "natural_light_contribution": "string (high|medium|low)",
+                "curtains": "boolean|null",
+                "blinds": "boolean|null",
+                "glass_type": "string|null",
+                "bbox": {
+                    "x": "number",
+                    "y": "number",
+                    "width": "number",
+                    "height": "number"
+                }
+            }
+        ],
         "image_metadata": [
             {
                 "image_index": "integer",
@@ -161,40 +195,6 @@ def vision_analysis_prompt(
                 "object1": "string (object ID)",
                 "object2": "string (object ID)",
                 "relation": "string (left_of|right_of|above|below|touching|overlapping|against_wall|near_window|near_door|blocking|in_front_of|behind)"
-            }
-        ],
-        "doors": [
-            {
-                "id": "string",
-                "type": "string (swing|sliding|folding|other)",
-                "opens": "string (inside|outside|unknown)",
-                "estimated_width_cm": "number|null",
-                "estimated_height_cm": "number|null",
-                "blocked": "boolean|null",
-                "bbox": {
-                    "x": "number",
-                    "y": "number",
-                    "width": "number",
-                    "height": "number"
-                }
-            }
-        ],
-        "windows": [
-            {
-                "id": "string",
-                "type": "string",
-                "estimated_width_cm": "number|null",
-                "estimated_height_cm": "number|null",
-                "natural_light_contribution": "string (high|medium|low)",
-                "curtains": "boolean|null",
-                "blinds": "boolean|null",
-                "glass_type": "string|null",
-                "bbox": {
-                    "x": "number",
-                    "y": "number",
-                    "width": "number",
-                    "height": "number"
-                }
             }
         ],
         "lighting_analysis": {

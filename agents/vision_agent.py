@@ -392,9 +392,9 @@ class VisionAgent:
         merged_output["segmentation_masks"] = []
         merged_output["placement_regions"] = merged_output.get("candidate_furniture_locations", [])
         
-        # Populate free space polygon schemas from floor analyses
-        free_space = merged_output.get("free_space_analysis", {})
-        merged_output["free_space_polygons"] = merged_output.get("walking_paths", [])
+        # Populate free space polygon schemas from floor analyses (fallback only)
+        if "free_space_polygons" not in merged_output or not merged_output["free_space_polygons"]:
+            merged_output["free_space_polygons"] = merged_output.get("walking_paths", [])
 
         t_merge_duration = time.perf_counter() - t_merge_start
 
