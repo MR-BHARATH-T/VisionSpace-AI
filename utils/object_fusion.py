@@ -78,12 +78,17 @@ class ObjectFusion:
                 canonical = dict(group[0])
                 canonical["seen_in_views"] = [canonical.get("_view_source", 0)]
                 
+                match_scores = []
                 for other in group[1:]:
                     canonical = self.merge_pair(canonical, other)
                     view_idx = other.get("_view_source", 0)
                     if view_idx not in canonical["seen_in_views"]:
                         canonical["seen_in_views"].append(view_idx)
-                
+                    match_scores.append(0.85) # High confidence for singleton class merger
+
+                canonical["merged_from_images"] = sorted(canonical.get("seen_in_views", []))
+                canonical["merge_confidence"] = round(sum(match_scores) / len(match_scores), 2) if match_scores else 1.0
+                canonical.pop("seen_in_views", None)
                 canonical.pop("_normalized_label", None)
                 canonical.pop("_view_source", None)
                 kept.append(canonical)
@@ -101,6 +106,7 @@ class ObjectFusion:
                 for obj in by_view[view_ids[0]]:
                     obj_copy = dict(obj)
                     obj_copy["seen_in_views"] = [view_ids[0]]
+                    obj_copy["_match_scores"] = []
                     category_kept.append(obj_copy)
 
                 for v_idx in view_ids[1:]:
@@ -158,17 +164,25 @@ class ObjectFusion:
                         if best_score >= 0.5 and best_match_idx != -1:
                             category_kept[best_match_idx] = self.merge_pair(category_kept[best_match_idx], obj)
                             category_kept[best_match_idx]["seen_in_views"].append(v_idx)
+                            category_kept[best_match_idx]["_match_scores"].append(best_score)
                         else:
                             obj_copy = dict(obj)
                             obj_copy["seen_in_views"] = [v_idx]
+                            obj_copy["_match_scores"] = []
                             category_kept.append(obj_copy)
 
                 for k_obj in category_kept:
+                    k_obj["merged_from_images"] = sorted(k_obj.get("seen_in_views", []))
+                    scores = k_obj.pop("_match_scores", [])
+                    k_obj["merge_confidence"] = round(sum(scores) / len(scores), 2) if scores else 1.0
+                    k_obj.pop("seen_in_views", None)
                     k_obj.pop("_normalized_label", None)
                     k_obj.pop("_view_source", None)
                     kept.append(k_obj)
 
         for o in no_bbox:
+            o["merged_from_images"] = [o.get("_view_source", 0)]
+            o["merge_confidence"] = 1.0
             o.pop("_normalized_label", None)
             o.pop("_view_source", None)
             kept.append(o)

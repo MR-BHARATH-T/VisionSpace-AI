@@ -46,6 +46,7 @@ class RoomMapper:
                 x_cm = int(model_pos["x_cm"])
                 y_cm = int(model_pos["y_cm"])
                 rotation_deg = int(model_pos.get("rotation") or obj.get("rotation_deg") or 0)
+                pos_source = "vision_estimation"
             else:
                 x_cm = int((cx / img_w) * room_width)
                 y_cm = int((cy / img_h) * room_depth)
@@ -57,6 +58,11 @@ class RoomMapper:
                     rotation_deg = 0
                 else:
                     rotation_deg = 90 if "desk" in obj.get("name", "").lower() or "dresser" in obj.get("name", "").lower() else 0
+                pos_source = "relative_scale_estimation"
+
+            # Clamping coordinates within physical walls
+            x_cm = max(10, min(room_width - 10, x_cm))
+            y_cm = max(10, min(room_depth - 10, y_cm))
 
             # Override with direct VLM rotation_deg if present
             model_rot = obj.get("rotation_deg")
@@ -79,6 +85,11 @@ class RoomMapper:
             else:
                 z_cm = 0
 
+            # Calculate confidences
+            det_conf = float(obj.get("confidence", 0.7))
+            dim_conf = round(det_conf * 0.9, 2)
+            depth_conf = round(1.0 - (y_cm / room_depth) * 0.5, 2)
+
             obj["position"] = {
                 "x_cm": x_cm,
                 "y_cm": y_cm,
@@ -87,10 +98,16 @@ class RoomMapper:
             obj["room_position"] = {
                 "x_cm": x_cm,
                 "y_cm": y_cm,
-                "rotation": rotation_deg
+                "rotation": rotation_deg,
+                "depth_confidence": depth_conf,
+                "position_source": pos_source
             }
             obj["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), round(z_cm / 100.0, 2)]
             obj["rotation_deg"] = rotation_deg
+
+            if "estimated_dimensions" not in obj or not obj["estimated_dimensions"]:
+                obj["estimated_dimensions"] = {"width_cm": 80, "depth_cm": 80, "height_cm": 80}
+            obj["estimated_dimensions"]["dimension_confidence"] = dim_conf
 
         # 4. Project doors
         for door in doors:
@@ -103,15 +120,32 @@ class RoomMapper:
                 x_cm = int(model_pos["x_cm"])
                 y_cm = int(model_pos["y_cm"])
                 rotation_deg = int(model_pos.get("rotation") or door.get("rotation_deg") or 0)
+                pos_source = "vision_estimation"
             else:
                 x_cm = int((cx / img_w) * room_width)
                 y_cm = int((cy / img_h) * room_depth)
                 rotation_deg = int(door.get("rotation_deg") or 0)
+                pos_source = "relative_scale_estimation"
+
+            # Clamping
+            x_cm = max(10, min(room_width - 10, x_cm))
+            y_cm = max(10, min(room_depth - 10, y_cm))
+            
+            det_conf = float(door.get("confidence", 0.7))
+            dim_conf = round(det_conf * 0.9, 2)
+            depth_conf = round(1.0 - (y_cm / room_depth) * 0.5, 2)
             
             door["position"] = {"x_cm": x_cm, "y_cm": y_cm, "z_cm": 0}
-            door["room_position"] = {"x_cm": x_cm, "y_cm": y_cm, "rotation": rotation_deg}
+            door["room_position"] = {
+                "x_cm": x_cm,
+                "y_cm": y_cm,
+                "rotation": rotation_deg,
+                "depth_confidence": depth_conf,
+                "position_source": pos_source
+            }
             door["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), 0.0]
             door["rotation_deg"] = rotation_deg
+            door["dimension_confidence"] = dim_conf
 
         # 5. Project windows
         for window in windows:
@@ -124,15 +158,32 @@ class RoomMapper:
                 x_cm = int(model_pos["x_cm"])
                 y_cm = int(model_pos["y_cm"])
                 rotation_deg = int(model_pos.get("rotation") or window.get("rotation_deg") or 0)
+                pos_source = "vision_estimation"
             else:
                 x_cm = int((cx / img_w) * room_width)
                 y_cm = int((cy / img_h) * room_depth)
                 rotation_deg = int(window.get("rotation_deg") or 0)
+                pos_source = "relative_scale_estimation"
+
+            # Clamping
+            x_cm = max(10, min(room_width - 10, x_cm))
+            y_cm = max(10, min(room_depth - 10, y_cm))
+            
+            det_conf = float(window.get("confidence", 0.7))
+            dim_conf = round(det_conf * 0.9, 2)
+            depth_conf = round(1.0 - (y_cm / room_depth) * 0.5, 2)
             
             window["position"] = {"x_cm": x_cm, "y_cm": y_cm, "z_cm": 100}
-            window["room_position"] = {"x_cm": x_cm, "y_cm": y_cm, "rotation": rotation_deg}
+            window["room_position"] = {
+                "x_cm": x_cm,
+                "y_cm": y_cm,
+                "rotation": rotation_deg,
+                "depth_confidence": depth_conf,
+                "position_source": pos_source
+            }
             window["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), 1.0]
             window["rotation_deg"] = rotation_deg
+            window["dimension_confidence"] = dim_conf
 
         return room_width, room_depth, room_height
 
@@ -150,10 +201,16 @@ class RoomMapper:
                 x_cm = int(model_pos["x_cm"])
                 y_cm = int(model_pos["y_cm"])
                 rotation_deg = int(model_pos.get("rotation") or obj.get("rotation_deg") or 0)
+                pos_source = "vision_estimation"
             else:
                 x_cm = int((cx / img_w) * room_width)
                 y_cm = int((cy / img_h) * room_depth)
                 rotation_deg = int(obj.get("rotation_deg") or 0)
+                pos_source = "relative_scale_estimation"
+
+            # Clamping
+            x_cm = max(10, min(room_width - 10, x_cm))
+            y_cm = max(10, min(room_depth - 10, y_cm))
                 
             name_cat = f"{obj.get('name', '')} {obj.get('category', '')}".lower()
             if "lamp" in name_cat or "sconce" in name_cat or "light" in name_cat:
@@ -161,6 +218,10 @@ class RoomMapper:
             else:
                 z_cm = 0
                 
+            det_conf = float(obj.get("confidence", 0.7))
+            dim_conf = round(det_conf * 0.9, 2)
+            depth_conf = round(1.0 - (y_cm / room_depth) * 0.5, 2)
+
             obj["position"] = {
                 "x_cm": x_cm,
                 "y_cm": y_cm,
@@ -169,10 +230,16 @@ class RoomMapper:
             obj["room_position"] = {
                 "x_cm": x_cm,
                 "y_cm": y_cm,
-                "rotation": rotation_deg
+                "rotation": rotation_deg,
+                "depth_confidence": depth_conf,
+                "position_source": pos_source
             }
             obj["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), round(z_cm / 100.0, 2)]
             obj["rotation_deg"] = rotation_deg
+            
+            if "estimated_dimensions" not in obj or not obj["estimated_dimensions"]:
+                obj["estimated_dimensions"] = {"width_cm": 80, "depth_cm": 80, "height_cm": 80}
+            obj["estimated_dimensions"]["dimension_confidence"] = dim_conf
 
     def generate_spatial_relationships(
         self, objects: List[Dict[str, Any]], doors: List[Dict[str, Any]], windows: List[Dict[str, Any]], room_width: int, room_depth: int, img_w: int = 800

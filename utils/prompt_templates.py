@@ -94,11 +94,14 @@ def vision_analysis_prompt(
                 "opens": "string (inside|outside|unknown)",
                 "estimated_width_cm": "number|null",
                 "estimated_height_cm": "number|null",
+                "dimension_confidence": "number|null (0.0-1.0)",
                 "blocked": "boolean|null",
                 "room_position": {
                     "x_cm": "number|null",
                     "y_cm": "number|null",
-                    "rotation": "integer|null"
+                    "rotation": "integer|null",
+                    "depth_confidence": "number|null (0.0-1.0)",
+                    "position_source": "string (vision_estimation|relative_scale_estimation)"
                 },
                 "rotation_deg": "integer|null",
                 "bbox": {
@@ -115,6 +118,7 @@ def vision_analysis_prompt(
                 "type": "string",
                 "estimated_width_cm": "number|null",
                 "estimated_height_cm": "number|null",
+                "dimension_confidence": "number|null (0.0-1.0)",
                 "natural_light_contribution": "string (high|medium|low)",
                 "curtains": "boolean|null",
                 "blinds": "boolean|null",
@@ -122,7 +126,9 @@ def vision_analysis_prompt(
                 "room_position": {
                     "x_cm": "number|null",
                     "y_cm": "number|null",
-                    "rotation": "integer|null"
+                    "rotation": "integer|null",
+                    "depth_confidence": "number|null (0.0-1.0)",
+                    "position_source": "string (vision_estimation|relative_scale_estimation)"
                 },
                 "rotation_deg": "integer|null",
                 "bbox": {
@@ -181,7 +187,8 @@ def vision_analysis_prompt(
                 "estimated_dimensions": {
                     "width_cm": "number|null",
                     "depth_cm": "number|null",
-                    "height_cm": "number|null"
+                    "height_cm": "number|null",
+                    "dimension_confidence": "number|null (0.0-1.0)"
                 },
                 "estimated_weight": "string (light|medium|heavy)|null",
                 "movable": "boolean|null",
@@ -189,7 +196,9 @@ def vision_analysis_prompt(
                 "room_position": {
                     "x_cm": "number|null",
                     "y_cm": "number|null",
-                    "rotation": "integer|null"
+                    "rotation": "integer|null",
+                    "depth_confidence": "number|null (0.0-1.0)",
+                    "position_source": "string (vision_estimation|relative_scale_estimation)"
                 },
                 "rotation_deg": "integer|null",
                 "bbox": {
