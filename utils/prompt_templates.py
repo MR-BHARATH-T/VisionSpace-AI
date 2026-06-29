@@ -309,7 +309,16 @@ def vision_analysis_prompt(
             "understanding. Identify the room functions, style, image details, floors/walls/ceilings, "
             "all furniture/objects (unique IDs, bboxes, dimensions, visibility, occlusion, styles), "
             "spatial relationships between objects, structural features (doors, windows), "
-            "lighting qualities, usability clearances, accessible paths, empty regions, and hazards."
+            "lighting qualities, usability clearances, accessible paths, empty regions, and hazards.\n\n"
+            "CRITICAL OBJECT RECALL GUIDELINE:\n"
+            "You MUST inspect the room meticulously and detect all visible fine-grained items, including but "
+            "not limited to: rugs, lamps, wall shelves, paintings, switches, sockets, curtains, and ceiling fans. "
+            "These details are vital for advanced downstream design recommendations.\n\n"
+            "CRITICAL ORIENTATION GUIDELINE:\n"
+            "For every furniture object, door, and window, estimate its precise orientation: rotation_deg "
+            "(0, 90, 180, 270) representing facing direction (e.g. bed headboard facing direction, desk seat facing side, "
+            "cabinet/wardrobe opening door side, TV screen facing direction). Use these angles: 0 degrees for front facing South, "
+            "90 degrees for front facing West, 180 degrees for front facing North, 270 degrees for front facing East."
         )),
         _section("OUTPUT FORMAT", json.dumps(schema, indent=2)),
         _JSON_REMINDER,

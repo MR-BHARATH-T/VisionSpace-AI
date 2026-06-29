@@ -246,6 +246,72 @@ class SpatialAgent:
                         "description": f"Blocked Glazing: {obj_id} overlaps with window area of {win_id}."
                     })
 
+        # C. Check cabinet opening, chair pull-out, and drawer extension clearance zones
+        for obj in objects:
+            cat = str(obj.get("category", "")).lower()
+            subcat = str(obj.get("subcategory", "")).lower()
+            name = str(obj.get("name", "")).lower()
+
+            depth_needed = 0.0
+            label = ""
+            if any(x in cat or x in subcat or x in name for x in ("wardrobe", "cabinet", "cupboard", "closet")):
+                depth_needed = 60.0
+                label = "wardrobe door swing swing-out zone"
+            elif any(x in cat or x in subcat or x in name for x in ("desk", "table")):
+                depth_needed = 75.0
+                label = "desk chair pull-out zone"
+            elif any(x in cat or x in subcat or x in name for x in ("chest", "dresser", "sideboard", "drawers")):
+                depth_needed = 50.0
+                label = "dresser drawer extension zone"
+
+            if depth_needed == 0.0:
+                continue
+
+            pos = obj.get("position", obj.get("room_position", {"x_cm": 0, "y_cm": 0}))
+            cx = float(pos.get("x_cm") or 0.0)
+            cy = float(pos.get("y_cm") or 0.0)
+            rot = int(obj.get("rotation_deg") or obj.get("room_position", {}).get("rotation") or 0)
+
+            dims = obj.get("estimated_dimensions") or {}
+            w = float(dims.get("width_cm") or obj.get("estimated_width_cm") or 80.0)
+            d = float(dims.get("depth_cm") or obj.get("estimated_height_cm") or 80.0)
+
+            w_eff = d if rot in (90, 270) else w
+            d_eff = w if rot in (90, 270) else d
+
+            if rot == 0:
+                env_min_x = cx - w_eff/2
+                env_max_x = cx + w_eff/2
+                env_min_y = cy + d_eff/2
+                env_max_y = cy + d_eff/2 + depth_needed
+            elif rot == 90:
+                env_min_x = cx - w_eff/2 - depth_needed
+                env_max_x = cx - w_eff/2
+                env_min_y = cy - d_eff/2
+                env_max_y = cy + d_eff/2
+            elif rot == 180:
+                env_min_x = cx - w_eff/2
+                env_max_x = cx + w_eff/2
+                env_min_y = cy - d_eff/2 - depth_needed
+                env_max_y = cy - d_eff/2
+            else: # 270
+                env_min_x = cx + w_eff/2
+                env_max_x = cx + w_eff/2 + depth_needed
+                env_min_y = cy - d_eff/2
+                env_max_y = cy + d_eff/2
+
+            for other in objects:
+                if other.get("id") == obj.get("id"):
+                    continue
+                min_x2, max_x2, min_y2, max_y2, other_id = get_aabb(other)
+                if (env_max_x - 2 > min_x2 and env_min_x + 2 < max_x2) and (env_max_y - 2 > min_y2 and env_min_y + 2 < max_y2):
+                    collisions.append({
+                        "object1": obj.get("id") or obj.get("name", "Unknown"),
+                        "object2": other_id,
+                        "severity": "high",
+                        "description": f"Blocked Opening/Clearance: {other_id} blocks the {label} of {obj.get('id')}."
+                    })
+
         return collisions
 
     # -------------------------------------------------------------------------
@@ -399,18 +465,33 @@ class SpatialAgent:
                 coords = [{"x": p[0] * res + res//2, "y": p[1] * res + res//2} for p in path]
                 length = int(len(path) * res)
                 
-                # Check for bottlenecks (cells adjacent to obstacles)
+                # Check for bottlenecks & wheelchair accessibility (90cm clearance width)
                 bottlenecks = []
+                wheelchair_accessible = True
+                search_radius = int(45 / res)
+                
                 for p in path:
-                    for dx, dy in [(-1,0),(1,0),(0,-1),(0,1)]:
-                        nx, ny = p[0] + dx, p[1] + dy
-                        if 0 <= nx < grid_w and 0 <= ny < grid_d:
-                            if cells[ny][nx] == 1 and "narrow_clearance" not in bottlenecks:
-                                bottlenecks.append("narrow_clearance")
+                    cell_clearance = 999.0
+                    for dy in range(-search_radius, search_radius + 1):
+                        for dx in range(-search_radius, search_radius + 1):
+                            nx, ny = p[0] + dx, p[1] + dy
+                            if 0 <= nx < grid_w and 0 <= ny < grid_d:
+                                if cells[ny][nx] == 1:
+                                    dist_cm = math.sqrt(dx**2 + dy**2) * res
+                                    if dist_cm < cell_clearance:
+                                        cell_clearance = dist_cm
+                    
+                    if cell_clearance < 45.0:
+                        wheelchair_accessible = False
+                        if "narrow_clearance" not in bottlenecks:
+                            bottlenecks.append("narrow_clearance")
+                        if "wheelchair_inaccessible" not in bottlenecks:
+                            bottlenecks.append("wheelchair_inaccessible")
                 
                 paths.append({
                     "name": name,
                     "walkable": True,
+                    "wheelchair_accessible": wheelchair_accessible,
                     "length_cm": length,
                     "bottlenecks": bottlenecks,
                     "coordinates": coords
