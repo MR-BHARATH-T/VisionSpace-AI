@@ -41,20 +41,31 @@ class RoomMapper:
             cx = bbox["x"] + bbox["width"] / 2
             cy = bbox["y"] + bbox["height"] / 2
 
-            # Compute relative coordinate offsets (0 to width, 0 to depth)
-            x_cm = int((cx / img_w) * room_width)
-            y_cm = int((cy / img_h) * room_depth)
-
-            # Estimate rotation based on subcategory or heuristic
-            orient = str(obj.get("orientation", "")).lower()
-            if "vertical" in orient or "north" in orient or "south" in orient:
-                rotation_deg = 90
-            elif "east" in orient or "west" in orient:
-                rotation_deg = 0
+            model_pos = obj.get("room_position")
+            if isinstance(model_pos, dict) and model_pos.get("x_cm") is not None and model_pos.get("y_cm") is not None:
+                x_cm = int(model_pos["x_cm"])
+                y_cm = int(model_pos["y_cm"])
+                rotation_deg = int(model_pos.get("rotation") or obj.get("rotation_deg") or 0)
             else:
-                rotation_deg = 90 if "desk" in obj.get("name", "").lower() or "dresser" in obj.get("name", "").lower() else 0
+                x_cm = int((cx / img_w) * room_width)
+                y_cm = int((cy / img_h) * room_depth)
 
-            # Estimate z height based on item type
+                orient = str(obj.get("orientation", "")).lower()
+                if "vertical" in orient or "north" in orient or "south" in orient:
+                    rotation_deg = 90
+                elif "east" in orient or "west" in orient:
+                    rotation_deg = 0
+                else:
+                    rotation_deg = 90 if "desk" in obj.get("name", "").lower() or "dresser" in obj.get("name", "").lower() else 0
+
+            # Override with direct VLM rotation_deg if present
+            model_rot = obj.get("rotation_deg")
+            if model_rot is not None:
+                try:
+                    rotation_deg = int(model_rot)
+                except ValueError:
+                    pass
+
             name_cat = f"{obj.get('name', '')} {obj.get('category', '')}".lower()
             if "lamp" in name_cat or "sconce" in name_cat or "light" in name_cat:
                 if "table" in name_cat or "desk" in name_cat:
@@ -68,7 +79,6 @@ class RoomMapper:
             else:
                 z_cm = 0
 
-            # Set schemas (compatible with both room_position and room_coordinates specs)
             obj["position"] = {
                 "x_cm": x_cm,
                 "y_cm": y_cm,
@@ -88,12 +98,20 @@ class RoomMapper:
             cx = bbox["x"] + bbox["width"] / 2
             cy = bbox["y"] + bbox["height"] / 2
             
-            x_cm = int((cx / img_w) * room_width)
-            y_cm = int((cy / img_h) * room_depth)
+            model_pos = door.get("room_position")
+            if isinstance(model_pos, dict) and model_pos.get("x_cm") is not None and model_pos.get("y_cm") is not None:
+                x_cm = int(model_pos["x_cm"])
+                y_cm = int(model_pos["y_cm"])
+                rotation_deg = int(model_pos.get("rotation") or door.get("rotation_deg") or 0)
+            else:
+                x_cm = int((cx / img_w) * room_width)
+                y_cm = int((cy / img_h) * room_depth)
+                rotation_deg = int(door.get("rotation_deg") or 0)
             
             door["position"] = {"x_cm": x_cm, "y_cm": y_cm, "z_cm": 0}
-            door["room_position"] = {"x_cm": x_cm, "y_cm": y_cm, "rotation": 0}
+            door["room_position"] = {"x_cm": x_cm, "y_cm": y_cm, "rotation": rotation_deg}
             door["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), 0.0]
+            door["rotation_deg"] = rotation_deg
 
         # 5. Project windows
         for window in windows:
@@ -101,12 +119,20 @@ class RoomMapper:
             cx = bbox["x"] + bbox["width"] / 2
             cy = bbox["y"] + bbox["height"] / 2
             
-            x_cm = int((cx / img_w) * room_width)
-            y_cm = int((cy / img_h) * room_depth)
+            model_pos = window.get("room_position")
+            if isinstance(model_pos, dict) and model_pos.get("x_cm") is not None and model_pos.get("y_cm") is not None:
+                x_cm = int(model_pos["x_cm"])
+                y_cm = int(model_pos["y_cm"])
+                rotation_deg = int(model_pos.get("rotation") or window.get("rotation_deg") or 0)
+            else:
+                x_cm = int((cx / img_w) * room_width)
+                y_cm = int((cy / img_h) * room_depth)
+                rotation_deg = int(window.get("rotation_deg") or 0)
             
             window["position"] = {"x_cm": x_cm, "y_cm": y_cm, "z_cm": 100}
-            window["room_position"] = {"x_cm": x_cm, "y_cm": y_cm, "rotation": 0}
+            window["room_position"] = {"x_cm": x_cm, "y_cm": y_cm, "rotation": rotation_deg}
             window["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), 1.0]
+            window["rotation_deg"] = rotation_deg
 
         return room_width, room_depth, room_height
 
@@ -119,9 +145,16 @@ class RoomMapper:
             cx = bbox["x"] + bbox["width"] / 2
             cy = bbox["y"] + bbox["height"] / 2
             
-            x_cm = int((cx / img_w) * room_width)
-            y_cm = int((cy / img_h) * room_depth)
-            
+            model_pos = obj.get("room_position")
+            if isinstance(model_pos, dict) and model_pos.get("x_cm") is not None and model_pos.get("y_cm") is not None:
+                x_cm = int(model_pos["x_cm"])
+                y_cm = int(model_pos["y_cm"])
+                rotation_deg = int(model_pos.get("rotation") or obj.get("rotation_deg") or 0)
+            else:
+                x_cm = int((cx / img_w) * room_width)
+                y_cm = int((cy / img_h) * room_depth)
+                rotation_deg = int(obj.get("rotation_deg") or 0)
+                
             name_cat = f"{obj.get('name', '')} {obj.get('category', '')}".lower()
             if "lamp" in name_cat or "sconce" in name_cat or "light" in name_cat:
                 z_cm = 75 if ("table" in name_cat or "desk" in name_cat) else 120
@@ -136,9 +169,10 @@ class RoomMapper:
             obj["room_position"] = {
                 "x_cm": x_cm,
                 "y_cm": y_cm,
-                "rotation": 0
+                "rotation": rotation_deg
             }
             obj["room_coordinates"] = [round(x_cm / 100.0, 2), round(y_cm / 100.0, 2), round(z_cm / 100.0, 2)]
+            obj["rotation_deg"] = rotation_deg
 
     def generate_spatial_relationships(
         self, objects: List[Dict[str, Any]], doors: List[Dict[str, Any]], windows: List[Dict[str, Any]], room_width: int, room_depth: int, img_w: int = 800

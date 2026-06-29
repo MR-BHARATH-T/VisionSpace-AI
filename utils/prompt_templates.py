@@ -95,6 +95,12 @@ def vision_analysis_prompt(
                 "estimated_width_cm": "number|null",
                 "estimated_height_cm": "number|null",
                 "blocked": "boolean|null",
+                "room_position": {
+                    "x_cm": "number|null",
+                    "y_cm": "number|null",
+                    "rotation": "integer|null"
+                },
+                "rotation_deg": "integer|null",
                 "bbox": {
                     "x": "number",
                     "y": "number",
@@ -113,6 +119,12 @@ def vision_analysis_prompt(
                 "curtains": "boolean|null",
                 "blinds": "boolean|null",
                 "glass_type": "string|null",
+                "room_position": {
+                    "x_cm": "number|null",
+                    "y_cm": "number|null",
+                    "rotation": "integer|null"
+                },
+                "rotation_deg": "integer|null",
                 "bbox": {
                     "x": "number",
                     "y": "number",
@@ -174,6 +186,12 @@ def vision_analysis_prompt(
                 "estimated_weight": "string (light|medium|heavy)|null",
                 "movable": "boolean|null",
                 "wall_aligned": "boolean|null",
+                "room_position": {
+                    "x_cm": "number|null",
+                    "y_cm": "number|null",
+                    "rotation": "integer|null"
+                },
+                "rotation_deg": "integer|null",
                 "bbox": {
                     "x": "number",
                     "y": "number",
@@ -740,8 +758,13 @@ def _expert_system_prompt() -> str:
         "Do not ignore doors, glass doors, sliding doors, windows, skylights, or archways. You MUST populate "
         "both the 'doors' and 'windows' lists in the JSON structure with their estimated dimensions and 2D bounding boxes.\n"
         "2. SCENE BOUNDARIES & OBJECTS: Detect all core furniture items. Ensure that for each item "
-        "you provide high-confidence labels, styles, materials, and colors.\n"
-        "3. SPATIAL CONSISTENCY: Pay attention to depth, overlap, and relative directions (left_of, behind, against_wall, etc.)."
+        "you provide high-confidence labels, styles, materials, colors, and estimated dimensions.\n"
+        "3. SPATIAL POSITIONING & ROTATION: You must estimate relative physical room coordinates "
+        "under 'room_position' (x_cm, y_cm relative to the room floor corner) and 'rotation_deg' (estimated rotation in degrees, e.g. 0, 90, 180, 270) based on room cues.\n"
+        "4. MULTI-VIEW CONSISTENCY: If analyzing multiple viewpoint images of the same room, understand "
+        "that the same physical object will appear from different camera angles. Ensure that when you identify objects, "
+        "you represent the physical room's layout. Keep description details, colors, styles, and IDs consistent "
+        "across images so the post-processing engine can merge them cleanly into one canonical object."
     )
 
 
