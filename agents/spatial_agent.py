@@ -625,8 +625,10 @@ class SpatialAgent:
 
         return fused
 
-    def _validate_and_repair_json(self, raw_text: str) -> Dict[str, Any]:
+    def _validate_and_repair_json(self, raw_text: Optional[str]) -> Dict[str, Any]:
         """Helper to repair and clean JSON response structures."""
+        if not raw_text:
+            return {}
         clean_text = raw_text.strip()
         
         # Remove code blocks if present

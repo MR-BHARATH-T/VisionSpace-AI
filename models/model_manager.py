@@ -294,7 +294,15 @@ class ModelManager:
     # =========================================================================
     def _get_provider(self, provider_name: str, task: Optional[str] = None) -> Any:
         """Retrieves or instantiates provider implementation wrapper."""
-        key = f"{provider_name}:{task or 'reasoning'}"
+        resolved_task = task or 'reasoning'
+        meta = MODEL_REGISTRY.get(resolved_task, {})
+        model_name = meta.get("model_name")
+        
+        # Share provider if task uses HF_VISION_MODEL
+        if provider_name == "huggingface" and model_name == HF_VISION_MODEL:
+            resolved_task = "vision"
+            
+        key = f"{provider_name}:{resolved_task}"
         if key not in self.providers:
             with self._init_lock:
                 if key not in self.providers:
