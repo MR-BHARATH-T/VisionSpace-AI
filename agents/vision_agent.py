@@ -741,7 +741,7 @@ class VisionAgent:
         room_w, room_d, room_h = mapper.map_room_coordinates(base_scene, doors, windows)
 
         # 5. Occupancy Grid and Free Space Detection
-        detector = FreeSpaceDetector(resolution_cm=10)
+        detector = FreeSpaceDetector(resolution_cm=5)
         grid = detector.build_occupancy_grid(room_w, room_d, base_scene["objects"])
         empty_regions, free_polygons = detector.detect_free_regions(grid, room_w, room_d)
         
@@ -753,7 +753,8 @@ class VisionAgent:
         free_cells = sum(row.count(0) for row in cells)
         total_cells = sum(len(row) for row in cells) if cells else 1
         free_pct = round((free_cells / total_cells) * 100, 1) if total_cells > 0 else 0.0
-        usable_area_sqm = round((free_cells * 100) / 10000.0, 2) # resolution is 10cm, so 100cm2 cell area
+        res = grid.get("grid_resolution_cm", 5) if isinstance(grid, dict) else 5
+        usable_area_sqm = round((free_cells * (res ** 2)) / 10000.0, 2)
         side_cm = int((usable_area_sqm ** 0.5) * 100)
         
         base_scene["free_space_analysis"] = {

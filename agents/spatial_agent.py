@@ -54,14 +54,34 @@ class SpatialAgent:
         windows = room_data.get("windows", [])
         grid_data = room_data.get("occupancy_grid", room_data.get("occupancy_grid_data", {}))
 
-        # Room size extraction (default to 4m x 5m)
+        # Resolve dynamic room dimensions based on maximum coordinate boundaries
+        max_x = 0.0
+        max_y = 0.0
+        for item in objects + doors + windows:
+            pos = item.get("position", item.get("room_position", {}))
+            cx = float(pos.get("x_cm") or 0.0)
+            cy = float(pos.get("y_cm") or 0.0)
+            
+            dims = item.get("estimated_dimensions") or {}
+            w = float(dims.get("width_cm") or item.get("estimated_width_cm") or 80.0)
+            d = float(dims.get("depth_cm") or item.get("estimated_height_cm") or 80.0)
+            
+            rot = int(item.get("rotation_deg") or item.get("room_position", {}).get("rotation") or 0)
+            w_eff = d if rot in (90, 270) else w
+            d_eff = w if rot in (90, 270) else d
+            
+            max_x = max(max_x, cx + w_eff/2)
+            max_y = max(max_y, cy + d_eff/2)
+            
         r_size = room_data.get("room_understanding", {}).get("room_size", "medium").lower()
+        default_w, default_d = 400, 500
         if r_size == "large":
-            room_w, room_d = 500, 600
+            default_w, default_d = 500, 600
         elif r_size == "small":
-            room_w, room_d = 300, 400
-        else:
-            room_w, room_d = 400, 500
+            default_w, default_d = 300, 400
+            
+        room_w = int(max(default_w, max_x + 50))
+        room_d = int(max(default_d, max_y + 50))
 
         # Step 1: Detect collisions (overlaps)
         collisions = self.detect_collisions(objects, doors, windows)
@@ -132,7 +152,7 @@ class SpatialAgent:
     def detect_collisions(
         self, objects: List[Dict[str, Any]], doors: List[Dict[str, Any]], windows: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Checks for 2D Axis-Aligned Bounding Box (AABB) overlaps."""
+        """Checks for 2D AABB overlaps, clearance buffer warnings, and door swing violations."""
         collisions = []
 
         # Helper to extract AABB boundary edges
@@ -154,7 +174,7 @@ class SpatialAgent:
             label = item.get("id") or item.get("name", "Unknown")
             return cx - w_eff/2, cx + w_eff/2, cy - d_eff/2, cy + d_eff/2, label
 
-        # A. Check pairwise overlaps between all objects
+        # A. Check pairwise overlaps & clearance buffers between all objects
         for i in range(len(objects)):
             for j in range(i + 1, len(objects)):
                 min_x1, max_x1, min_y1, max_y1, id1 = get_aabb(objects[i])
@@ -168,11 +188,24 @@ class SpatialAgent:
                         "severity": "high",
                         "description": f"Collision: {id1} overlaps with {id2} in physical layout space."
                     })
+                else:
+                    # Check near-collision within 15cm clearance buffer
+                    dx = max(0.0, max(min_x1 - max_x2, min_x2 - max_x1))
+                    dy = max(0.0, max(min_y1 - max_y2, min_y2 - max_y1))
+                    dist = math.sqrt(dx**2 + dy**2)
+                    if dist < 15.0:
+                        collisions.append({
+                            "object1": id1,
+                            "object2": id2,
+                            "severity": "medium",
+                            "description": f"Near Collision: {id1} is close ({round(dist, 1)}cm) to {id2}, violating the 15cm clearance buffer."
+                        })
 
         # B. Check objects intersecting doors or windows
         for obj in objects:
             min_x1, max_x1, min_y1, max_y1, obj_id = get_aabb(obj)
             
+            # Check physical door collision
             for door in doors:
                 min_x2, max_x2, min_y2, max_y2, door_id = get_aabb(door, is_structure=True)
                 if (max_x1 - 2 > min_x2 and min_x1 + 2 < max_x2) and (max_y1 - 2 > min_y2 and min_y1 + 2 < max_y2):
@@ -182,7 +215,27 @@ class SpatialAgent:
                         "severity": "high",
                         "description": f"Blocked Opening: {obj_id} blocks the pathway of {door_id}."
                     })
+                else:
+                    # Check door swing circle segment intersection
+                    pos = door.get("position", door.get("room_position", {"x_cm": 0, "y_cm": 0}))
+                    hx = float(pos.get("x_cm") or 0.0)
+                    hy = float(pos.get("y_cm") or 0.0)
+                    dims = door.get("estimated_dimensions") or {}
+                    door_width = float(dims.get("width_cm") or door.get("estimated_width_cm") or 90.0)
+                    
+                    px = max(min_x1, min(hx, max_x1))
+                    py = max(min_y1, min(hy, max_y1))
+                    
+                    dist_to_hinge = math.sqrt((px - hx)**2 + (py - hy)**2)
+                    if dist_to_hinge < door_width:
+                        collisions.append({
+                            "object1": obj_id,
+                            "object2": door_id,
+                            "severity": "high",
+                            "description": f"Blocked Door Swing: {obj_id} is located inside the {door_width}cm door swing envelope of {door_id}."
+                        })
             
+            # Check window collision
             for win in windows:
                 min_x2, max_x2, min_y2, max_y2, win_id = get_aabb(win, is_structure=True)
                 if (max_x1 - 2 > min_x2 and min_x1 + 2 < max_x2) and (max_y1 - 2 > min_y2 and min_y1 + 2 < max_y2):

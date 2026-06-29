@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 class FreeSpaceDetector:
     """Discretizes room layout into an occupancy grid and extracts free-space polygons."""
 
-    def __init__(self, resolution_cm: int = 10) -> None:
+    def __init__(self, resolution_cm: int = 5) -> None:
         self.resolution = resolution_cm
 
     def build_occupancy_grid(
@@ -52,56 +52,65 @@ class FreeSpaceDetector:
     def detect_free_regions(
         self, occupancy_grid: Dict[str, Any], room_width_cm: int, room_depth_cm: int
     ) -> Tuple[List[Dict[str, Any]], List[List[Dict[str, int]]]]:
-        """Identifies empty regions and compiles lists of free space polygons."""
+        """Identifies empty regions and compiles lists of free space polygons using BFS connected components."""
         cells = occupancy_grid["cells"]
         grid_w = occupancy_grid["width"]
         grid_d = occupancy_grid["height"]
 
-        # Divide grid into 4 sectors (quadrants) to extract clear regions
-        occupied_sectors = set()
-        for y in range(grid_d):
-            for x in range(grid_w):
-                if cells[y][x] == 1:
-                    sector_x = "left" if x < (grid_w / 2) else "right"
-                    sector_y = "front" if y < (grid_d / 2) else "back"
-                    occupied_sectors.add((sector_x, sector_y))
-
+        visited = [[False for _ in range(grid_w)] for _ in range(grid_d)]
         empty_regions: List[Dict[str, Any]] = []
         free_polygons: List[List[Dict[str, int]]] = []
-
-        sector_coords = {
-            ("left", "front"): {"x_range": (0, int(room_width_cm/2)), "y_range": (0, int(room_depth_cm/2))},
-            ("right", "front"): {"x_range": (int(room_width_cm/2), room_width_cm), "y_range": (0, int(room_depth_cm/2))},
-            ("left", "back"): {"x_range": (0, int(room_width_cm/2)), "y_range": (int(room_depth_cm/2), room_depth_cm)},
-            ("right", "back"): {"x_range": (int(room_width_cm/2), room_width_cm), "y_range": (int(room_depth_cm/2), room_depth_cm)},
-        }
-
         region_count = 1
-        for sector, coords in sector_coords.items():
-            if sector not in occupied_sectors:
-                w_cm = coords["x_range"][1] - coords["x_range"][0]
-                d_cm = coords["y_range"][1] - coords["y_range"][0]
 
-                empty_regions.append({
-                    "id": f"region_{region_count:03d}",
-                    "width_cm": w_cm,
-                    "depth_cm": d_cm,
-                    "suitable_for": ["furniture", "seating", "storage"] if sector[1] == "front" else ["desk", "decor"]
-                })
+        for y in range(grid_d):
+            for x in range(grid_w):
+                if cells[y][x] == 0 and not visited[y][x]:
+                    # Start BFS to find the connected components
+                    component = []
+                    queue = [(x, y)]
+                    visited[y][x] = True
 
-                # Format polygon coordinates as a list of points
-                free_polygons.append([
-                    {"x": coords["x_range"][0], "y": coords["y_range"][0]},
-                    {"x": coords["x_range"][1], "y": coords["y_range"][0]},
-                    {"x": coords["x_range"][1], "y": coords["y_range"][1]},
-                    {"x": coords["x_range"][0], "y": coords["y_range"][1]}
-                ])
-                region_count += 1
+                    while queue:
+                        cx, cy = queue.pop(0)
+                        component.append((cx, cy))
+                        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                            nx, ny = cx + dx, cy + dy
+                            if 0 <= nx < grid_w and 0 <= ny < grid_d:
+                                if cells[ny][nx] == 0 and not visited[ny][nx]:
+                                    visited[ny][nx] = True
+                                    queue.append((nx, ny))
 
-        # Fallback if room is fully packed (or no grid quadrant is empty)
+                    # Calculate bounding box of the component
+                    min_x = min(pt[0] for pt in component)
+                    max_x = max(pt[0] for pt in component)
+                    min_y = min(pt[1] for pt in component)
+                    max_y = max(pt[1] for pt in component)
+
+                    w_cm = (max_x - min_x + 1) * self.resolution
+                    d_cm = (max_y - min_y + 1) * self.resolution
+
+                    # Include only components larger than 50cm x 50cm
+                    if w_cm >= 50 and d_cm >= 50:
+                        empty_regions.append({
+                            "id": f"region_{region_count:03d}",
+                            "width_cm": w_cm,
+                            "depth_cm": d_cm,
+                            "suitable_for": ["furniture", "seating", "storage"] if w_cm >= 100 else ["desk", "decor"]
+                        })
+
+                        # Bounding box coordinates
+                        free_polygons.append([
+                            {"x": min_x * self.resolution, "y": min_y * self.resolution},
+                            {"x": (max_x + 1) * self.resolution, "y": min_y * self.resolution},
+                            {"x": (max_x + 1) * self.resolution, "y": (max_y + 1) * self.resolution},
+                            {"x": min_x * self.resolution, "y": (max_y + 1) * self.resolution}
+                        ])
+                        region_count += 1
+
+        # Fallback if no empty region found
         if not empty_regions:
-            w_cm = int(room_width_cm / 2)
-            d_cm = 150
+            w_cm = min(room_width_cm, 150)
+            d_cm = min(room_depth_cm, 150)
             empty_regions.append({
                 "id": "region_001",
                 "width_cm": w_cm,
@@ -111,8 +120,8 @@ class FreeSpaceDetector:
             free_polygons.append([
                 {"x": 0, "y": 0},
                 {"x": w_cm, "y": 0},
-                {"x": w_cm, "y": 150},
-                {"x": 0, "y": 150}
+                {"x": w_cm, "y": d_cm},
+                {"x": 0, "y": d_cm}
             ])
 
         return empty_regions, free_polygons
