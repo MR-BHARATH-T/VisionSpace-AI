@@ -322,56 +322,145 @@ def vision_analysis_prompt(
 # 2. Spatial Agent — Layout Analysis
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# 2. Spatial Agent — Layout Analysis
+# ---------------------------------------------------------------------------
+
 def spatial_analysis_prompt(
-    objects: list[dict],
-    room_type: str = "living_room",
-    image_width: int = 1024,
-    image_height: int = 1024,
+    room_data: dict[str, Any],
+    geometric_report: dict[str, Any],
+    proposed_furniture: list[dict] | None = None,
 ) -> dict[str, str]:
-    """Prompt for the Spatial Agent to evaluate layout quality.
+    """Prompt for the Spatial Agent to evaluate layout quality, clearances, and placements.
 
     Args:
-        objects:      Detected objects from Vision Agent output.
-        room_type:    Room category.
-        image_width:  Image width in pixels.
-        image_height: Image height in pixels.
+        room_data:          Current room layout data (objects, doors, windows, etc.).
+        geometric_report:    Factual geometric checks (collisions, clearances, A* paths, balance metrics).
+        proposed_furniture:  Optional list of new furniture proposed to fit into the room.
 
     Returns:
         Dict with ``"system"`` and ``"user"`` prompt strings.
     """
+    room_type = room_data.get("room_understanding", {}).get("room_type", "living_room")
+    objects = room_data.get("objects", [])
+    doors = room_data.get("doors", [])
+    windows = room_data.get("windows", [])
+    
+    # Text summaries for VLM context
     object_summary = _summarise_objects(objects)
+    door_summary = _summarise_list(doors)
+    window_summary = _summarise_list(windows)
+    prop_summary = _summarise_list(proposed_furniture) if proposed_furniture else "  (none)"
+    
+    # Geometric checks summary
+    collisions = geometric_report.get("collision_report", [])
+    clearances = geometric_report.get("clearance_violations", [])
+    paths = geometric_report.get("walking_paths", [])
+    candidates = geometric_report.get("placement_candidates", [])
+    balance = geometric_report.get("balance_score_heuristic", 85)
+    symmetry = geometric_report.get("symmetry_score_heuristic", 80)
+    
+    geom_context = (
+        f"- Collision Overlaps Detected: {len(collisions)}\n"
+        f"- Clearance Rule Violations: {len(clearances)}\n"
+        f"- Calculated Walking Paths: {len(paths)}\n"
+        f"- Placement Candidates Found: {len(candidates)}\n"
+        f"- Computed Mass Balance Score: {balance:.1f} / 100\n"
+        f"- Computed Symmetry Score: {symmetry:.1f} / 100\n"
+        f"- Details:\n"
+        f"  - Collisions: {[c['description'] for c in collisions[:5]]}\n"
+        f"  - Clearances: {[c['description'] for c in clearances[:5]]}"
+    )
+
     schema = {
         "layout_analysis": {
-            "overall_score":      "int 0-100",
-            "flow_score":         "int 0-100",
-            "balance_score":      "int 0-100",
-            "clearance_issues":   ["string"],
-            "crowding_zones":     ["string (top-left|centre|…)"],
-            "empty_zones":        ["string"],
-            "focal_point":        "string (object label)",
-            "traffic_flow":       "string (description)",
-            "zones": [
-                {
-                    "name":     "string",
-                    "objects":  ["string (object IDs)"],
-                    "rating":   "string (optimal|crowded|sparse)",
-                }
-            ],
-            "recommendations": ["string"],
-        }
+            "layout_score": "integer (0-100)",
+            "flow_score": "integer (0-100)",
+            "accessibility_score": "integer (0-100)",
+            "balance_score": "integer (0-100)",
+            "space_utilization_score": "integer (0-100)",
+            "focal_point": "string",
+            "traffic_flow": "string",
+            "functional_zones": ["string"]
+        },
+        "collision_report": [
+            {
+                "object1": "string (ID)",
+                "object2": "string (ID or door/window)",
+                "severity": "string (high|medium)",
+                "description": "string"
+            }
+        ],
+        "clearance_violations": [
+            {
+                "object": "string (ID)",
+                "rule": "string",
+                "required_clearance_cm": "integer",
+                "actual_clearance_cm": "integer",
+                "description": "string"
+            }
+        ],
+        "walking_paths": [
+            {
+                "name": "string (e.g. entrance_to_bed)",
+                "walkable": "boolean",
+                "length_cm": "integer",
+                "bottlenecks": ["string"],
+                "coordinates": [{"x": "integer", "y": "integer"}]
+            }
+        ],
+        "placement_candidates": [
+            {
+                "id": "string",
+                "center": {"x_cm": "integer", "y_cm": "integer"},
+                "max_dimensions": {"width_cm": "integer", "depth_cm": "integer"},
+                "fit_confidence": "number (0.0-1.0)"
+            }
+        ],
+        "furniture_fit_validation": [
+            {
+                "proposed_id": "string",
+                "fits": "boolean",
+                "violations": ["string"],
+                "preserves_accessibility": "boolean",
+                "recommended_position": {"x_cm": "integer", "y_cm": "integer", "rotation": "integer"}
+            }
+        ],
+        "recommendations": [
+            {
+                "action": "string (move|rotate|relocate|add|remove)",
+                "object_id": "string",
+                "description": "string",
+                "impact": "string (high|medium|low)"
+            }
+        ],
+        "safety_analysis": [
+            {
+                "hazard": "string",
+                "severity": "string (high|medium|low)",
+                "mitigation": "string"
+            }
+        ]
     }
 
-    system = _expert_system_prompt()
+    system = (
+        "You are the Spatial Agent for VisionSpace AI, an AI-powered interior planning and space optimization platform. "
+        "Your task is to analyze room geometries, clearances, accessibility paths, free space, and safety to perform layout reasoning."
+    )
     user = "\n\n".join([
         _section("CONTEXT", (
-            f"Room type: **{room_type}** | Image: {image_width}×{image_height}px\n"
-            f"Detected objects:\n{object_summary}"
+            f"Room type: **{room_type}**\n"
+            f"Objects:\n{object_summary}\n"
+            f"Doors:\n{door_summary}\n"
+            f"Windows:\n{window_summary}\n"
+            f"Proposed additions:\n{prop_summary}"
         )),
+        _section("COMPUTED GEOMETRIC REPORT", geom_context),
         _section("TASK", (
-            "Analyse the spatial layout of the room. Evaluate flow, balance, "
-            "clearances, zone usage, and crowding. Identify the focal point and "
-            "describe the traffic flow pattern. Provide specific, actionable layout "
-            "recommendations."
+            "Analyse the spatial layout of the room using the geometric report as your ground truth. "
+            "Evaluate flow, balance, clearances, functional zoning, and calculate scores. "
+            "For proposed additions, validate if they fit. Propose actionable recommendations "
+            "to optimize furniture placement and preserve fire exits and emergency paths."
         )),
         _section("OUTPUT FORMAT", json.dumps(schema, indent=2)),
         _JSON_REMINDER,
