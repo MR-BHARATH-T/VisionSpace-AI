@@ -12,6 +12,21 @@ class ObjectFusion:
         self.nms_threshold = nms_threshold
         # Semantic classes that typically exist as a single unique instance in a room
         self.unique_singletons = {"bed", "desk", "dresser", "wardrobe", "sofa"}
+        self.compatibility_groups = [
+            {"bed", "mattress", "cot", "crib", "daybed"},
+            {"chair", "sofa", "armchair", "stool", "couch", "seating", "bench", "recliner"},
+            {"desk", "table", "nightstand", "counter", "desk_table"},
+            {"dresser", "wardrobe", "closet", "cabinet", "cupboard", "drawer", "chest", "shelving", "bookcase"},
+            {"lamp", "light", "sconce", "lighting", "chandelier", "fixture"}
+        ]
+
+    def are_compatible(self, label1: str, label2: str) -> bool:
+        if label1 == label2:
+            return True
+        for group in self.compatibility_groups:
+            if label1 in group and label2 in group:
+                return True
+        return False
 
     def normalize_label(self, obj: Dict[str, Any]) -> str:
         """Helper to extract a clean semantic label from object fields."""
@@ -46,11 +61,7 @@ class ObjectFusion:
         return "object"
 
     def fuse_objects(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Deduplicates objects across multiple viewpoints.
-
-        - Unique singletons (Bed, Desk) are fused across views.
-        - Repeatable elements (Lamps, Chairs) are matched based on location/features.
-        """
+        """Deduplicates objects globally across viewpoints using physical and semantic compatibility."""
         if not objects:
             return []
 
@@ -65,120 +76,143 @@ class ObjectFusion:
             else:
                 labeled_objs.append(obj_copy)
 
-        by_label = defaultdict(list)
+        # Group by viewpoint index
+        by_view = defaultdict(list)
         for obj in labeled_objs:
-            by_label[obj["_normalized_label"]].append(obj)
+            by_view[obj.get("_view_source", 0)].append(obj)
 
-        kept: List[Dict[str, Any]] = []
+        view_ids = sorted(by_view.keys())
+        if not view_ids:
+            return objects
 
-        for label, group in by_label.items():
-            if label in self.unique_singletons:
-                # Merge all instances of this label into one canonical object
-                group.sort(key=lambda o: float(o.get("confidence", 0)), reverse=True)
-                canonical = dict(group[0])
-                canonical["seen_in_views"] = [canonical.get("_view_source", 0)]
+        # Initialize global fusion list with the first viewpoint's candidates
+        fused_list: List[Dict[str, Any]] = []
+        for obj in by_view[view_ids[0]]:
+            obj_copy = dict(obj)
+            obj_copy["seen_in_views"] = [view_ids[0]]
+            obj_copy["_match_scores"] = []
+            fused_list.append(obj_copy)
+
+        # Greedily fuse objects from subsequent viewpoint lists
+        for v_idx in view_ids[1:]:
+            view_objs = by_view[v_idx]
+            for obj in view_objs:
+                best_match_idx = -1
+                best_score = -1.0
+                label_o = obj["_normalized_label"]
                 
-                match_scores = []
-                for other in group[1:]:
-                    canonical = self.merge_pair(canonical, other)
-                    view_idx = other.get("_view_source", 0)
-                    if view_idx not in canonical["seen_in_views"]:
-                        canonical["seen_in_views"].append(view_idx)
-                    match_scores.append(0.85) # High confidence for singleton class merger
+                for k_idx, k_obj in enumerate(fused_list):
+                    # Prevent merging candidates from the same viewpoint
+                    if v_idx in k_obj.get("seen_in_views", []):
+                        continue
+                    
+                    label_k = k_obj["_normalized_label"]
+                    score = 0.0
+                    
+                    # 1. Category Compatibility check
+                    if label_k == label_o:
+                        score += 0.3
+                    elif self.are_compatible(label_k, label_o):
+                        score += 0.25
+                    else:
+                        score -= 0.5 # Penalty for mismatched categories
 
-                canonical["merged_from_images"] = sorted(canonical.get("seen_in_views", []))
-                canonical["merge_confidence"] = round(sum(match_scores) / len(match_scores), 2) if match_scores else 1.0
-                canonical.pop("seen_in_views", None)
-                canonical.pop("_normalized_label", None)
-                canonical.pop("_view_source", None)
-                kept.append(canonical)
-            else:
-                # Repeatable multi-instance classes: match across different views greedily
-                by_view = defaultdict(list)
-                for obj in group:
-                    by_view[obj.get("_view_source", 0)].append(obj)
+                    # 2. Word intersection check
+                    name_k = k_obj.get("name", "").lower()
+                    name_o = obj.get("name", "").lower()
+                    words_k = set(name_k.split())
+                    words_o = set(name_o.split())
+                    if name_k == name_o:
+                        score += 0.2
+                    elif words_k.intersection(words_o):
+                        score += 0.15
 
-                view_ids = sorted(by_view.keys())
-                if not view_ids:
-                    continue
+                    # 3. Material and color matching
+                    if k_obj.get("material") == obj.get("material") and k_obj.get("material") is not None:
+                        score += 0.1
+                    if k_obj.get("color") == obj.get("color") and k_obj.get("color") is not None:
+                        score += 0.1
+                    
+                    # 4. Proximity matching
+                    pos_k = k_obj.get("position")
+                    pos_o = obj.get("position")
+                    if pos_k and pos_o:
+                        dist = ((pos_k["x_cm"] - pos_o["x_cm"])**2 + (pos_k["y_cm"] - pos_o["y_cm"])**2)**0.5
+                        if dist < 120:
+                            score += 0.5
+                        elif dist < 180:
+                            score += 0.35
+                        elif dist > 250:
+                            score -= 0.6
+                    else:
+                        # Image coordinate fallback
+                        center_k = k_obj["bbox"]["x"] + k_obj["bbox"]["width"] / 2
+                        center_o = obj["bbox"]["x"] + obj["bbox"]["width"] / 2
+                        if (center_k < 400 and center_o < 400) or (center_k >= 400 and center_o >= 400):
+                            score += 0.3
+                        
+                    if score > best_score:
+                        best_score = score
+                        best_match_idx = k_idx
                 
-                category_kept: List[Dict[str, Any]] = []
-                for obj in by_view[view_ids[0]]:
+                if best_score >= 0.5 and best_match_idx != -1:
+                    fused_list[best_match_idx] = self.merge_pair(fused_list[best_match_idx], obj)
+                    fused_list[best_match_idx]["seen_in_views"].append(v_idx)
+                    fused_list[best_match_idx]["_match_scores"].append(best_score)
+                else:
                     obj_copy = dict(obj)
-                    obj_copy["seen_in_views"] = [view_ids[0]]
+                    obj_copy["seen_in_views"] = [v_idx]
                     obj_copy["_match_scores"] = []
-                    category_kept.append(obj_copy)
+                    fused_list.append(obj_copy)
 
-                for v_idx in view_ids[1:]:
-                    view_objs = by_view[v_idx]
-                    for obj in view_objs:
-                        best_match_idx = -1
-                        best_score = -1.0
-                        
-                        for k_idx, k_obj in enumerate(category_kept):
-                            if v_idx in k_obj.get("seen_in_views", []):
-                                continue
-                                
-                            score = 0.0
-                            name_k = k_obj.get("name", "").lower()
-                            name_o = obj.get("name", "").lower()
-                            cat_k = k_obj.get("category", "").lower()
-                            cat_o = obj.get("category", "").lower()
-                            
-                            # 1. Semantic similarity (name and category word intersection)
-                            words_k = set(name_k.split())
-                            words_o = set(name_o.split())
-                            if name_k == name_o:
-                                score += 0.3
-                            elif words_k.intersection(words_o):
-                                score += 0.2
-                            elif cat_k == cat_o and cat_k != "":
-                                score += 0.15
+        # Singleton consolidation pass (for beds, dressers, wardrobes, desks)
+        final_list: List[Dict[str, Any]] = []
+        skip_indices = set()
+        for i in range(len(fused_list)):
+            if i in skip_indices:
+                continue
+            
+            obj1 = fused_list[i]
+            label1 = obj1["_normalized_label"]
+            
+            if label1 in self.unique_singletons:
+                best_s_match = -1
+                min_dist = 250.0 # Match singletons within 2.5m
+                
+                for j in range(i + 1, len(fused_list)):
+                    if j in skip_indices:
+                        continue
+                    obj2 = fused_list[j]
+                    label2 = obj2["_normalized_label"]
+                    
+                    if label2 == label1 or self.are_compatible(label1, label2):
+                        pos1 = obj1.get("position")
+                        pos2 = obj2.get("position")
+                        if pos1 and pos2:
+                            d = ((pos1["x_cm"] - pos2["x_cm"])**2 + (pos1["y_cm"] - pos2["y_cm"])**2)**0.5
+                            if d < min_dist:
+                                min_dist = d
+                                best_s_match = j
+                
+                if best_s_match != -1:
+                    merged_obj = self.merge_pair(obj1, fused_list[best_s_match])
+                    merged_obj["seen_in_views"] = list(set(obj1.get("seen_in_views", []) + fused_list[best_s_match].get("seen_in_views", [])))
+                    merged_obj["_match_scores"] = obj1.get("_match_scores", []) + fused_list[best_s_match].get("_match_scores", []) + [0.85]
+                    fused_list[i] = merged_obj
+                    skip_indices.add(best_s_match)
+            
+            final_list.append(fused_list[i])
 
-                            # 2. Material and color matching
-                            if k_obj.get("material") == obj.get("material") and k_obj.get("material") is not None:
-                                score += 0.15
-                            if k_obj.get("color") == obj.get("color") and k_obj.get("color") is not None:
-                                score += 0.15
-                            
-                            # 3. Position proximity (relative room-coordinate distance in cm)
-                            pos_k = k_obj.get("position")
-                            pos_o = obj.get("position")
-                            if pos_k and pos_o:
-                                dist = ((pos_k["x_cm"] - pos_o["x_cm"])**2 + (pos_k["y_cm"] - pos_o["y_cm"])**2)**0.5
-                                if dist < 120:
-                                    score += 0.5
-                                elif dist > 250:
-                                    score -= 0.5
-                            else:
-                                # Fallback to pixel bounding boxes centers
-                                center_k = k_obj["bbox"]["x"] + k_obj["bbox"]["width"] / 2
-                                center_o = obj["bbox"]["x"] + obj["bbox"]["width"] / 2
-                                if (center_k < 400 and center_o < 400) or (center_k >= 400 and center_o >= 400):
-                                    score += 0.3
-                                
-                            if score > best_score:
-                                best_score = score
-                                best_match_idx = k_idx
-                        
-                        if best_score >= 0.5 and best_match_idx != -1:
-                            category_kept[best_match_idx] = self.merge_pair(category_kept[best_match_idx], obj)
-                            category_kept[best_match_idx]["seen_in_views"].append(v_idx)
-                            category_kept[best_match_idx]["_match_scores"].append(best_score)
-                        else:
-                            obj_copy = dict(obj)
-                            obj_copy["seen_in_views"] = [v_idx]
-                            obj_copy["_match_scores"] = []
-                            category_kept.append(obj_copy)
-
-                for k_obj in category_kept:
-                    k_obj["merged_from_images"] = sorted(k_obj.get("seen_in_views", []))
-                    scores = k_obj.pop("_match_scores", [])
-                    k_obj["merge_confidence"] = round(sum(scores) / len(scores), 2) if scores else 1.0
-                    k_obj.pop("seen_in_views", None)
-                    k_obj.pop("_normalized_label", None)
-                    k_obj.pop("_view_source", None)
-                    kept.append(k_obj)
+        # Formatting Output payload attributes
+        kept: List[Dict[str, Any]] = []
+        for k_obj in final_list:
+            k_obj["merged_from_images"] = sorted(k_obj.get("seen_in_views", []))
+            scores = k_obj.pop("_match_scores", [])
+            k_obj["merge_confidence"] = round(sum(scores) / len(scores), 2) if scores else 1.0
+            k_obj.pop("seen_in_views", None)
+            k_obj.pop("_normalized_label", None)
+            k_obj.pop("_view_source", None)
+            kept.append(k_obj)
 
         for o in no_bbox:
             o["merged_from_images"] = [o.get("_view_source", 0)]
