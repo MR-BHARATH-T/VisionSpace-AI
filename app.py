@@ -55,7 +55,7 @@ def run_pipeline(
         
         # 2. Run Spatial Agent (Clearance & Path checks)
         spatial_output = spatial_agent.analyze_layout(
-            vision_output=vision_output,
+            room_data=vision_output,
             proposed_furniture=None,
             session_path=session_path
         )
