@@ -298,9 +298,12 @@ class ModelManager:
         meta = MODEL_REGISTRY.get(resolved_task, {})
         model_name = meta.get("model_name")
         
-        # Share provider if task uses HF_VISION_MODEL
-        if provider_name == "huggingface" and model_name == HF_VISION_MODEL:
-            resolved_task = "vision"
+        # Share provider if task uses HF_VISION_MODEL or HF_TEXT_MODEL
+        if provider_name == "huggingface":
+            if model_name == HF_VISION_MODEL:
+                resolved_task = "vision"
+            elif model_name == HF_TEXT_MODEL:
+                resolved_task = "reasoning"
             
         key = f"{provider_name}:{resolved_task}"
         if key not in self.providers:
@@ -403,10 +406,14 @@ class ModelManager:
             # If free memory is below 6.5 GB, evict other loaded models
             if free_vram_gb < 6.5:
                 logger.warning("VRAM headroom is low (%.2f GB). Evicting inactive models from memory.", free_vram_gb)
+                target_meta = MODEL_REGISTRY.get(target_task, {})
+                target_model_name = target_meta.get("model_name")
                 for task in list(MODEL_REGISTRY.keys()):
                     if task != target_task and self.is_loaded(task):
-                        logger.info("Preemptively unloading model for task '%s'", task)
-                        self.unload_model(task)
+                        meta = MODEL_REGISTRY[task]
+                        if meta.get("model_name") != target_model_name:
+                            logger.info("Preemptively unloading model for task '%s'", task)
+                            self.unload_model(task)
 
                 # Force device cleanup
                 try:

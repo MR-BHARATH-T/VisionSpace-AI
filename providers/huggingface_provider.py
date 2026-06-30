@@ -798,7 +798,22 @@ class HuggingFaceProvider(BaseProvider):
         if not self.loaded or (self.tokenizer is None and self.processor is None):
             raise RuntimeError("Model parameters must be loaded before preparing inputs.")
 
-        if self.processor is not None:
+        # Determine if we have visual inputs to process
+        has_imgs = False
+        if images:
+            has_imgs = True
+        else:
+            for msg in messages:
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    if any(isinstance(b, dict) and b.get("type") in ("image", "image_url") for b in content):
+                        has_imgs = True
+                        break
+                elif isinstance(content, str) and ("<|image_pad|>" in content or "<|vision_start|>" in content):
+                    has_imgs = True
+                    break
+
+        if self.processor is not None and has_imgs:
             # ── Resolve tokenizer & image_processor ──────────────────────
             tokenizer = self.processor.tokenizer
             image_processor = self.processor.image_processor
