@@ -485,69 +485,174 @@ def spatial_analysis_prompt(
 # ---------------------------------------------------------------------------
 
 def design_recommendation_prompt(
-    objects: list[dict],
-    spatial_analysis: dict,
-    room_type: str = "living_room",
-    style_preference: str = "modern",
-    budget_tier: str = "mid_range",
+    vision_output: dict,
+    spatial_output: dict,
+    budget: float | int = 50000,
+    preferred_style: str = "scandinavian",
+    preferred_colors: list[str] | None = None,
+    preferred_brands: list[str] | None = None,
+    constraints: dict | None = None,
 ) -> dict[str, str]:
-    """Prompt for the Design Agent to recommend design improvements.
+    """Prompt for the Design Agent to recommend design improvements based on the Master Prompt.
 
     Args:
-        objects:          Detected objects.
-        spatial_analysis: Output from the Spatial Agent.
-        room_type:        Room category.
-        style_preference: Desired interior design style.
-        budget_tier:      One of: budget / mid_range / premium / luxury.
+        vision_output:    Scene graph/metadata output from the Vision Agent.
+        spatial_output:   Geometric layout checks and reports from the Spatial Agent.
+        budget:           Total currency units budget for layout enhancements.
+        preferred_style:  Target interior design style.
+        preferred_colors: List of color preferences.
+        preferred_brands: List of preferred manufacturers/brands.
+        constraints:      Custom layout/lifestyle constraints.
 
     Returns:
-        Dict with ``"system"`` and ``"user"`` prompt strings.
+        Dict with "system" and "user" prompt strings.
     """
-    object_summary = _summarise_objects(objects)
-    layout_summary = _summarise_dict(spatial_analysis, max_keys=6)
+    pref_colors = preferred_colors or []
+    pref_brands = preferred_brands or []
+    user_constraints = constraints or {}
+
     schema = {
-        "design_plan": {
-            "current_style":       "string",
-            "target_style":        "string",
-            "style_gap":           "string",
-            "colour_palette": {
-                "primary":   "string",
-                "secondary": "string",
-                "accent":    "string",
-                "neutral":   "string",
-            },
-            "changes": [
-                {
-                    "priority":     "int 1-5 (1=highest)",
-                    "type":         "string (replace|add|remove|reposition|refinish)",
-                    "target":       "string (object ID or zone)",
-                    "description":  "string",
-                    "reason":       "string",
-                    "impact":       "string (high|medium|low)",
-                }
-            ],
-            "mood_board_keywords": ["string"],
-            "estimated_impact":    "string (high|medium|low)",
-        }
+        "design_theme": "string",
+        "design_style": "string",
+        "materials": {
+            "primary": "string",
+            "secondary": "string",
+            "accent": "string"
+        },
+        "lighting_strategy": {
+            "lighting_type": "string",
+            "color_temperature": "string",
+            "lighting_mood": "string"
+        },
+        "color_palette": {
+            "primary_colors": ["string"],
+            "secondary_colors": ["string"],
+            "accent_colors": ["string"],
+            "wall_colors": ["string"],
+            "furniture_colors": ["string"]
+        },
+        "recommended_furniture": [
+            {
+                "name": "string",
+                "category": "string",
+                "priority": "string (Mandatory|Recommended|Optional|Luxury)",
+                "estimated_cost": "number",
+                "retain_existing": "boolean",
+                "reason": "string"
+            }
+        ],
+        "layout_plan": [
+            {
+                "furniture": "string",
+                "position": {
+                    "x_cm": "integer",
+                    "y_cm": "integer"
+                },
+                "rotation": "integer (0|90|180|270)",
+                "zone": "string",
+                "clearance_valid": "boolean"
+            }
+        ],
+        "functional_zones": ["string"],
+        "budget_breakdown": {
+            "furniture": "number",
+            "lighting": "number",
+            "storage": "number",
+            "decor": "number",
+            "buffer": "number",
+            "total": "number"
+        },
+        "shopping_requirements": [
+            {
+                "category": "string",
+                "required_size": {
+                    "width_cm": "number",
+                    "depth_cm": "number",
+                    "height_cm": "number"
+                },
+                "style": "string",
+                "material": "string",
+                "max_budget": "number",
+                "preferred_brands": ["string"]
+            }
+        ],
+        "estimated_total_cost": "number",
+        "design_explanations": [
+            {
+                "recommendation": "string",
+                "why_selected": "string",
+                "why_placed": "string",
+                "usability_improvement": "string",
+                "circulation_improvement": "string",
+                "aesthetics_improvement": "string",
+                "budget_respect": "string",
+                "style_match": "string"
+            }
+        ],
+        "confidence_score": "number (0.0-1.0)"
     }
 
-    system = _expert_system_prompt()
+    system = (
+        "You are the Design Agent for VisionSpace AI, an AI-powered interior planning and space optimization platform. "
+        "Your task is to act as a professional interior designer. "
+        "Your responsibility is NOT object detection and NOT geometry computation; use the provided inputs as your factual layout ground truth. "
+        "Generate a comprehensive, optimized interior design plan that maximizes usability, aesthetics, comfort, "
+        "accessibility, circulation efficiency, natural lighting, storage efficiency, budget efficiency, and visual balance."
+    )
+
     user = "\n\n".join([
-        _section("CONTEXT", (
-            f"Room type: **{room_type}** | Style goal: **{style_preference}** | "
-            f"Budget tier: **{budget_tier}**\n"
-            f"Objects:\n{object_summary}\n"
-            f"Layout issues:\n{layout_summary}"
+        _section("INPUT", json.dumps({
+            "vision_output": vision_output,
+            "spatial_output": spatial_output,
+            "budget": budget,
+            "preferred_style": preferred_style,
+            "preferred_colors": pref_colors,
+            "preferred_brands": pref_brands,
+            "constraints": user_constraints
+        }, indent=2)),
+        _section("STYLE UNDERSTANDING", (
+            "Scandinavian: oak wood, white walls, neutral colors, minimal clutter, natural light\n"
+            "Modern: clean geometry, simple furniture, neutral palette, hidden storage\n"
+            "Minimalist: fewer furniture items, open circulation, functional furniture only\n"
+            "Industrial: black metal, exposed materials, darker tones, raw textures\n"
+            "Japandi: warm wood, soft colors, low-profile furniture, calm atmosphere\n"
+            "Luxury: premium materials, layered lighting, statement pieces, rich textures\n"
+            "Bohemian: colorful accents, organic materials, decorative layering\n"
+            "Traditional: classic furniture, warm colors, detailed finishes\n"
+            "Contemporary: mixed materials, adaptive layouts, modern lighting"
         )),
-        _section("TASK", (
-            f"Create a comprehensive design improvement plan targeting the "
-            f"**{style_preference}** aesthetic within a **{budget_tier}** budget. "
-            "Prioritise changes by impact. For each change, specify whether to "
-            "replace, add, remove, reposition, or refinish an element. Include "
-            "a recommended colour palette and mood-board keywords."
+        _section("MINIMUM CLEARANCES", (
+            "Bed clearance: 60 cm\n"
+            "Desk clearance: 75 cm\n"
+            "Wardrobe opening clearance: 90 cm\n"
+            "Door swing clearance: 90 cm\n"
+            "Main walking path: 80 cm minimum\n"
+            "Wheelchair access: 90 cm minimum"
+        )),
+        _section("BUDGET RULES", (
+            "Distribute budget across: furniture, lighting, storage, decor, accessories, and a 5% to 10% contingency buffer.\n"
+            "Never exceed the total budget."
+        )),
+        _section("TASKS", (
+            "1. Generate the room theme and style based on preferred style and color presets.\n"
+            "2. Define primary, secondary, and accent materials, textures, and lighting mood.\n"
+            "3. Select furniture and prioritize them (Mandatory, Recommended, Optional, Luxury).\n"
+            "4. Determine furniture positions (x_cm, y_cm, rotation) and corresponding zones (sleeping, workspace, storage, circulation, etc.).\n"
+            "5. Build shopping requirements for each piece (category, dimensions, brand constraints).\n"
+            "6. Explain all recommendations across style match, usability, circulation, aesthetics, and budget categories."
+        )),
+        _section("STRICT RULES", (
+            "- Never recommend furniture that does not fit.\n"
+            "- Never violate spatial constraints.\n"
+            "- Never exceed budget.\n"
+            "- Never block windows or doors.\n"
+            "- Never reduce accessibility.\n"
+            "- Prefer multifunctional furniture whenever possible.\n"
+            "- Prefer natural lighting.\n"
+            "- Minimize clutter."
         )),
         _section("OUTPUT FORMAT", json.dumps(schema, indent=2)),
-        _JSON_REMINDER,
+        _JSON_REMINDER
     ])
 
     return {"system": system, "user": user}
