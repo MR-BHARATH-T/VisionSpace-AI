@@ -1,4 +1,7 @@
+import os
 import torch
+
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 MODELS = {
 
@@ -7,7 +10,7 @@ MODELS = {
     },
 
     "text": {
-        "model": "Qwen/Qwen3-VL-4B-Instruct"
+        "model": "Qwen/Qwen2.5-7B-Instruct"
     }
 
 }
@@ -36,7 +39,7 @@ GENERATION_CONFIG = {
 
     "top_p": 0.9,
 
-    "max_new_tokens": 1024,
+    "max_new_tokens": 512,
 
     "do_sample": False
 

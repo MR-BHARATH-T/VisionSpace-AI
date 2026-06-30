@@ -70,7 +70,7 @@ class DesignAgent:
             llm_res = self.text_model.generate(
                 system_prompt=prompt_data["system"],
                 prompt=prompt_data["user"],
-                max_new_tokens=1024,
+                max_new_tokens=512,
                 temperature=0.1
             )
             raw_text = llm_res.get("text") if isinstance(llm_res, dict) else str(llm_res)

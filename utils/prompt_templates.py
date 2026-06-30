@@ -511,6 +511,70 @@ def design_recommendation_prompt(
     pref_brands = preferred_brands or []
     user_constraints = constraints or {}
 
+    # Extract merged scene if nested
+    v_scene = vision_output.get("merged_scene") if isinstance(vision_output, dict) and "merged_scene" in vision_output else vision_output
+    if not isinstance(v_scene, dict):
+        v_scene = {}
+
+    # Minify vision_output to keep KV cache minimal and prevent OOM
+    min_vision = {
+        "room_type": v_scene.get("room_understanding", {}).get("room_type"),
+        "room_size": v_scene.get("room_understanding", {}).get("room_size"),
+        "architectural_style": v_scene.get("room_understanding", {}).get("architectural_style"),
+        "objects": [
+            {
+                "id": obj.get("id"),
+                "name": obj.get("name"),
+                "category": obj.get("category"),
+                "subcategory": obj.get("subcategory"),
+                "color": obj.get("color"),
+                "estimated_dimensions": obj.get("estimated_dimensions")
+            }
+            for obj in v_scene.get("objects", [])
+        ]
+    }
+
+    # Minify spatial_output
+    min_spatial = {
+        "layout_score": spatial_output.get("layout_analysis", {}).get("layout_score") if isinstance(spatial_output, dict) else None,
+        "flow_score": spatial_output.get("layout_analysis", {}).get("flow_score") if isinstance(spatial_output, dict) else None,
+        "accessibility_score": spatial_output.get("layout_analysis", {}).get("accessibility_score") if isinstance(spatial_output, dict) else None,
+        "collision_report": [
+            {
+                "object1": c.get("object1"),
+                "object2": c.get("object2"),
+                "severity": c.get("severity"),
+                "description": c.get("description")
+            }
+            for c in spatial_output.get("collision_report", [])
+        ] if isinstance(spatial_output, dict) else [],
+        "clearance_violations": [
+            {
+                "object": v.get("object"),
+                "rule": v.get("rule"),
+                "description": v.get("description")
+            }
+            for v in spatial_output.get("clearance_violations", [])
+        ] if isinstance(spatial_output, dict) else [],
+        "walking_paths": [
+            {
+                "name": p.get("name"),
+                "walkable": p.get("walkable"),
+                "length_cm": p.get("length_cm"),
+                "bottlenecks": p.get("bottlenecks")
+            }
+            for p in spatial_output.get("walking_paths", [])
+        ] if isinstance(spatial_output, dict) else [],
+        "placement_candidates": [
+            {
+                "id": c.get("id"),
+                "center": c.get("center"),
+                "max_dimensions": c.get("max_dimensions")
+            }
+            for c in spatial_output.get("placement_candidates", [])
+        ] if isinstance(spatial_output, dict) else []
+    }
+
     # Try to load and render prompts/design_prompt.txt if it exists
     import pathlib
     import json
@@ -520,8 +584,8 @@ def design_recommendation_prompt(
             raw_template = p_path.read_text(encoding="utf-8")
             from providers.huggingface_provider import format_prompt
             user = format_prompt(raw_template, {
-                "vision_output": json.dumps(vision_output, indent=2),
-                "spatial_output": json.dumps(spatial_output, indent=2),
+                "vision_output": json.dumps(min_vision, indent=2),
+                "spatial_output": json.dumps(min_spatial, indent=2),
                 "budget": budget,
                 "preferred_style": preferred_style,
                 "preferred_colors": pref_colors,
@@ -612,8 +676,8 @@ def design_recommendation_prompt(
 
     user = "\n\n".join([
         _section("INPUT", json.dumps({
-            "vision_output": vision_output,
-            "spatial_output": spatial_output,
+            "vision_output": min_vision,
+            "spatial_output": min_spatial,
             "budget": budget,
             "preferred_style": preferred_style,
             "preferred_colors": pref_colors,

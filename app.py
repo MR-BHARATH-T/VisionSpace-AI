@@ -56,6 +56,14 @@ def main():
         session_id = vision_output["session_id"]
         session_path = vision_output["metadata"]["session_path"]
         print(f"Vision Agent finished. Session ID: {session_id}")
+
+        # Explicitly unload vision model to free VRAM before loading text models
+        print("Unloading vision model to free VRAM...")
+        vision_agent.model_manager.unload_model("vision")
+        import torch
+        import gc
+        torch.cuda.empty_cache()
+        gc.collect()
         
         # 2. Run Spatial Agent (What can fit?)
         print("\n🧠 Step 2: Running Spatial Agent...")
@@ -110,6 +118,18 @@ def main():
     except Exception as e:
         print(f"\n❌ Pipeline Execution Failed: {str(e)}")
         raise e
+    finally:
+        try:
+            print("\n🧹 Reclaiming all VRAM resources...")
+            from models.model_manager import ModelManager
+            ModelManager().unload_model("vision")
+            ModelManager().unload_model("reasoning")
+            import torch
+            import gc
+            torch.cuda.empty_cache()
+            gc.collect()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     main()
