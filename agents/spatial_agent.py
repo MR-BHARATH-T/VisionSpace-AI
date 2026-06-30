@@ -561,7 +561,7 @@ class SpatialAgent:
     def find_candidate_locations(
         self, grid_data: Dict[str, Any], room_w: int, room_d: int, num_candidates: int = 3
     ) -> List[Dict[str, Any]]:
-        """Finds maximum bounding rectangle candidate regions in the free space cells."""
+        """Finds up to num_candidates maximum bounding rectangle candidate regions in the free space cells."""
         cells = grid_data.get("cells")
         res = grid_data.get("grid_resolution_cm", 10)
         
@@ -578,47 +578,68 @@ class SpatialAgent:
         grid_d = len(cells)
         grid_w = len(cells[0])
         
-        # Max Rectangle dynamic programming helper
-        heights = [0] * grid_w
-        max_area = 0
-        best_rect = (0, 0, 0, 0) # left, right, top, bottom in grid coords
+        # Make a copy of cells to mark found candidate areas as occupied
+        grid_copy = [row[:] for row in cells]
+        candidates = []
 
-        for r in range(grid_d):
-            for c in range(grid_w):
-                heights[c] = heights[c] + 1 if cells[r][c] == 0 else 0
+        for candidate_idx in range(1, num_candidates + 1):
+            heights = [0] * grid_w
+            max_area = 0
+            best_rect = None # (left, right, top, bottom) in grid coords
+
+            for r in range(grid_d):
+                for c in range(grid_w):
+                    heights[c] = heights[c] + 1 if grid_copy[r][c] == 0 else 0
+                
+                # Find largest histogram rectangle
+                stack = []
+                for i, h in enumerate(heights + [0]):
+                    while stack and heights[stack[-1]] >= h:
+                        idx = stack.pop()
+                        width = i if not stack else i - stack[-1] - 1
+                        height = heights[idx]
+                        area = width * height
+                        if area > max_area:
+                            max_area = area
+                            left = 0 if not stack else stack[-1] + 1
+                            right = i - 1
+                            top = r - height + 1
+                            bottom = r
+                            best_rect = (left, right, top, bottom)
+                    stack.append(i)
+
+            if not best_rect or max_area < 9: # Require at least 3x3 grid cells
+                break
+
+            l, r, t, b = best_rect
+            w_cells = r - l + 1
+            d_cells = b - t + 1
             
-            # Find largest histogram rectangle
-            stack = []
-            for i, h in enumerate(heights + [0]):
-                while stack and heights[stack[-1]] >= h:
-                    idx = stack.pop()
-                    width = i if not stack else i - stack[-1] - 1
-                    height = heights[idx]
-                    area = width * height
-                    if area > max_area:
-                        max_area = area
-                        left = 0 if not stack else stack[-1] + 1
-                        right = i - 1
-                        top = r - height + 1
-                        bottom = r
-                        best_rect = (left, right, top, bottom)
-                stack.append(i)
-
-        l, r, t, b = best_rect
-        w_cells = r - l + 1
-        d_cells = b - t + 1
-        
-        cx = int((l + w_cells/2) * res)
-        cy = int((t + d_cells/2) * res)
-        
-        return [
-            {
-                "id": "candidate_01",
+            cx = int((l + w_cells/2) * res)
+            cy = int((t + d_cells/2) * res)
+            
+            candidates.append({
+                "id": f"candidate_{candidate_idx:02d}",
                 "center": {"x_cm": cx, "y_cm": cy},
                 "max_dimensions": {"width_cm": w_cells * res, "depth_cm": d_cells * res},
                 "fit_confidence": round(0.7 + (max_area / (grid_w * grid_d)) * 0.25, 2)
-            }
-        ]
+            })
+
+            # Mark this rectangle as occupied so next iteration finds a different one
+            for row in range(t, b + 1):
+                for col in range(l, r + 1):
+                    grid_copy[row][col] = 1
+
+        if not candidates:
+            # Fallback
+            candidates.append({
+                "id": "candidate_01",
+                "center": {"x_cm": room_w // 2, "y_cm": room_d // 2},
+                "max_dimensions": {"width_cm": 100, "depth_cm": 100},
+                "fit_confidence": 0.5
+            })
+
+        return candidates
 
     # -------------------------------------------------------------------------
     # 5. Balance & Symmetry Heuristics
