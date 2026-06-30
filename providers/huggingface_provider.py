@@ -393,10 +393,25 @@ class HuggingFaceProvider(BaseProvider):
                     f"(architectures: {architectures}, type: {model_type})."
                 )
 
-            # Retrieve loader class from registry
-            loader_entry = MODEL_REGISTRY.get(task, MODEL_REGISTRY["reasoning"])
-            loader_class = loader_entry["loader"]
-            processor_class = loader_entry["processor"]
+            # Determine if model is a Vision-Language model dynamically
+            is_vl = False
+            model_type = getattr(model_config, "model_type", "").lower()
+            architectures = getattr(model_config, "architectures", [])
+            arch_name = architectures[0] if architectures else ""
+            
+            vl_indicators = ["vl", "vision", "multimodal", "imagetext", "llava", "internvl", "qwen2_5_vl", "mplug"]
+            if any(ind in model_type or ind in arch_name.lower() for ind in vl_indicators):
+                is_vl = True
+
+            # Resolve loader and processor classes dynamically
+            if is_vl:
+                from transformers import AutoModelForImageTextToText, AutoProcessor
+                loader_class = AutoModelForImageTextToText
+                processor_class = AutoProcessor
+            else:
+                from transformers import AutoModelForCausalLM
+                loader_class = AutoModelForCausalLM
+                processor_class = None
 
             # Load tokenizer and processor (only if not already set by ModelManager)
             if self.tokenizer is None:
