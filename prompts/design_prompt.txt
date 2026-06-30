@@ -203,26 +203,73 @@ Schema:
 
   "recommended_furniture": [
     {
-      "id": "string",
-      "name": "string",
-      "category": "string",
-      "priority": "string (Mandatory|Recommended|Optional|Luxury)",
-      "estimated_cost": "number",
-      "retain_existing": "boolean",
-      "reason": "string"
+      "id": "desk_001",
+      "name": "Oak Study Desk",
+      "category": "desk",
+      "priority": "Mandatory",
+      "estimated_cost": 8000,
+      "retain_existing": false,
+      "reason": "Dedicated work surface matching styling cues."
+    },
+    {
+      "id": "chair_001",
+      "name": "Ergonomic Mesh Chair",
+      "category": "chair",
+      "priority": "Mandatory",
+      "estimated_cost": 6000,
+      "retain_existing": false,
+      "reason": "Provides ergonomic seating support for office work."
+    },
+    {
+      "id": "lamp_001",
+      "name": "Brass Task Desk Lamp",
+      "category": "lighting",
+      "priority": "Recommended",
+      "estimated_cost": 2500,
+      "retain_existing": false,
+      "reason": "Targeted task lighting for late night working sessions."
+    },
+    {
+      "id": "rug_001",
+      "name": "Textured Area Rug",
+      "category": "decor",
+      "priority": "Recommended",
+      "estimated_cost": 4500,
+      "retain_existing": false,
+      "reason": "Anchors the furniture arrangement visually and provides floor damping."
     }
   ],
 
   "layout_plan": [
     {
-      "furniture_id": "string",
+      "furniture_id": "desk_001",
       "position": {
-        "x_cm": "integer",
-        "y_cm": "integer"
+        "x_cm": 150,
+        "y_cm": 200
       },
-      "rotation": "integer (0|90|180|270)",
-      "zone": "string",
-      "clearance_valid": "boolean"
+      "rotation": 90,
+      "zone": "workspace",
+      "clearance_valid": true
+    },
+    {
+      "furniture_id": "chair_001",
+      "position": {
+        "x_cm": 150,
+        "y_cm": 140
+      },
+      "rotation": 90,
+      "zone": "workspace",
+      "clearance_valid": true
+    },
+    {
+      "furniture_id": "lamp_001",
+      "position": {
+        "x_cm": 110,
+        "y_cm": 200
+      },
+      "rotation": 0,
+      "zone": "workspace",
+      "clearance_valid": true
     }
   ],
 
@@ -239,13 +286,31 @@ Schema:
 
   "shopping_requirements": [
     {
-      "category": "string",
-      "required_width_cm": "number",
-      "required_depth_cm": "number",
-      "style": "string",
-      "material": "string",
-      "budget_limit": "number",
-      "preferred_brands": ["string"]
+      "category": "desk",
+      "required_width_cm": 120,
+      "required_depth_cm": 60,
+      "style": "modern",
+      "material": "oak",
+      "budget_limit": 8000,
+      "preferred_brands": ["IKEA", "Urban Ladder"]
+    },
+    {
+      "category": "chair",
+      "required_width_cm": 60,
+      "required_depth_cm": 60,
+      "style": "modern",
+      "material": "mesh",
+      "budget_limit": 6000,
+      "preferred_brands": ["IKEA", "Herman Miller"]
+    },
+    {
+      "category": "lighting",
+      "required_width_cm": 30,
+      "required_depth_cm": 30,
+      "style": "modern",
+      "material": "brass",
+      "budget_limit": 2500,
+      "preferred_brands": ["IKEA", "Urban Ladder"]
     }
   ],
 
