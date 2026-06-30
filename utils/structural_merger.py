@@ -36,9 +36,9 @@ class StructuralMerger:
 
         # 2. Inspect merged objects list and isolate misclassified building structures
         for obj in merged_objects:
-            name = obj.get("name", "").lower()
-            category = obj.get("category", "").lower()
-            subcategory = obj.get("subcategory", "").lower()
+            name = (obj.get("name") or "").lower()
+            category = (obj.get("category") or "").lower()
+            subcategory = (obj.get("subcategory") or "").lower()
             combined = f"{name} {category} {subcategory}"
 
             is_door = any(k in combined for k in ["door", "doorway", "entry", "entrance", "gate", "portal", "exit", "threshold"])
