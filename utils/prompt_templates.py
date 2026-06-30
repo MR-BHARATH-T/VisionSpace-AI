@@ -511,6 +511,28 @@ def design_recommendation_prompt(
     pref_brands = preferred_brands or []
     user_constraints = constraints or {}
 
+    # Try to load and render prompts/design_prompt.txt if it exists
+    import pathlib
+    import json
+    p_path = pathlib.Path("prompts/design_prompt.txt")
+    if p_path.exists():
+        try:
+            raw_template = p_path.read_text(encoding="utf-8")
+            from providers.huggingface_provider import format_prompt
+            user = format_prompt(raw_template, {
+                "vision_output": json.dumps(vision_output, indent=2),
+                "spatial_output": json.dumps(spatial_output, indent=2),
+                "budget": budget,
+                "preferred_style": preferred_style,
+                "preferred_colors": pref_colors,
+                "preferred_brands": pref_brands,
+                "constraints": json.dumps(user_constraints, indent=2)
+            })
+            system = "You are the Design Agent for VisionSpace AI, an AI-powered interior planning and space optimization platform. Act as a professional interior designer."
+            return {"system": system, "user": user}
+        except Exception:
+            pass
+
     schema = {
         "design_theme": "string",
         "color_palette": ["string"],
