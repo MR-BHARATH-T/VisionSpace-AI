@@ -136,24 +136,7 @@ class DesignAgent:
         """Backup design plan structure if LLM inference crashed."""
         return {
             "design_theme": f"Warm {style.capitalize()} Sanctuary",
-            "design_style": style,
-            "materials": {
-                "primary": "Oak Wood",
-                "secondary": "Linen Fabric",
-                "accent": "Brass Metal"
-            },
-            "lighting_strategy": {
-                "lighting_type": "Layered Ambient & Task",
-                "color_temperature": "3000K",
-                "lighting_mood": "Warm and calming"
-            },
-            "color_palette": {
-                "primary_colors": ["White", "Oak"],
-                "secondary_colors": ["Light Grey"],
-                "accent_colors": ["Soft Sage Green"],
-                "wall_colors": ["Off-White"],
-                "furniture_colors": ["Oak", "Grey"]
-            },
+            "color_palette": ["White", "Oak", "Light Grey"],
             "recommended_furniture": [
                 {
                     "name": "Oak Study Desk",
@@ -164,19 +147,16 @@ class DesignAgent:
                     "reason": "Provides a dedicated ergonomically aligned workspace."
                 }
             ],
-            "layout_plan": [
+            "placement_plan": [
                 {
                     "furniture": "Oak Study Desk",
                     "position": {
                         "x_cm": 150,
-                        "y_cm": 200
-                    },
-                    "rotation": 90,
-                    "zone": "workspace",
-                    "clearance_valid": True
+                        "y_cm": 200,
+                        "rotation": 90
+                    }
                 }
             ],
-            "functional_zones": ["sleeping", "workspace"],
             "budget_breakdown": {
                 "furniture": int(budget * 0.6),
                 "lighting": int(budget * 0.1),
@@ -188,36 +168,21 @@ class DesignAgent:
             "shopping_requirements": [
                 {
                     "category": "desk",
-                    "required_size": {
-                        "width_cm": 120,
-                        "depth_cm": 60,
-                        "height_cm": 75
-                    },
-                    "style": style,
-                    "material": "oak",
-                    "max_budget": int(budget * 0.15),
-                    "preferred_brands": ["IKEA"]
+                    "required_size": "120x60x75cm",
+                    "max_width_cm": 120,
+                    "style": style
                 }
             ],
-            "estimated_total_cost": int(budget * 0.9),
+            "estimated_cost": int(budget * 0.9),
             "design_explanations": [
-                {
-                    "recommendation": "Add Oak Study Desk",
-                    "why_selected": "Creates a distinct zone for work.",
-                    "why_placed": "Placed against the wall next to window to utilize natural light.",
-                    "usability_improvement": "Improves productivity and study focus.",
-                    "circulation_improvement": "Preserves a clear walking path from the entrance.",
-                    "aesthetics_improvement": "Aligns with oak styling themes.",
-                    "budget_respect": "Fits within allocated furniture budget.",
-                    "style_match": "Matches scandinavian minimalism."
-                }
-            ],
-            "confidence_score": 0.85
+                "The Oak Study Desk was selected to create a functional work-from-home zone.",
+                "It was placed next to the window to maximize natural light.",
+                "We preserved a clear 90 cm wheelchair accessible walking corridor from the entrance."
+            ]
         }
 
     def _fuse_design_payload(self, llm_data: Dict[str, Any], style: str, budget: float | int) -> Dict[str, Any]:
         """Ensures that the output contains all compliant Design Agent schema fields."""
-        # If any of the required root fields are missing, merge with fallback
         fallback = self._get_fallback_design_json(style, budget)
         fused = {}
 
@@ -227,10 +192,16 @@ class DesignAgent:
             else:
                 fused[key] = val
 
-        # Clean/validate budget types to numbers
         try:
-            fused["estimated_total_cost"] = float(fused.get("estimated_total_cost") or budget * 0.8)
+            fused["estimated_cost"] = float(fused.get("estimated_cost") or budget * 0.8)
         except Exception:
-            fused["estimated_total_cost"] = float(budget * 0.8)
+            fused["estimated_cost"] = float(budget * 0.8)
+
+        # Remove outdated keys if LLM generated them
+        fused.pop("estimated_total_cost", None)
+        fused.pop("design_style", None)
+        fused.pop("materials", None)
+        fused.pop("lighting_strategy", None)
+        fused.pop("functional_zones", None)
 
         return fused

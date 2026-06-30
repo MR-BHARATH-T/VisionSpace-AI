@@ -513,24 +513,7 @@ def design_recommendation_prompt(
 
     schema = {
         "design_theme": "string",
-        "design_style": "string",
-        "materials": {
-            "primary": "string",
-            "secondary": "string",
-            "accent": "string"
-        },
-        "lighting_strategy": {
-            "lighting_type": "string",
-            "color_temperature": "string",
-            "lighting_mood": "string"
-        },
-        "color_palette": {
-            "primary_colors": ["string"],
-            "secondary_colors": ["string"],
-            "accent_colors": ["string"],
-            "wall_colors": ["string"],
-            "furniture_colors": ["string"]
-        },
+        "color_palette": ["string"],
         "recommended_furniture": [
             {
                 "name": "string",
@@ -541,19 +524,16 @@ def design_recommendation_prompt(
                 "reason": "string"
             }
         ],
-        "layout_plan": [
+        "placement_plan": [
             {
                 "furniture": "string",
                 "position": {
                     "x_cm": "integer",
-                    "y_cm": "integer"
-                },
-                "rotation": "integer (0|90|180|270)",
-                "zone": "string",
-                "clearance_valid": "boolean"
+                    "y_cm": "integer",
+                    "rotation": "integer (0|90|180|270)"
+                }
             }
         ],
-        "functional_zones": ["string"],
         "budget_breakdown": {
             "furniture": "number",
             "lighting": "number",
@@ -565,31 +545,13 @@ def design_recommendation_prompt(
         "shopping_requirements": [
             {
                 "category": "string",
-                "required_size": {
-                    "width_cm": "number",
-                    "depth_cm": "number",
-                    "height_cm": "number"
-                },
-                "style": "string",
-                "material": "string",
-                "max_budget": "number",
-                "preferred_brands": ["string"]
+                "required_size": "string",
+                "max_width_cm": "number",
+                "style": "string"
             }
         ],
-        "estimated_total_cost": "number",
-        "design_explanations": [
-            {
-                "recommendation": "string",
-                "why_selected": "string",
-                "why_placed": "string",
-                "usability_improvement": "string",
-                "circulation_improvement": "string",
-                "aesthetics_improvement": "string",
-                "budget_respect": "string",
-                "style_match": "string"
-            }
-        ],
-        "confidence_score": "number (0.0-1.0)"
+        "estimated_cost": "number",
+        "design_explanations": ["string"]
     }
 
     system = (
