@@ -412,6 +412,7 @@ class VisionAgent:
         # Session metadata
         metadata = {
             "session_id": session_id,
+            "session_path": str(session_path),
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
             "model_name": getattr(config, "MODELS", {}).get("vision", {}).get("model", "Qwen/Qwen2.5-VL-7B-Instruct"),
             "prompt_version": "25-feature-scene-understanding-v1",
