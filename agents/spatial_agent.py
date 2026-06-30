@@ -49,6 +49,9 @@ class SpatialAgent:
         logger.info("Starting layout spatial analysis...")
 
         # A. Run python-based geometric reasoning engine
+        if "merged_scene" in room_data:
+            room_data = room_data["merged_scene"]
+            
         objects = room_data.get("objects", [])
         doors = room_data.get("doors", [])
         windows = room_data.get("windows", [])
