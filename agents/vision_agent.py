@@ -745,6 +745,7 @@ class VisionAgent:
         grid = detector.build_occupancy_grid(room_w, room_d, base_scene["objects"])
         empty_regions, free_polygons = detector.detect_free_regions(grid, room_w, room_d)
         
+        base_scene["occupancy_grid"] = grid
         base_scene["empty_regions"] = empty_regions
         base_scene["free_space_polygons"] = free_polygons
 
