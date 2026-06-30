@@ -468,6 +468,8 @@ def spatial_analysis_prompt(
         _section("TASK", (
             "Analyse the spatial layout of the room using the geometric report as your ground truth. "
             "Evaluate flow, balance, clearances, functional zoning, and calculate scores. "
+            "For functional_zones, identify and classify zones dynamically: sleeping, study, entertainment, "
+            "dressing, storage, circulation, work, and reading depending on the room objects present. "
             "For proposed additions, validate if they fit. Propose actionable recommendations "
             "to optimize furniture placement and preserve fire exits and emergency paths."
         )),
