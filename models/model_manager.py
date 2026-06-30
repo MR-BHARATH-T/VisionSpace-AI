@@ -390,39 +390,32 @@ class ModelManager:
     def _schedule_vram(self, target_task: str) -> None:
         """Kaggle-friendly memory scheduler.
 
-        Evicts other models and empties cache if free VRAM is low before loading next.
+        Aggressively evicts other models to free VRAM before loading next.
         """
         if not torch.cuda.is_available():
             return
 
         try:
-            device_id = torch.cuda.current_device()
-            total_memory = torch.cuda.get_device_properties(device_id).total_memory
-            allocated = torch.cuda.memory_allocated(device_id)
-            free_vram_gb = (total_memory - allocated) / (1024 ** 3)
+            target_meta = MODEL_REGISTRY.get(target_task, {})
+            target_model_name = target_meta.get("model_name")
 
-            logger.info("VRAM Scheduler Check: %.2f GB free VRAM.", free_vram_gb)
+            # Aggressively unload any loaded model utilizing different weights
+            # to prevent Hugging Face device_map auto offloading traps
+            for task in list(MODEL_REGISTRY.keys()):
+                if task != target_task and self.is_loaded(task):
+                    meta = MODEL_REGISTRY[task]
+                    if meta.get("model_name") != target_model_name:
+                        logger.warning("VRAM Scheduler: Preemptively unloading different model for task '%s' to prevent OOM.", task)
+                        self.unload_model(task)
 
-            # If free memory is below 6.5 GB, evict other loaded models
-            if free_vram_gb < 6.5:
-                logger.warning("VRAM headroom is low (%.2f GB). Evicting inactive models from memory.", free_vram_gb)
-                target_meta = MODEL_REGISTRY.get(target_task, {})
-                target_model_name = target_meta.get("model_name")
-                for task in list(MODEL_REGISTRY.keys()):
-                    if task != target_task and self.is_loaded(task):
-                        meta = MODEL_REGISTRY[task]
-                        if meta.get("model_name") != target_model_name:
-                            logger.info("Preemptively unloading model for task '%s'", task)
-                            self.unload_model(task)
-
-                # Force device cleanup
-                try:
-                    torch.cuda.synchronize()
-                    torch.cuda.empty_cache()
-                    torch.cuda.ipc_collect()
-                except Exception:
-                    pass
-                gc.collect()
+            # Force device cleanup
+            try:
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+            except Exception:
+                pass
+            gc.collect()
         except Exception as e:
             logger.warning("Error in VRAM memory scheduler: %s", str(e))
 
