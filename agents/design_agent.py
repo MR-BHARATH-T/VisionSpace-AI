@@ -136,9 +136,28 @@ class DesignAgent:
         """Backup design plan structure if LLM inference crashed."""
         return {
             "design_theme": f"Warm {style.capitalize()} Sanctuary",
-            "color_palette": ["White", "Oak", "Light Grey"],
+            "design_style": style,
+            "room_goal": "Optimize layout for ergonomic productivity, accessibility, and visual balance.",
+            "materials": {
+                "primary_material": "Oak Wood",
+                "secondary_material": "Linen Fabric",
+                "accent_material": "Black Powder Coated Steel"
+            },
+            "lighting_strategy": {
+                "lighting_mood": "Cozy, layered, warm white tone for reading and working.",
+                "color_temperature": "3000K",
+                "natural_light_strategy": "Desk placed next to window for direct lighting; light linen curtains to reduce glare."
+            },
+            "color_palette": {
+                "primary_colors": ["White", "Oak"],
+                "secondary_colors": ["Light Grey"],
+                "accent_colors": ["Sage Green"],
+                "wall_colors": ["Off-White"],
+                "furniture_colors": ["Oak", "White"]
+            },
             "recommended_furniture": [
                 {
+                    "id": "desk_001",
                     "name": "Oak Study Desk",
                     "category": "desk",
                     "priority": "Mandatory",
@@ -147,38 +166,45 @@ class DesignAgent:
                     "reason": "Provides a dedicated ergonomically aligned workspace."
                 }
             ],
-            "placement_plan": [
+            "layout_plan": [
                 {
-                    "furniture": "Oak Study Desk",
+                    "furniture_id": "desk_001",
                     "position": {
                         "x_cm": 150,
-                        "y_cm": 200,
-                        "rotation": 90
-                    }
+                        "y_cm": 200
+                    },
+                    "rotation": 90,
+                    "zone": "workspace",
+                    "clearance_valid": True
                 }
             ],
+            "functional_zones": ["sleeping", "working", "storage", "circulation"],
             "budget_breakdown": {
                 "furniture": int(budget * 0.6),
                 "lighting": int(budget * 0.1),
-                "storage": int(budget * 0.15),
                 "decor": int(budget * 0.05),
+                "storage": int(budget * 0.15),
                 "buffer": int(budget * 0.1),
                 "total": int(budget)
             },
             "shopping_requirements": [
                 {
                     "category": "desk",
-                    "required_size": "120x60x75cm",
-                    "max_width_cm": 120,
-                    "style": style
+                    "required_width_cm": 120,
+                    "required_depth_cm": 60,
+                    "style": style,
+                    "material": "oak",
+                    "budget_limit": int(budget * 0.15),
+                    "preferred_brands": ["IKEA", "Urban Ladder"]
                 }
             ],
-            "estimated_cost": int(budget * 0.9),
+            "estimated_total_cost": int(budget * 0.9),
             "design_explanations": [
                 "The Oak Study Desk was selected to create a functional work-from-home zone.",
                 "It was placed next to the window to maximize natural light.",
                 "We preserved a clear 90 cm wheelchair accessible walking corridor from the entrance."
-            ]
+            ],
+            "confidence_score": 0.85
         }
 
     def _fuse_design_payload(self, llm_data: Dict[str, Any], style: str, budget: float | int) -> Dict[str, Any]:
@@ -193,15 +219,12 @@ class DesignAgent:
                 fused[key] = val
 
         try:
-            fused["estimated_cost"] = float(fused.get("estimated_cost") or budget * 0.8)
+            fused["estimated_total_cost"] = float(fused.get("estimated_total_cost") or budget * 0.8)
         except Exception:
-            fused["estimated_cost"] = float(budget * 0.8)
+            fused["estimated_total_cost"] = float(budget * 0.8)
 
-        # Remove outdated keys if LLM generated them
-        fused.pop("estimated_total_cost", None)
-        fused.pop("design_style", None)
-        fused.pop("materials", None)
-        fused.pop("lighting_strategy", None)
-        fused.pop("functional_zones", None)
+        # Remove temporary or legacy format keys if generated
+        fused.pop("estimated_cost", None)
+        fused.pop("placement_plan", None)
 
         return fused

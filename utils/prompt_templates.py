@@ -535,9 +535,28 @@ def design_recommendation_prompt(
 
     schema = {
         "design_theme": "string",
-        "color_palette": ["string"],
+        "design_style": "string",
+        "room_goal": "string",
+        "materials": {
+            "primary_material": "string",
+            "secondary_material": "string",
+            "accent_material": "string"
+        },
+        "lighting_strategy": {
+            "lighting_mood": "string",
+            "color_temperature": "string",
+            "natural_light_strategy": "string"
+        },
+        "color_palette": {
+            "primary_colors": ["string"],
+            "secondary_colors": ["string"],
+            "accent_colors": ["string"],
+            "wall_colors": ["string"],
+            "furniture_colors": ["string"]
+        },
         "recommended_furniture": [
             {
+                "id": "string",
                 "name": "string",
                 "category": "string",
                 "priority": "string (Mandatory|Recommended|Optional|Luxury)",
@@ -546,34 +565,41 @@ def design_recommendation_prompt(
                 "reason": "string"
             }
         ],
-        "placement_plan": [
+        "layout_plan": [
             {
-                "furniture": "string",
+                "furniture_id": "string",
                 "position": {
                     "x_cm": "integer",
-                    "y_cm": "integer",
-                    "rotation": "integer (0|90|180|270)"
-                }
+                    "y_cm": "integer"
+                },
+                "rotation": "integer (0|90|180|270)",
+                "zone": "string",
+                "clearance_valid": "boolean"
             }
         ],
+        "functional_zones": ["string"],
         "budget_breakdown": {
             "furniture": "number",
             "lighting": "number",
-            "storage": "number",
             "decor": "number",
+            "storage": "number",
             "buffer": "number",
             "total": "number"
         },
         "shopping_requirements": [
             {
                 "category": "string",
-                "required_size": "string",
-                "max_width_cm": "number",
-                "style": "string"
+                "required_width_cm": "number",
+                "required_depth_cm": "number",
+                "style": "string",
+                "material": "string",
+                "budget_limit": "number",
+                "preferred_brands": ["string"]
             }
         ],
-        "estimated_cost": "number",
-        "design_explanations": ["string"]
+        "estimated_total_cost": "number",
+        "design_explanations": ["string"],
+        "confidence_score": "number (0.0-1.0)"
     }
 
     system = (
