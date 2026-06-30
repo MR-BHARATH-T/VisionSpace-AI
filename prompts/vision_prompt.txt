@@ -33,6 +33,9 @@ Your analysis must include:
 - Beams
 
 4. Object Detection
+### CRITICAL: HIGH-RECALL OBJECT DETECTION MANDATE
+You must aggressively scan for and record EVERY single object in the room view. High object recall is extremely critical. Do not skip smaller or secondary items. Look for and document all instances of: beds, side tables, chairs, wardrobes, curtains, lamps, shelves, monitors, desks, ceiling/table/pedestal fans, rugs, electrical sockets, switches, paintings, and mirrors. If it is in the scene, you MUST output it inside the "objects" list.
+
 For every detected object identify:
 - Unique ID (e.g., chair_001)
 - Name (e.g., Office Chair)
