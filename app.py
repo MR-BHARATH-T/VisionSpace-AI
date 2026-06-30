@@ -1,10 +1,9 @@
 import os
 import sys
-import uuid
+import shutil
 import pathlib
 import pprint
 from PIL import Image
-import gradio as gr
 
 # Ensure the root path is in the sys path
 root_path = os.path.dirname(os.path.abspath(__file__))
@@ -15,195 +14,102 @@ from agents.vision_agent import VisionAgent
 from agents.spatial_agent import SpatialAgent
 from agents.design_agent import DesignAgent
 
-# Initialize agents
-vision_agent = VisionAgent()
-spatial_agent = SpatialAgent()
-design_agent = DesignAgent()
+def main():
+    print("==================================================")
+    print("Initializing Multi-Agent Pipeline...")
+    vision_agent = VisionAgent()
+    spatial_agent = SpatialAgent()
+    design_agent = DesignAgent()
+    
+    # Check for default assets
+    fallback_paths = [
+        "assets/front-view.png", 
+        "assets/left-view.png", 
+        "assets/right-view.png"
+    ]
+    images = []
+    
+    for path in fallback_paths:
+        p = pathlib.Path(path)
+        if p.exists():
+            img = Image.open(p)
+            images.append(img)
+            print(f"  Loaded local asset: {p.name} ({img.width}x{img.height} px)")
+        else:
+            print(f"  Fallback file not found at: {path}")
 
-def run_pipeline(
-    image,
-    room_type,
-    style_preference,
-    budget,
-    colors_str,
-    brands_str,
-    retain_bed,
-    keep_window,
-    wheelchair,
-    wfh
-):
-    if image is None:
-        return (
-            "Error: Please upload a room image.",
-            [], [], [], {}, [], "Please upload an image to start analysis."
-        )
-
-    # Convert NumPy array from Gradio to PIL Image
-    if not isinstance(image, Image.Image):
-        image = Image.fromarray(image)
-
+    # Fallback to creating a dummy image if assets folder is completely missing
+    if not images:
+        print("  Creating fallback dummy room image...")
+        img = Image.new("RGB", (400, 400), color=(240, 240, 240))
+        images.append(img)
+    
     try:
-        # 1. Run Vision Agent (Scene Understanding)
+        # 1. Run Vision Agent (What exists?)
+        print("\n🏠 Step 1: Running Vision Agent...")
         vision_output = vision_agent.analyze_room(
-            images=[image],
-            room_type=room_type,
-            style_preference=style_preference
+            images=images,
+            room_type="living_room",
+            style_preference="modern",
+            progress_callback=lambda step: print(f"  [Step] {step}")
         )
-        
         session_id = vision_output["session_id"]
         session_path = vision_output["metadata"]["session_path"]
+        print(f"Vision Agent finished. Session ID: {session_id}")
         
-        # 2. Run Spatial Agent (Clearance & Path checks)
+        # 2. Run Spatial Agent (What can fit?)
+        print("\n🧠 Step 2: Running Spatial Agent...")
         spatial_output = spatial_agent.analyze_layout(
             room_data=vision_output,
             proposed_furniture=None,
             session_path=session_path
         )
+        print("Spatial Agent finished layout analysis successfully.")
         
-        # Parse inputs
-        colors = [c.strip() for c in colors_str.split(",") if c.strip()]
-        brands = [b.strip() for b in brands_str.split(",") if b.strip()]
-        
-        constraints = {
-            "retain_existing_bed": retain_bed,
-            "keep_window_access": keep_window,
-            "wheelchair_accessible": wheelchair,
-            "work_from_home": wfh
-        }
-        
-        # 3. Run Design Agent (Style recommendations & placements)
+        # 3. Run Design Agent (What SHOULD this room become?)
+        print("\n🌌 Step 3: Running Design Agent...")
         design_output = design_agent.generate_recommendations(
             vision_output=vision_output,
             spatial_output=spatial_output,
-            budget=budget,
-            preferred_style=style_preference,
-            preferred_colors=colors,
-            preferred_brands=brands,
-            constraints=constraints,
+            budget=50000,
+            preferred_style="modern",
+            preferred_colors=["white", "oak", "light_grey"],
+            preferred_brands=["IKEA", "Urban Ladder"],
+            constraints={
+                "retain_existing_bed": True,
+                "keep_window_access": True,
+                "wheelchair_accessible": False,
+                "work_from_home": True
+            },
             session_path=session_path
         )
+        print("Design Agent recommendations completed successfully.")
         
-        # Extract fields
-        theme = design_output.get("design_theme", "N/A")
-        palette = design_output.get("color_palette", [])
-        recs = design_output.get("recommended_furniture", [])
-        layout = design_output.get("layout_plan", [])
-        breakdown = design_output.get("budget_breakdown", {})
-        shopping = design_output.get("shopping_requirements", [])
-        explanations = "\n".join([f"- {exp}" for exp in design_output.get("design_explanations", [])])
+        print("\n✅ Multi-Agent Pipeline Analysis Complete!")
+        print(f"Session ID: {session_id}")
+        print(f"All spatial and design outputs are stored in: {session_path}")
         
-        return theme, palette, recs, layout, breakdown, shopping, explanations
+        print("\n--- Output Files Exported ---")
+        print(f"1. Unified Scene Graph: {session_path}/scene_graph.json")
+        print(f"2. Occupancy Grid matrix: {session_path}/occupancy_grid.json")
+        print(f"3. Merged Scene: {session_path}/merged_output.json")
+        print(f"4. Spatial Layout Analysis: {session_path}/spatial_analysis.json")
+        print(f"5. Design Recommendation: {session_path}/design_analysis.json")
         
+        # Zip outputs for ease of downloading
+        print("\n📦 Zipping output files...")
+        outputs_dir = pathlib.Path("outputs")
+        zip_output_path = pathlib.Path("../outputs")  # outside workspace directory /kaggle/working/
+        
+        if outputs_dir.exists():
+            shutil.make_archive(str(zip_output_path), 'zip', str(outputs_dir))
+            print("Zipping complete! Created outputs.zip successfully.")
+        else:
+            print("Error: The outputs directory does not exist.")
+            
     except Exception as e:
-        return (
-            f"Pipeline Error: {str(e)}",
-            [], [], [], {}, [], f"Error running agents: {str(e)}"
-        )
-
-def run_cli_demo():
-    print("==================================================")
-    print("Running CLI Pipeline Demo mode...")
-    print("Creating dummy room image...")
-    img = Image.new("RGB", (400, 400), color=(240, 240, 240))
-    temp_img_path = "temp_room_view.jpg"
-    img.save(temp_img_path)
-    
-    try:
-        theme, palette, recs, layout, breakdown, shopping, explanations = run_pipeline(
-            image=img,
-            room_type="bedroom",
-            style_preference="scandinavian",
-            budget=50000,
-            colors_str="white, oak, light_grey",
-            brands_str="IKEA, Urban Ladder",
-            retain_bed=True,
-            keep_window=True,
-            wheelchair=False,
-            wfh=True
-        )
-        print("Pipeline Execution Completed!")
-        print(f"Theme: {theme}")
-        print(f"Explanations: {explanations}")
-    finally:
-        if os.path.exists(temp_img_path):
-            os.remove(temp_img_path)
-
-def launch_web_app():
-    # Built using clean, modern, dark interface aesthetics
-    with gr.Blocks(theme=gr.themes.Default(primary_hue="blue", secondary_hue="slate")) as demo:
-        gr.Markdown(
-            """
-            # 🌌 VisionSpace AI - Multi-Agent Planner
-            *Convert simple space snapshots into professional, accessible, and budget-optimized interior design plans.*
-            """
-        )
-        
-        with gr.Row():
-            with gr.Column(scale=1):
-                gr.Markdown("### 📸 Input Room Image")
-                input_image = gr.Image(label="Upload Room Photo", type="numpy")
-                
-                gr.Markdown("### ⚙️ Preferences & Constraints")
-                room_type = gr.Dropdown(
-                    label="Room Type",
-                    choices=["bedroom", "living_room", "dining_room", "study"],
-                    value="bedroom"
-                )
-                style_preference = gr.Dropdown(
-                    label="Style Target",
-                    choices=["scandinavian", "modern", "minimalist", "industrial", "japandi", "luxury", "bohemian", "traditional", "contemporary"],
-                    value="scandinavian"
-                )
-                budget = gr.Number(label="Total Budget Limit (INR)", value=50000)
-                colors_str = gr.Textbox(label="Colors (comma separated)", value="white, oak, light_grey")
-                brands_str = gr.Textbox(label="Preferred Brands (comma separated)", value="IKEA, Urban Ladder")
-                
-                with gr.Row():
-                    retain_bed = gr.Checkbox(label="Retain Existing Bed", value=True)
-                    keep_window = gr.Checkbox(label="Keep Window Access", value=True)
-                with gr.Row():
-                    wheelchair = gr.Checkbox(label="Wheelchair Accessible", value=False)
-                    wfh = gr.Checkbox(label="Work From Home setup", value=True)
-                
-                submit_btn = gr.Button("🚀 Run Multi-Agent Optimizer", variant="primary")
-                
-            with gr.Column(scale=1.2):
-                gr.Markdown("### 💡 Recommended Design Plan")
-                
-                theme_output = gr.Textbox(label="Design Theme")
-                
-                with gr.Tab("🎨 Color Palette & Explanations"):
-                    palette_output = gr.JSON(label="Colors")
-                    explanations_output = gr.Markdown(label="Style & Placement Explanations")
-                    
-                with gr.Tab("🛏️ Recommended Furniture & Layout"):
-                    recs_output = gr.JSON(label="Recommendations Sheet")
-                    layout_output = gr.JSON(label="Layout Coordinates Plan")
-                    
-                with gr.Tab("🛍️ Budget & Shopping Requirements"):
-                    breakdown_output = gr.JSON(label="Budget Category Allocation")
-                    shopping_output = gr.JSON(label="Commerce Requirements Specification")
-
-        submit_btn.click(
-            fn=run_pipeline,
-            inputs=[
-                input_image, room_type, style_preference, budget,
-                colors_str, brands_str, retain_bed, keep_window,
-                wheelchair, wfh
-            ],
-            outputs=[
-                theme_output, palette_output, recs_output,
-                layout_output, breakdown_output, shopping_output,
-                explanations_output
-            ]
-        )
-        
-    # On Kaggle, share=True enables a public shareable link
-    is_kaggle = os.path.exists("/kaggle") or "KAGGLE_KERNEL_RUN_TYPE" in os.environ
-    demo.launch(share=is_kaggle, server_name="0.0.0.0", server_port=7860)
+        print(f"\n❌ Pipeline Execution Failed: {str(e)}")
+        raise e
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--cli":
-        run_cli_demo()
-    else:
-        launch_web_app()
+    main()
