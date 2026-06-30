@@ -488,6 +488,8 @@ class HuggingFaceProvider(BaseProvider):
 
             # Execute load
             logger.info("Executing load weights for: %s (attn: %s, dtype: %s)", model_name, attn_impl, str(model_dtype))
+            # Execute load
+            logger.info("Executing load weights for: %s (attn: %s, dtype: %s)", model_name, attn_impl, str(model_dtype))
             try:
                 self.model = loader_class.from_pretrained(
                     model_name,
@@ -502,19 +504,42 @@ class HuggingFaceProvider(BaseProvider):
                     revision=hf_revision,
                 )
             except Exception as e:
-                logger.warning("Loading failed with %s implementation: %s. Retrying with SDPA.", attn_impl, str(e))
-                self.model = loader_class.from_pretrained(
-                    model_name,
-                    quantization_config=quant_config,
-                    device_map=device_map,
-                    torch_dtype=model_dtype,
-                    attn_implementation="sdpa",
-                    cache_dir=cache_dir,
-                    token=auth_token,
-                    local_files_only=local_files_only,
-                    force_download=force_download,
-                    revision=hf_revision,
-                )
+                logger.warning("Loading failed: %s. Retrying with SDPA.", str(e))
+                try:
+                    self.model = loader_class.from_pretrained(
+                        model_name,
+                        quantization_config=quant_config,
+                        device_map=device_map,
+                        torch_dtype=model_dtype,
+                        attn_implementation="sdpa",
+                        cache_dir=cache_dir,
+                        token=auth_token,
+                        local_files_only=local_files_only,
+                        force_download=force_download,
+                        revision=hf_revision,
+                    )
+                except Exception as e_inner:
+                    if quant_config is not None:
+                        logger.warning("Quantized loading failed: %s. Retrying WITHOUT quantization config.", str(e_inner))
+                        try:
+                            self.model = loader_class.from_pretrained(
+                                model_name,
+                                quantization_config=None,
+                                device_map=device_map,
+                                torch_dtype=model_dtype,
+                                attn_implementation="sdpa",
+                                cache_dir=cache_dir,
+                                token=auth_token,
+                                local_files_only=local_files_only,
+                                force_download=force_download,
+                                revision=hf_revision,
+                            )
+                        except Exception as e_noquant:
+                            logger.error("All loading attempts failed. Last error: %s", str(e_noquant))
+                            raise e_noquant
+                    else:
+                        logger.error("Loading failed: %s", str(e_inner))
+                        raise e_inner
 
             # Context size calculation with fallbacks
             max_ctx = getattr(model_config, "max_position_embeddings", None)

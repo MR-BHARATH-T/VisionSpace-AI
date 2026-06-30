@@ -2,7 +2,7 @@ torch
 torchvision
 transformers
 accelerate
-bitsandbytes==0.43.1
+bitsandbytes>=0.46.1
 huggingface_hub
 sentencepiece
 safetensors
