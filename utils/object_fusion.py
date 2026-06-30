@@ -26,6 +26,7 @@ class ObjectFusion:
         for group in self.compatibility_groups:
             if label1 in group and label2 in group:
                 return True
+                
         return False
 
     def normalize_label(self, obj: Dict[str, Any]) -> str:
@@ -165,7 +166,7 @@ class ObjectFusion:
                     obj_copy["_match_scores"] = []
                     fused_list.append(obj_copy)
 
-        # Singleton consolidation pass (for beds, dressers, wardrobes, desks)
+        # Singleton consolidation pass (for beds, dressers, wardrobes, desks, sofas)
         final_list: List[Dict[str, Any]] = []
         skip_indices = set()
         for i in range(len(fused_list)):
@@ -176,9 +177,7 @@ class ObjectFusion:
             label1 = obj1["_normalized_label"]
             
             if label1 in self.unique_singletons:
-                best_s_match = -1
-                min_dist = 250.0 # Match singletons within 2.5m
-                
+                # Find all other instances of this singleton class and merge them all
                 for j in range(i + 1, len(fused_list)):
                     if j in skip_indices:
                         continue
@@ -186,39 +185,66 @@ class ObjectFusion:
                     label2 = obj2["_normalized_label"]
                     
                     if label2 == label1 or self.are_compatible(label1, label2):
-                        pos1 = obj1.get("position")
-                        pos2 = obj2.get("position")
-                        if pos1 and pos2:
-                            d = ((pos1["x_cm"] - pos2["x_cm"])**2 + (pos1["y_cm"] - pos2["y_cm"])**2)**0.5
-                            if d < min_dist:
-                                min_dist = d
-                                best_s_match = j
-                
-                if best_s_match != -1:
-                    merged_obj = self.merge_pair(obj1, fused_list[best_s_match])
-                    merged_obj["seen_in_views"] = list(set(obj1.get("seen_in_views", []) + fused_list[best_s_match].get("seen_in_views", [])))
-                    merged_obj["_match_scores"] = obj1.get("_match_scores", []) + fused_list[best_s_match].get("_match_scores", []) + [0.85]
-                    fused_list[i] = merged_obj
-                    skip_indices.add(best_s_match)
+                        obj1 = self.merge_pair(obj1, obj2)
+                        obj1["seen_in_views"] = list(set(obj1.get("seen_in_views", []) + obj2.get("seen_in_views", [])))
+                        obj1["_match_scores"] = obj1.get("_match_scores", []) + obj2.get("_match_scores", []) + [0.85]
+                        skip_indices.add(j)
             
-            final_list.append(fused_list[i])
+            final_list.append(obj1)
 
         # Formatting Output payload attributes
         kept: List[Dict[str, Any]] = []
         for k_obj in final_list:
-            k_obj["merged_from_images"] = sorted(k_obj.get("seen_in_views", []))
+            views = sorted(k_obj.get("seen_in_views", []))
+            k_obj["merged_from_images"] = views
+            
+            # Match scores parsing or heuristic confidence based on view counts
             scores = k_obj.pop("_match_scores", [])
-            k_obj["merge_confidence"] = round(sum(scores) / len(scores), 2) if scores else 1.0
+            if len(views) >= 2:
+                k_obj["merge_confidence"] = round(min(0.95, 0.8 + 0.05 * len(views)), 2)
+            else:
+                k_obj["merge_confidence"] = 0.70
+                
             k_obj.pop("seen_in_views", None)
             k_obj.pop("_normalized_label", None)
             k_obj.pop("_view_source", None)
+
+            # Ensure all required confidence and source attributes are present
+            if "estimated_dimensions" not in k_obj or not k_obj["estimated_dimensions"]:
+                k_obj["estimated_dimensions"] = {"width_cm": 80, "depth_cm": 80, "height_cm": 80}
+            
+            if "dimension_confidence" not in k_obj["estimated_dimensions"] or k_obj["estimated_dimensions"]["dimension_confidence"] is None:
+                k_obj["estimated_dimensions"]["dimension_confidence"] = 0.35
+            if "measurement_source" not in k_obj["estimated_dimensions"] or k_obj["estimated_dimensions"]["measurement_source"] is None:
+                k_obj["estimated_dimensions"]["measurement_source"] = "vision_estimation"
+
+            if "room_position" not in k_obj or not k_obj["room_position"]:
+                pos = k_obj.get("position", {"x_cm": 200, "y_cm": 250})
+                k_obj["room_position"] = {
+                    "x_cm": pos.get("x_cm", 200),
+                    "y_cm": pos.get("y_cm", 250),
+                    "rotation": k_obj.get("rotation_deg", 0)
+                }
+            if "depth_confidence" not in k_obj["room_position"] or k_obj["room_position"]["depth_confidence"] is None:
+                k_obj["room_position"]["depth_confidence"] = 0.28
+            if "position_source" not in k_obj["room_position"] or k_obj["room_position"]["position_source"] is None:
+                k_obj["room_position"]["position_source"] = "vision_estimation"
+
             kept.append(k_obj)
 
         for o in no_bbox:
             o["merged_from_images"] = [o.get("_view_source", 0)]
-            o["merge_confidence"] = 1.0
+            o["merge_confidence"] = 0.70
             o.pop("_normalized_label", None)
             o.pop("_view_source", None)
+            
+            if "estimated_dimensions" not in o or not o["estimated_dimensions"]:
+                o["estimated_dimensions"] = {"width_cm": 80, "depth_cm": 80, "height_cm": 80}
+            if "dimension_confidence" not in o["estimated_dimensions"] or o["estimated_dimensions"]["dimension_confidence"] is None:
+                o["estimated_dimensions"]["dimension_confidence"] = 0.35
+            if "measurement_source" not in o["estimated_dimensions"] or o["estimated_dimensions"]["measurement_source"] is None:
+                o["estimated_dimensions"]["measurement_source"] = "vision_estimation"
+                
             kept.append(o)
 
         return kept
@@ -252,9 +278,9 @@ class ObjectFusion:
             merged["bbox"] = {k: round(wav(k), 1) for k in ("x", "y", "width", "height")}
 
         # Dimensions: weighted average
-        if "estimated_dimensions" in primary and "estimated_dimensions" in secondary:
-            dims_p = primary["estimated_dimensions"] or {}
-            dims_s = secondary["estimated_dimensions"] or {}
+        if "estimated_dimensions" in primary or "estimated_dimensions" in secondary:
+            dims_p = primary.get("estimated_dimensions") or {}
+            dims_s = secondary.get("estimated_dimensions") or {}
             merged_dims = {}
             for d in ("width_cm", "depth_cm", "height_cm"):
                 vp = dims_p.get(d)
@@ -265,6 +291,20 @@ class ObjectFusion:
                     merged_dims[d] = vp
                 elif vs is not None:
                     merged_dims[d] = vs
+            
+            # Preserve or compute dimension_confidence
+            vp_conf = dims_p.get("dimension_confidence")
+            vs_conf = dims_s.get("dimension_confidence")
+            if vp_conf is not None and vs_conf is not None:
+                merged_dims["dimension_confidence"] = round((float(vp_conf) + float(vs_conf)) / 2, 2)
+            elif vp_conf is not None:
+                merged_dims["dimension_confidence"] = vp_conf
+            elif vs_conf is not None:
+                merged_dims["dimension_confidence"] = vs_conf
+            else:
+                merged_dims["dimension_confidence"] = 0.35
+                
+            merged_dims["measurement_source"] = "vision_estimation"
             merged["estimated_dimensions"] = merged_dims
 
         # Categorical / string attributes
