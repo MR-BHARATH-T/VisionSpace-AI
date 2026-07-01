@@ -419,7 +419,7 @@ class VisionAgent:
             "session_id": session_id,
             "session_path": str(session_path),
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-            "model_name": getattr(config, "MODELS", {}).get("vision", {}).get("model", "Qwen/Qwen2.5-VL-7B-Instruct"),
+            "model_name": getattr(config, "MODEL", "Qwen/Qwen3-VL-8B-Instruct"),
             "prompt_version": "25-feature-scene-understanding-v1",
             "image_count": len(preprocessed_images),
             "gpu_device": vram_info.get("device_name", "N/A") if torch.cuda.is_available() else "CPU",

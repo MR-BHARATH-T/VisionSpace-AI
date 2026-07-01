@@ -24,15 +24,9 @@ import config
 logger = logging.getLogger("VisionSpaceAI.ModelManager")
 
 # Config resolution
-HF_VISION_MODEL = getattr(config, "HF_VISION_MODEL", None)
-if HF_VISION_MODEL is None:
-    models_dict = getattr(config, "MODELS", {})
-    HF_VISION_MODEL = models_dict.get("vision", {}).get("model", "Qwen/Qwen2.5-VL-7B-Instruct")
-
-HF_TEXT_MODEL = getattr(config, "HF_TEXT_MODEL", None)
-if HF_TEXT_MODEL is None:
-    models_dict = getattr(config, "MODELS", {})
-    HF_TEXT_MODEL = models_dict.get("text", {}).get("model", "Qwen/Qwen2.5-7B-Instruct")
+HF_MODEL = getattr(config, "MODEL", "Qwen/Qwen3-VL-8B-Instruct")
+HF_VISION_MODEL = HF_MODEL
+HF_TEXT_MODEL = HF_MODEL
 
 # Model Profile mapping table
 MODEL_PROFILES = {

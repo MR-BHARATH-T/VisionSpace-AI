@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_REGISTRY: dict[str, dict] = {
     "vision": {
-        "model":     config.MODELS["vision"]["model"],
+        "model":     getattr(config, "MODEL", "Qwen/Qwen3-VL-8B-Instruct"),
         "loader":    AutoModelForImageTextToText,
         "processor": AutoProcessor,
         "task_type": "vision",
@@ -56,7 +56,7 @@ MODEL_REGISTRY: dict[str, dict] = {
         "max_context": 32768,
     },
     "reasoning": {
-        "model":     config.MODELS["text"]["model"],
+        "model":     getattr(config, "MODEL", "Qwen/Qwen3-VL-8B-Instruct"),
         "loader":    AutoModelForImageTextToText,
         "processor": AutoProcessor,
         "task_type": "text",

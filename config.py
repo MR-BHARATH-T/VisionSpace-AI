@@ -3,17 +3,7 @@ import torch
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-MODELS = {
- 
-    "vision": {
-        "model": "Qwen/Qwen2.5-VL-7B-Instruct"
-    },
- 
-    "text": {
-        "model": "Qwen/Qwen2.5-VL-7B-Instruct"
-    }
- 
-}
+MODEL = "Qwen/Qwen3-VL-8B-Instruct"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
