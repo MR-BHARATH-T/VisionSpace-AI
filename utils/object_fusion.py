@@ -108,33 +108,56 @@ class ObjectFusion:
                         continue
                     
                     label_k = k_obj["_normalized_label"]
+                    if not self.are_compatible(label_k, label_o):
+                        continue # Skip completely incompatible categories
+                    
                     score = 0.0
                     
                     # 1. Category Compatibility check
                     if label_k == label_o:
-                        score += 0.3
-                    elif self.are_compatible(label_k, label_o):
-                        score += 0.25
+                        score += 0.35
                     else:
-                        score -= 0.5 # Penalty for mismatched categories
-
+                        score += 0.25
+ 
                     # 2. Word intersection check
                     name_k = k_obj.get("name", "").lower()
                     name_o = obj.get("name", "").lower()
                     words_k = set(name_k.split())
                     words_o = set(name_o.split())
-                    if name_k == name_o:
-                        score += 0.2
-                    elif words_k.intersection(words_o):
+                    if name_k == name_o and name_k:
+                        score += 0.25
+                    elif words_k.intersection(words_o) and name_k:
                         score += 0.15
-
-                    # 3. Material and color matching
-                    if k_obj.get("material") == obj.get("material") and k_obj.get("material") is not None:
-                        score += 0.1
-                    if k_obj.get("color") == obj.get("color") and k_obj.get("color") is not None:
-                        score += 0.1
+ 
+                    # 3. Material and color matching (mismatch penalizes strongly)
+                    mat_k = k_obj.get("material")
+                    mat_o = obj.get("material")
+                    col_k = k_obj.get("color")
+                    col_o = obj.get("color")
                     
-                    # 4. Proximity matching
+                    if mat_k and mat_o:
+                        if mat_k.lower() == mat_o.lower():
+                            score += 0.2
+                        else:
+                            score -= 0.45
+                    if col_k and col_o:
+                        if col_k.lower() == col_o.lower():
+                            score += 0.2
+                        else:
+                            score -= 0.45
+                    
+                    # 4. Bounding box scale verification (prevent matching small background objects to large foreground ones)
+                    w_k = k_obj.get("bbox", {}).get("width", 0)
+                    h_k = k_obj.get("bbox", {}).get("height", 0)
+                    w_o = obj.get("bbox", {}).get("width", 0)
+                    h_o = obj.get("bbox", {}).get("height", 0)
+                    if w_k > 0 and h_k > 0 and w_o > 0 and h_o > 0:
+                        w_ratio = min(w_k, w_o) / max(w_k, w_o)
+                        h_ratio = min(h_k, h_o) / max(h_k, h_o)
+                        if w_ratio < 0.3 or h_ratio < 0.3:
+                            score -= 0.4 # Severe scale mismatch penalty
+                    
+                    # 5. Proximity matching (if 3D coordinates are already resolved)
                     pos_k = k_obj.get("position")
                     pos_o = obj.get("position")
                     if pos_k and pos_o:
@@ -145,18 +168,13 @@ class ObjectFusion:
                             score += 0.35
                         elif dist > 250:
                             score -= 0.6
-                    else:
-                        # Image coordinate fallback
-                        center_k = k_obj["bbox"]["x"] + k_obj["bbox"]["width"] / 2
-                        center_o = obj["bbox"]["x"] + obj["bbox"]["width"] / 2
-                        if (center_k < 400 and center_o < 400) or (center_k >= 400 and center_o >= 400):
-                            score += 0.3
                         
                     if score > best_score:
                         best_score = score
                         best_match_idx = k_idx
                 
-                if best_score >= 0.5 and best_match_idx != -1:
+                # Use a higher threshold of 0.6 for conservative, precise matches
+                if best_score >= 0.6 and best_match_idx != -1:
                     fused_list[best_match_idx] = self.merge_pair(fused_list[best_match_idx], obj)
                     fused_list[best_match_idx]["seen_in_views"].append(v_idx)
                     fused_list[best_match_idx]["_match_scores"].append(best_score)
@@ -177,7 +195,7 @@ class ObjectFusion:
             label1 = obj1["_normalized_label"]
             
             if label1 in self.unique_singletons:
-                # Find all other instances of this singleton class and merge them all
+                # Find all other instances of this singleton class and merge them only if attributes align
                 for j in range(i + 1, len(fused_list)):
                     if j in skip_indices:
                         continue
@@ -185,6 +203,17 @@ class ObjectFusion:
                     label2 = obj2["_normalized_label"]
                     
                     if label2 == label1 or self.are_compatible(label1, label2):
+                        col1 = obj1.get("color")
+                        col2 = obj2.get("color")
+                        mat1 = obj1.get("material")
+                        mat2 = obj2.get("material")
+                        
+                        # If colors or materials mismatch, keep them as distinct objects
+                        if col1 and col2 and col1.lower() != col2.lower():
+                            continue
+                        if mat1 and mat2 and mat1.lower() != mat2.lower():
+                            continue
+                            
                         obj1 = self.merge_pair(obj1, obj2)
                         obj1["seen_in_views"] = list(set(obj1.get("seen_in_views", []) + obj2.get("seen_in_views", [])))
                         obj1["_match_scores"] = obj1.get("_match_scores", []) + obj2.get("_match_scores", []) + [0.85]
