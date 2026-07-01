@@ -339,7 +339,7 @@ class VisionAgent:
             # Dynamic prompt injection context details
             p_template = vision_analysis_prompt(
                 room_type=room_type,
-                confidence_threshold=kwargs.get("confidence_threshold", 0.65),
+                confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
                 max_objects=kwargs.get("max_objects", 30)
             )
 

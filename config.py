@@ -59,6 +59,6 @@ MAX_VISUAL_TOKENS = 12000
 VISION_CONFIG = {
     "max_images": 6,
     "max_visual_tokens": 12000,
-    "min_confidence": 0.45,
+    "min_confidence": 0.35,
     "enable_multiview_merge": True
 }
