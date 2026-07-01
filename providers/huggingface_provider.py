@@ -1250,6 +1250,9 @@ class HuggingFaceProvider(BaseProvider):
                 inputs = self.prepare_inputs(final_messages, images=images, videos=videos)
                 input_length = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
 
+                # Dynamically scale max_length to bypass HF default limit (2048) without pre-allocation overhead
+                gen_config.max_length = input_length + max_new
+
                 try:
                     with torch.inference_mode():
                         outputs = self.model.generate(
@@ -1399,6 +1402,7 @@ class HuggingFaceProvider(BaseProvider):
     ) -> Generator[str, None, None]:
         """Generator stream helper yielding tokens and updating streaming statistics."""
         inputs = self.prepare_inputs(messages, images=images, videos=videos)
+        input_length = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
         
         tok = self._get_tokenizer()
         streamer = TextIteratorStreamer(
@@ -1409,6 +1413,7 @@ class HuggingFaceProvider(BaseProvider):
 
         gen_config = GenerationConfig(
             max_new_tokens=max_new_tokens,
+            max_length=input_length + max_new_tokens,
             do_sample=do_sample,
             temperature=temperature if do_sample else None,
             top_p=top_p if do_sample else None,
