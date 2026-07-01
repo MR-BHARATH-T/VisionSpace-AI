@@ -4,8 +4,8 @@ import torch
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 # MODEL = "Qwen/Qwen3-VL-8B-Instruct"
-MODEL = "Qwen/Qwen3-VL-8B-Thinking"
-# MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
+# MODEL = "Qwen/Qwen3-VL-8B-Thinking"
+MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 # MODEL = "Qwen/Qwen2.5-VL-32B-Instruct"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

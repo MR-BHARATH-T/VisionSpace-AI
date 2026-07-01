@@ -757,9 +757,41 @@ class HuggingFaceProvider(BaseProvider):
         prompt = re.sub(r'```json\s*(\{.*?\})\s*```', min_json, prompt, flags=re.DOTALL)
         return prompt.strip()
 
+    def _get_tokenizer(self) -> Any:
+        """Dynamically retrieves or loads the tokenizer, guaranteeing a valid instance."""
+        if self.tokenizer is not None:
+            return self.tokenizer
+        if self.processor is not None and hasattr(self.processor, "tokenizer") and self.processor.tokenizer is not None:
+            self.tokenizer = self.processor.tokenizer
+            return self.tokenizer
+
+        # Dynamic cache-recovery fallback
+        logger.info("Dynamic recovery: Tokenizer is None. Loading from cache for: %s", self.model_name)
+        from transformers import AutoTokenizer
+        try:
+            tok = AutoTokenizer.from_pretrained(
+                self.model_name,
+                cache_dir=getattr(config, "HF_CACHE_DIR", None) or "hf_cache",
+                token=getattr(config, "HF_TOKEN", None),
+                local_files_only=True,
+                trust_remote_code=True
+            )
+            self.tokenizer = tok
+            return tok
+        except Exception as e:
+            logger.warning("Local tokenizer load failed (%s). Retrying from hub.", str(e))
+            tok = AutoTokenizer.from_pretrained(
+                self.model_name,
+                cache_dir=getattr(config, "HF_CACHE_DIR", None) or "hf_cache",
+                token=getattr(config, "HF_TOKEN", None),
+                trust_remote_code=True
+            )
+            self.tokenizer = tok
+            return tok
+
     def count_tokens(self, text: Union[str, List[Dict[str, Any]]], images: Optional[List[Any]] = None) -> int:
         """Returns token counts for prompt text strings or message dictionaries, including image tokens."""
-        tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
+        tok = self._get_tokenizer()
         if not tok:
             return 0
 
@@ -976,9 +1008,7 @@ class HuggingFaceProvider(BaseProvider):
         else:
             # ── Text-only path ─────────────────────────────────────────────
             text = self._apply_chat_template_cached(messages)
-            tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
-            if tok is None:
-                raise RuntimeError("No tokenizer available to prepare inputs.")
+            tok = self._get_tokenizer()
             inputs = dict(tok([text], padding=True, return_tensors="pt"))
 
         target_device = self.model.device if hasattr(self.model, "device") else DEVICE
@@ -1178,10 +1208,7 @@ class HuggingFaceProvider(BaseProvider):
         stopping_list = StoppingCriteriaList([CancelStoppingCriteria(check_cancellation)])
 
         # Config builder
-        tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
-        if tok is None:
-            raise RuntimeError("No tokenizer available for generation config.")
-            
+        tok = self._get_tokenizer()
         gen_config = GenerationConfig(
             max_new_tokens=max_new,
             do_sample=do_sample_val,
@@ -1256,9 +1283,7 @@ class HuggingFaceProvider(BaseProvider):
 
                 # Decoding
                 generated_ids = [out_ids[input_length:] for out_ids in output_sequences]
-                tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
-                if tok is None:
-                    raise RuntimeError("No tokenizer available for decoding outputs.")
+                tok = self._get_tokenizer()
                 response_text = tok.batch_decode(
                     generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
                 )[0].strip()
@@ -1355,10 +1380,7 @@ class HuggingFaceProvider(BaseProvider):
         """Generator stream helper yielding tokens and updating streaming statistics."""
         inputs = self.prepare_inputs(messages, images=images, videos=videos)
         
-        tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
-        if tok is None:
-            raise RuntimeError("No tokenizer available for stream generation.")
-            
+        tok = self._get_tokenizer()
         streamer = TextIteratorStreamer(
             tok,
             skip_prompt=True,
