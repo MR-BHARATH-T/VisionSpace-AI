@@ -406,6 +406,7 @@ class VisionAgent:
         merged_output_copy = copy.deepcopy(merged_output)
         if "occupancy_grid" in merged_output_copy and isinstance(merged_output_copy["occupancy_grid"], dict):
             merged_output_copy["occupancy_grid"].pop("cells", None)
+            merged_output_copy["occupancy_grid"]["occupancy_grid_path"] = "occupancy_grid.json"
         save_json(merged_output_copy, session_path / "merged_output.json")
 
         t_total_duration = time.perf_counter() - t_total_start
