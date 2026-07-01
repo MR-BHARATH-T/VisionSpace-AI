@@ -30,7 +30,7 @@ GENERATION_CONFIG = {
 
     "top_p": 0.9,
 
-    "max_new_tokens": 512,
+    "max_new_tokens": 2048,
 
     "do_sample": False
 
@@ -60,7 +60,7 @@ MAX_VISUAL_TOKENS = 12000
 VISION_CONFIG = {
     "max_images": 6,
     "max_visual_tokens": 12000,
-    "min_confidence": 0.35,
+    "min_confidence": 0.20,
     "enable_multiview_merge": True,
     "enable_tiling": True,
     "enable_adaptive_crops": True

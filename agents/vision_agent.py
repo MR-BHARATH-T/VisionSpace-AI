@@ -425,7 +425,7 @@ class VisionAgent:
             enable_adaptive_crops = kwargs.get("enable_adaptive_crops", config.VISION_CONFIG.get("enable_adaptive_crops", True))
             if enable_adaptive_crops:
                 # Find target furniture categories to crop
-                target_categories = {"desk", "table", "bed", "sofa", "nightstand", "dresser", "shelf"}
+                target_categories = {"desk", "table", "bed", "sofa", "nightstand", "dresser", "shelf", "cabinet", "wardrobe", "tv", "television", "entertainment"}
                 targets = []
                 for obj in parsed_json.get("objects", []):
                     cat = str(obj.get("category", "")).lower()
@@ -435,13 +435,13 @@ class VisionAgent:
                         if "bbox" in obj:
                             targets.append(obj)
                 
-                # Limit to top 2 largest target furniture objects to keep execution time fast
+                # Limit to top 4 largest target furniture objects to scan all surfaces
                 def get_bbox_area(obj):
                     bbox = obj.get("bbox", {})
                     return float(bbox.get("width", 0)) * float(bbox.get("height", 0))
                 
                 targets.sort(key=get_bbox_area, reverse=True)
-                targets_to_crop = targets[:2]
+                targets_to_crop = targets[:4]
                 
                 crop_objects = []
                 for crop_idx, target in enumerate(targets_to_crop):
