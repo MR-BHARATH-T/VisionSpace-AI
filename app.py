@@ -57,14 +57,6 @@ def main():
         session_path = vision_output["metadata"]["session_path"]
         print(f"Vision Agent finished. Session ID: {session_id}")
 
-        # Explicitly unload vision model to free VRAM before loading text models
-        print("Unloading vision model to free VRAM...")
-        vision_agent.model_manager.unload_model("vision")
-        import torch
-        import gc
-        torch.cuda.empty_cache()
-        gc.collect()
-        
         # 2. Run Spatial Agent (What can fit?)
         print("\n🧠 Step 2: Running Spatial Agent...")
         spatial_output = spatial_agent.analyze_layout(

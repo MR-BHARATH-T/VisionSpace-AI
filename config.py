@@ -4,15 +4,15 @@ import torch
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 MODELS = {
-
+ 
     "vision": {
         "model": "Qwen/Qwen2.5-VL-7B-Instruct"
     },
-
+ 
     "text": {
-        "model": "Qwen/Qwen2.5-7B-Instruct"
+        "model": "Qwen/Qwen2.5-VL-7B-Instruct"
     }
-
+ 
 }
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -54,6 +54,7 @@ SUPPORTED_IMAGE_TYPES = [
     ".png",
     ".bmp",
     ".webp"
+
 
 ]
 
