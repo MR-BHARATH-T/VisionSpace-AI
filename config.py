@@ -32,7 +32,7 @@ GENERATION_CONFIG = {
 
     "top_p": 0.9,
 
-    "max_new_tokens": 4096,
+    "max_new_tokens": 8192,
 
     "do_sample": False
 

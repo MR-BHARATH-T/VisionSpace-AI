@@ -381,6 +381,8 @@ class VisionAgent:
             # Run image tiling for high-resolution detail extraction
             enable_tiling = kwargs.get("enable_tiling", config.VISION_CONFIG.get("enable_tiling", True))
             if enable_tiling:
+                # Proactively reclaim VRAM before starting memory-intensive tiling pass
+                self._clear_memory()
                 if progress_callback:
                     progress_callback(f"Running Tile-Inference Pass (Image {idx + 1}/{len(preprocessed_images)})...")
                 
@@ -424,6 +426,8 @@ class VisionAgent:
             # Run adaptive crop pass for focused furniture items
             enable_adaptive_crops = kwargs.get("enable_adaptive_crops", config.VISION_CONFIG.get("enable_adaptive_crops", True))
             if enable_adaptive_crops:
+                # Proactively reclaim VRAM before starting memory-intensive crop pass
+                self._clear_memory()
                 # Find target furniture categories to crop
                 target_categories = {"desk", "table", "bed", "sofa", "nightstand", "dresser", "shelf", "cabinet", "wardrobe", "tv", "television", "entertainment"}
                 targets = []

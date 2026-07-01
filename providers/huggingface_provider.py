@@ -1316,8 +1316,10 @@ class HuggingFaceProvider(BaseProvider):
                 # Cleanup variables to prevent T4 memory fragmentation
                 del inputs
                 del outputs
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                # Empty cache only if requested to prevent GPU stalling on normal successful runs
+                if kwargs.get("force_empty_cache", False):
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
                 gc.collect()
 
                 # Response validator checks
