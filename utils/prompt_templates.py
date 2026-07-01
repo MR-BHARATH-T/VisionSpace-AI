@@ -1072,6 +1072,7 @@ def _expert_system_prompt() -> str:
     return (
         f"{_EXPERT_IDENTITY}\n\n"
         "CRITICAL SYSTEM RULES:\n"
+        "0. CONCISE THINKING: Keep your internal reasoning/thinking process inside the <think>...</think> tag extremely brief, concise, and direct (under 5 sentences). Do not write a long essay in thinking.\n"
         "1. DOOR AND WINDOW DETECTION: You must identify every visible door and window in the scene. "
         "Do not ignore doors, glass doors, sliding doors, windows, skylights, or archways. You MUST populate "
         "both the 'doors' and 'windows' lists in the JSON structure with their estimated dimensions and 2D bounding boxes.\n"
