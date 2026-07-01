@@ -50,10 +50,21 @@ if HF_TEXT_MODEL is None:
     models_dict = getattr(config, "MODELS", {})
     HF_TEXT_MODEL = models_dict.get("text", {}).get("model", "Qwen/Qwen2.5-7B-Instruct")
 
-MAX_NEW_TOKENS = getattr(config, "MAX_NEW_TOKENS", 2048)
-TEMPERATURE = getattr(config, "TEMPERATURE", 0.2)
-TOP_P = getattr(config, "TOP_P", 0.95)
-DO_SAMPLE = getattr(config, "DO_SAMPLE", False)
+MAX_NEW_TOKENS = getattr(config, "MAX_NEW_TOKENS", None)
+if MAX_NEW_TOKENS is None:
+    MAX_NEW_TOKENS = getattr(config, "GENERATION_CONFIG", {}).get("max_new_tokens", 2048)
+
+TEMPERATURE = getattr(config, "TEMPERATURE", None)
+if TEMPERATURE is None:
+    TEMPERATURE = getattr(config, "GENERATION_CONFIG", {}).get("temperature", 0.1)
+
+TOP_P = getattr(config, "TOP_P", None)
+if TOP_P is None:
+    TOP_P = getattr(config, "GENERATION_CONFIG", {}).get("top_p", 0.9)
+
+DO_SAMPLE = getattr(config, "DO_SAMPLE", None)
+if DO_SAMPLE is None:
+    DO_SAMPLE = getattr(config, "GENERATION_CONFIG", {}).get("do_sample", False)
 
 # Device mapping
 if torch.cuda.is_available():
@@ -1165,6 +1176,7 @@ class HuggingFaceProvider(BaseProvider):
         # Config builder
         gen_config = GenerationConfig(
             max_new_tokens=max_new,
+            max_length=32768,  # Force maximum context length limit to prevent early truncation
             do_sample=do_sample_val,
             temperature=temp if do_sample_val else None,
             top_p=top_p_val if do_sample_val else None,
