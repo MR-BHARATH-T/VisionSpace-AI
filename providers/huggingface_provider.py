@@ -1258,6 +1258,8 @@ class HuggingFaceProvider(BaseProvider):
                         outputs = self.model.generate(
                             **inputs,
                             generation_config=gen_config,
+                            max_new_tokens=max_new,
+                            max_length=gen_config.max_length,
                             stopping_criteria=stopping_list
                         )
                 except (torch.cuda.OutOfMemoryError, RuntimeError) as oom_err:
@@ -1433,6 +1435,8 @@ class HuggingFaceProvider(BaseProvider):
         gen_kwargs = {
             **inputs,
             "generation_config": gen_config,
+            "max_new_tokens": max_new_tokens,
+            "max_length": gen_config.max_length,
             "streamer": streamer,
             "stopping_criteria": stopping_list
         }
