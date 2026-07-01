@@ -391,6 +391,19 @@ class HuggingFaceProvider(BaseProvider):
                 revision=hf_revision,
             )
 
+            # Safely patch missing pad_token_id in configurations (e.g. Qwen3VLMoeTextConfig bug)
+            for cfg in [model_config, getattr(model_config, "text_config", None)]:
+                if cfg is not None:
+                    try:
+                        if not hasattr(cfg, "pad_token_id") or getattr(cfg, "pad_token_id", None) is None:
+                            eos_val = getattr(cfg, "eos_token_id", 151643) or 151643
+                            if isinstance(eos_val, list) and len(eos_val) > 0:
+                                eos_val = eos_val[0]
+                            cfg.pad_token_id = eos_val
+                            logger.info("Patched configuration to set pad_token_id to: %s", eos_val)
+                    except Exception as patch_err:
+                        logger.warning("Could not patch pad_token_id on config: %s", str(patch_err))
+
             # Auto Model Validation (ensure supports text generation)
             architectures = getattr(model_config, "architectures", [])
             arch_name = architectures[0] if architectures else ""
@@ -519,6 +532,7 @@ class HuggingFaceProvider(BaseProvider):
             try:
                 self.model = loader_class.from_pretrained(
                     model_name,
+                    config=model_config,
                     quantization_config=quant_config,
                     device_map=device_map,
                     torch_dtype=model_dtype,
@@ -534,6 +548,7 @@ class HuggingFaceProvider(BaseProvider):
                 try:
                     self.model = loader_class.from_pretrained(
                         model_name,
+                        config=model_config,
                         quantization_config=quant_config,
                         device_map=device_map,
                         torch_dtype=model_dtype,
@@ -550,6 +565,7 @@ class HuggingFaceProvider(BaseProvider):
                         try:
                             self.model = loader_class.from_pretrained(
                                 model_name,
+                                config=model_config,
                                 quantization_config=None,
                                 device_map=device_map,
                                 torch_dtype=model_dtype,
