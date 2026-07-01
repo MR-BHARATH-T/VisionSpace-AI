@@ -1184,7 +1184,6 @@ class HuggingFaceProvider(BaseProvider):
             
         gen_config = GenerationConfig(
             max_new_tokens=max_new,
-            max_length=32768,  # Force maximum context length limit to prevent early truncation
             do_sample=do_sample_val,
             temperature=temp if do_sample_val else None,
             top_p=top_p_val if do_sample_val else None,
