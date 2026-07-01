@@ -401,8 +401,12 @@ class VisionAgent:
         if progress_callback:
             progress_callback("Saving...")
 
-        # Save merged scene graph
-        save_json(merged_output, session_path / "merged_output.json")
+        # Save merged scene graph (remove raw 2D occupancy grid cells to keep JSON clean)
+        import copy
+        merged_output_copy = copy.deepcopy(merged_output)
+        if "occupancy_grid" in merged_output_copy and isinstance(merged_output_copy["occupancy_grid"], dict):
+            merged_output_copy["occupancy_grid"].pop("cells", None)
+        save_json(merged_output_copy, session_path / "merged_output.json")
 
         t_total_duration = time.perf_counter() - t_total_start
 

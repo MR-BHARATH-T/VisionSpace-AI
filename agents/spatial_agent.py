@@ -56,6 +56,21 @@ class SpatialAgent:
         doors = room_data.get("doors", [])
         windows = room_data.get("windows", [])
         grid_data = room_data.get("occupancy_grid", room_data.get("occupancy_grid_data", {}))
+        
+        # Fallback: if raw grid cells are missing (e.g. read from merged_output.json), load them from occupancy_grid.json
+        if not grid_data.get("cells") and session_path:
+            import json
+            s_path = pathlib.Path(session_path)
+            grid_file = s_path / "occupancy_grid.json"
+            if grid_file.exists():
+                try:
+                    with open(grid_file, "r", encoding="utf-8") as f:
+                        loaded_grid = json.load(f)
+                        if isinstance(loaded_grid, dict) and "cells" in loaded_grid:
+                            grid_data = dict(grid_data)
+                            grid_data["cells"] = loaded_grid["cells"]
+                except Exception as e:
+                    logger.debug("Failed to load occupancy_grid.json fallback: %s", str(e))
 
         # Resolve dynamic room dimensions based on maximum coordinate boundaries
         max_x = 0.0
