@@ -41,7 +41,7 @@ class StructuralMerger:
             subcategory = (obj.get("subcategory") or "").lower()
             combined = f"{name} {category} {subcategory}"
 
-            is_door = any(k in combined for k in ["door", "doorway", "entry", "entrance", "gate", "portal", "exit", "threshold"])
+            is_door = any(k in combined for k in ["door", "doorway", "entry", "entrance", "gate", "portal", "exit", "threshold"]) and not any(ex in combined for ex in ["indoor", "outdoor"])
             is_window = any(k in combined for k in ["window", "glass", "pane", "curtain", "drape", "blind", "shutter", "sill", "skylight"])
 
             if is_door:
