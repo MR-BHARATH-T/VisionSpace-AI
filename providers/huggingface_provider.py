@@ -389,6 +389,7 @@ class HuggingFaceProvider(BaseProvider):
                 local_files_only=local_files_only,
                 force_download=force_download,
                 revision=hf_revision,
+                trust_remote_code=True,
             )
 
             # Safely patch missing pad_token_id in configurations (e.g. Qwen3VLMoeTextConfig bug)
@@ -542,6 +543,7 @@ class HuggingFaceProvider(BaseProvider):
                     local_files_only=local_files_only,
                     force_download=force_download,
                     revision=hf_revision,
+                    trust_remote_code=True,
                 )
             except Exception as e:
                 logger.warning("Loading failed: %s. Retrying with SDPA.", str(e))
@@ -558,6 +560,7 @@ class HuggingFaceProvider(BaseProvider):
                         local_files_only=local_files_only,
                         force_download=force_download,
                         revision=hf_revision,
+                        trust_remote_code=True,
                     )
                 except Exception as e_inner:
                     if quant_config is not None:
@@ -575,6 +578,7 @@ class HuggingFaceProvider(BaseProvider):
                                 local_files_only=local_files_only,
                                 force_download=force_download,
                                 revision=hf_revision,
+                                trust_remote_code=True,
                             )
                         except Exception as e_noquant:
                             logger.error("All loading attempts failed. Last error: %s", str(e_noquant))
