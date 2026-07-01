@@ -759,7 +759,8 @@ class HuggingFaceProvider(BaseProvider):
 
     def count_tokens(self, text: Union[str, List[Dict[str, Any]]], images: Optional[List[Any]] = None) -> int:
         """Returns token counts for prompt text strings or message dictionaries, including image tokens."""
-        if not self.tokenizer:
+        tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
+        if not tok:
             return 0
 
         # Scan for images inside the messages content
@@ -780,11 +781,11 @@ class HuggingFaceProvider(BaseProvider):
             if self.processor:
                 text_str = self.processor.apply_chat_template(text, tokenize=False)
             else:
-                text_str = self.tokenizer.apply_chat_template(text, tokenize=False)
+                text_str = tok.apply_chat_template(text, tokenize=False)
         else:
             text_str = str(text)
 
-        text_tokens = len(self.tokenizer.encode(text_str))
+        text_tokens = len(tok.encode(text_str))
         
         # Add 1280 visual tokens per image (default Qwen VL representation)
         image_count = num_images
@@ -975,7 +976,10 @@ class HuggingFaceProvider(BaseProvider):
         else:
             # ── Text-only path ─────────────────────────────────────────────
             text = self._apply_chat_template_cached(messages)
-            inputs = dict(self.tokenizer([text], padding=True, return_tensors="pt"))
+            tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
+            if tok is None:
+                raise RuntimeError("No tokenizer available to prepare inputs.")
+            inputs = dict(tok([text], padding=True, return_tensors="pt"))
 
         target_device = self.model.device if hasattr(self.model, "device") else DEVICE
         inputs = {
@@ -1174,6 +1178,10 @@ class HuggingFaceProvider(BaseProvider):
         stopping_list = StoppingCriteriaList([CancelStoppingCriteria(check_cancellation)])
 
         # Config builder
+        tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
+        if tok is None:
+            raise RuntimeError("No tokenizer available for generation config.")
+            
         gen_config = GenerationConfig(
             max_new_tokens=max_new,
             max_length=32768,  # Force maximum context length limit to prevent early truncation
@@ -1181,8 +1189,8 @@ class HuggingFaceProvider(BaseProvider):
             temperature=temp if do_sample_val else None,
             top_p=top_p_val if do_sample_val else None,
             repetition_penalty=1.1,
-            eos_token_id=self.tokenizer.eos_token_id,
-            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=tok.eos_token_id,
+            pad_token_id=tok.pad_token_id,
         )
 
         # Load inputs & model execute with OOM recovery loop
@@ -1249,7 +1257,10 @@ class HuggingFaceProvider(BaseProvider):
 
                 # Decoding
                 generated_ids = [out_ids[input_length:] for out_ids in output_sequences]
-                response_text = self.tokenizer.batch_decode(
+                tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
+                if tok is None:
+                    raise RuntimeError("No tokenizer available for decoding outputs.")
+                response_text = tok.batch_decode(
                     generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
                 )[0].strip()
 
@@ -1345,8 +1356,12 @@ class HuggingFaceProvider(BaseProvider):
         """Generator stream helper yielding tokens and updating streaming statistics."""
         inputs = self.prepare_inputs(messages, images=images, videos=videos)
         
+        tok = self.tokenizer if self.tokenizer is not None else (self.processor.tokenizer if self.processor is not None else None)
+        if tok is None:
+            raise RuntimeError("No tokenizer available for stream generation.")
+            
         streamer = TextIteratorStreamer(
-            self.tokenizer,
+            tok,
             skip_prompt=True,
             skip_special_tokens=True,
         )
@@ -1357,8 +1372,8 @@ class HuggingFaceProvider(BaseProvider):
             temperature=temperature if do_sample else None,
             top_p=top_p if do_sample else None,
             repetition_penalty=1.1,
-            eos_token_id=self.tokenizer.eos_token_id,
-            pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=tok.eos_token_id,
+            pad_token_id=tok.pad_token_id,
         )
 
         self._stop_generation = False
