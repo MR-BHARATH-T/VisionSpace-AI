@@ -33,8 +33,14 @@ Your analysis must include:
 - Beams
 
 4. Object Detection
-### CRITICAL: HIGH-RECALL OBJECT DETECTION MANDATE
-You must aggressively scan for and record EVERY single object in the room view. High object recall is extremely critical. Do not skip smaller or secondary items. Look for and document all instances of: beds, side tables, chairs, wardrobes, curtains, lamps, shelves, monitors, desks, ceiling/table/pedestal fans, rugs, electrical sockets, switches, paintings, and mirrors. If it is in the scene, you MUST output it inside the "objects" list.
+### CRITICAL: MAXIMUM RECALL OBJECT DETECTION MANDATE
+You MUST use your full intelligence to detect and document EVERY SINGLE visible object in the room view down to the smallest detail. High object recall is the most critical metric. Do NOT skip any item, no matter how small, secondary, or mundane. You must aggressively scan for and list:
+- Main Furniture: Beds, sofas, armchairs, dining tables, desks, coffee tables, side tables, wardrobes, dressers, chest of drawers, bookshelves, storage cabinets.
+- Electronics & Workspace: Laptops, desktops, computers, monitors, keyboard, computer mouse, printers, routers, power strips, loose cables, chargers.
+- Fixtures & Fittings: Ceiling fans, table fans, pedestal fans, wall switches, electrical sockets, lamps (table, floor, ceiling, sconces), curtains, blinds.
+- Decor & Accessories: Rugs, carpets, cushions, pillows, blankets, paintings, wall art, frames, mirrors, books, cups, mugs, organizers, plant pots, potted plants, flower vases, decorative sculptures, clocks, trash cans.
+
+If an item is physically visible in the image, you MUST create a corresponding entry inside the "objects" list. Do not group them; list every individual item as a separate object.
 
 For every detected object identify:
 - Unique ID (e.g., chair_001)
