@@ -1106,6 +1106,115 @@ def _summarise_list(items: list, max_items: int = 15) -> str:
     return "\n".join(lines) if lines else "  (none)"
 
 
+def vision_tile_analysis_prompt(
+    room_type: str = "living_room",
+    tile_index: int = 1,
+    confidence_threshold: float = 0.35,
+    max_objects: int = 25,
+) -> dict[str, str]:
+    """Targeted prompt to detect fine-grained local items inside a specific tile quadrant."""
+    schema = {
+        "objects": [
+            {
+                "id": "string (unique, e.g. chair_tile_001)",
+                "name": "string (e.g. Office Chair)",
+                "category": "string (e.g. seating)",
+                "subcategory": "string (e.g. ergonomic)",
+                "confidence": "number (0.0-1.0)",
+                "material": "string|null",
+                "color": "string|null",
+                "style": "string|null",
+                "estimated_dimensions": {
+                    "width_cm": "number|null",
+                    "depth_cm": "number|null",
+                    "height_cm": "number|null"
+                },
+                "bbox": {
+                    "x": "number (in pixels, relative to this tile image)",
+                    "y": "number (in pixels, relative to this tile image)",
+                    "width": "number (in pixels)",
+                    "height": "number (in pixels)"
+                },
+                "visibility": "string (full|partial|occluded)|null",
+                "condition": "string (good|worn|damaged|unknown)|null"
+            }
+        ]
+    }
+    system = _expert_system_prompt()
+    user = "\n\n".join([
+        _section("CONTEXT", (
+            f"Room type: {room_type}\n"
+            f"You are analyzing a cropped tile quadrant (quadrant index: {tile_index}) of a larger high-resolution room image. "
+            f"Focus on identifying small objects, workspace components, decor, and fittings in this local area. "
+            f"Include only objects with confidence >= {confidence_threshold:.2f}."
+        )),
+        _section("TASK", (
+            "Analyze the cropped image segment and list all visible furniture, electronics, fixtures, decor, and accessories. "
+            "CRITICAL: MAXIMUM RECALL OBJECT DETECTION MANDATE\n"
+            "Document every single item no matter how small, secondary, or mundane. "
+            "Scan for: laptops, monitors, mouse, keyboards, desk accessories, lamps, cables, chargers, plant pots, potted plants, books, organizers, cups, wall art. "
+            "Provide coordinates (x, y, width, height) relative to the cropped tile dimensions."
+        )),
+        _section("OUTPUT FORMAT", json.dumps(schema, indent=2)),
+        _JSON_REMINDER,
+    ])
+    return {"system": system, "user": user}
+
+
+def vision_crop_analysis_prompt(
+    furniture_name: str,
+    room_type: str = "living_room",
+    confidence_threshold: float = 0.35,
+    max_objects: int = 25,
+) -> dict[str, str]:
+    """Targeted prompt to detect fine-grained items on or immediately surrounding a specific cropped furniture item."""
+    schema = {
+        "objects": [
+            {
+                "id": "string (unique, e.g. laptop_crop_001)",
+                "name": "string (e.g. MacBook Pro)",
+                "category": "string (e.g. electronics)",
+                "subcategory": "string (e.g. laptop)",
+                "confidence": "number (0.0-1.0)",
+                "material": "string|null",
+                "color": "string|null",
+                "style": "string|null",
+                "estimated_dimensions": {
+                    "width_cm": "number|null",
+                    "depth_cm": "number|null",
+                    "height_cm": "number|null"
+                },
+                "bbox": {
+                    "x": "number (in pixels, relative to this cropped image)",
+                    "y": "number (in pixels, relative to this cropped image)",
+                    "width": "number (in pixels)",
+                    "height": "number (in pixels)"
+                },
+                "visibility": "string (full|partial|occluded)|null",
+                "condition": "string (good|worn|damaged|unknown)|null"
+            }
+        ]
+    }
+    system = _expert_system_prompt()
+    user = "\n\n".join([
+        _section("CONTEXT", (
+            f"Room type: {room_type}\n"
+            f"You are analyzing a close-up cropped region of a room centered around the following furniture item: {furniture_name}.\n"
+            f"Include only objects with confidence >= {confidence_threshold:.2f}."
+        )),
+        _section("TASK", (
+            f"Scan on, under, inside, or immediately next to the {furniture_name} to locate and document every item. "
+            "CRITICAL: MAXIMUM RECALL OBJECT DETECTION MANDATE\n"
+            "Identify workspace/electronic accessories, decor, and small items down to the smallest detail. "
+            "Specifically look for and list: laptops, desktops, keyboards, mouse, charging cables, power adaptors, books, cups, desk lamps, plant pots, potted plants, decorations. "
+            "Provide coordinates (x, y, width, height) relative to this close-up cropped image."
+        )),
+        _section("OUTPUT FORMAT", json.dumps(schema, indent=2)),
+        _JSON_REMINDER,
+    ])
+    return {"system": system, "user": user}
+
+
 # ---------------------------------------------------------------------------
 # Exports
 # ---------------------------------------------------------------------------
@@ -1119,4 +1228,6 @@ __all__ = [
     "explain_design_prompt",
     "object_enrichment_prompt",
     "visualisation_prompt",
+    "vision_tile_analysis_prompt",
+    "vision_crop_analysis_prompt",
 ]

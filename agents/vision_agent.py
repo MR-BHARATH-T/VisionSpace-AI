@@ -34,7 +34,11 @@ from utils.object_fusion import ObjectFusion
 from utils.structural_merger import StructuralMerger
 from utils.room_mapper import RoomMapper
 from utils.free_space_detector import FreeSpaceDetector
-from utils.prompt_templates import vision_analysis_prompt
+from utils.prompt_templates import (
+    vision_analysis_prompt,
+    vision_tile_analysis_prompt,
+    vision_crop_analysis_prompt
+)
 from utils.file_utils import save_json, ensure_output_dirs
 
 logger = logging.getLogger("VisionSpaceAI.VisionAgent")
@@ -374,6 +378,131 @@ class VisionAgent:
             # Validate schema format
             parsed_json = self._validate_and_repair_json(response_data.get("response", ""))
             
+            # Run image tiling for high-resolution detail extraction
+            enable_tiling = kwargs.get("enable_tiling", config.VISION_CONFIG.get("enable_tiling", True))
+            if enable_tiling:
+                if progress_callback:
+                    progress_callback(f"Running Tile-Inference Pass (Image {idx + 1}/{len(preprocessed_images)})...")
+                
+                # Split image into 2x2 grid tiles
+                tiles = self._split_image_into_tiles(p_img)
+                tile_objects = []
+                
+                for t_idx, (tile_img, t_box) in enumerate(tiles):
+                    t_template = vision_tile_analysis_prompt(
+                        room_type=room_type,
+                        tile_index=t_idx + 1,
+                        confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
+                    )
+                    # Limit tokens for fast tiles inference pass
+                    tile_kwargs = dict(kwargs)
+                    tile_kwargs["max_new_tokens"] = 512
+                    
+                    t_response = self._generate_with_retry(
+                        prompt=t_template["user"],
+                        image=tile_img,
+                        system_prompt=t_template["system"],
+                        **tile_kwargs
+                    )
+                    
+                    if t_response.get("success", True) and t_response.get("response", "").strip():
+                        try:
+                            t_json = self._validate_and_repair_json(t_response.get("response", ""))
+                            for obj in t_json.get("objects", []):
+                                if "bbox" in obj:
+                                    # Map coordinates back to global space
+                                    obj["bbox"] = self._map_local_bbox_to_global(obj["bbox"], t_box, tile_img.size)
+                                    # Ensure unique ID namespace
+                                    obj["id"] = f"{obj.get('id', 'item')}_t{t_idx + 1}"
+                                    tile_objects.append(obj)
+                        except Exception as e:
+                            logger.warning(f"Error parsing tile {t_idx + 1}: {str(e)}")
+                
+                if tile_objects:
+                    parsed_json["objects"].extend(tile_objects)
+
+            # Run adaptive crop pass for focused furniture items
+            enable_adaptive_crops = kwargs.get("enable_adaptive_crops", config.VISION_CONFIG.get("enable_adaptive_crops", True))
+            if enable_adaptive_crops:
+                # Find target furniture categories to crop
+                target_categories = {"desk", "table", "bed", "sofa", "nightstand", "dresser", "shelf"}
+                targets = []
+                for obj in parsed_json.get("objects", []):
+                    cat = str(obj.get("category", "")).lower()
+                    subcat = str(obj.get("subcategory", "")).lower()
+                    name = str(obj.get("name", "")).lower()
+                    if cat in target_categories or subcat in target_categories or any(t in name for t in target_categories):
+                        if "bbox" in obj:
+                            targets.append(obj)
+                
+                # Limit to top 2 largest target furniture objects to keep execution time fast
+                def get_bbox_area(obj):
+                    bbox = obj.get("bbox", {})
+                    return float(bbox.get("width", 0)) * float(bbox.get("height", 0))
+                
+                targets.sort(key=get_bbox_area, reverse=True)
+                targets_to_crop = targets[:2]
+                
+                crop_objects = []
+                for crop_idx, target in enumerate(targets_to_crop):
+                    if progress_callback:
+                        progress_callback(f"Running Crop-Inference Pass for {target.get('name')} (Image {idx + 1}/{len(preprocessed_images)})...")
+                    
+                    bbox = target["bbox"]
+                    x, y, w_val, h_val = bbox.get("x", 0), bbox.get("y", 0), bbox.get("width", 0), bbox.get("height", 0)
+                    img_w, img_h = p_img.size
+                    
+                    # Expand crop window by 20% margin to capture surrounding objects
+                    margin_w = w_val * 0.2
+                    margin_h = h_val * 0.2
+                    
+                    left = max(0, int(x - margin_w))
+                    top = max(0, int(y - margin_h))
+                    right = min(img_w, int(x + w_val + margin_w))
+                    bottom = min(img_h, int(y + h_val + margin_h))
+                    
+                    # Prevent empty crops
+                    if right > left and bottom > top:
+                        crop_box = (left, top, right, bottom)
+                        crop_img = p_img.crop(crop_box)
+                        
+                        c_template = vision_crop_analysis_prompt(
+                            furniture_name=target.get("name", "furniture"),
+                            room_type=room_type,
+                            confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
+                        )
+                        crop_kwargs = dict(kwargs)
+                        crop_kwargs["max_new_tokens"] = 512
+                        
+                        c_response = self._generate_with_retry(
+                            prompt=c_template["user"],
+                            image=crop_img,
+                            system_prompt=c_template["system"],
+                            **crop_kwargs
+                        )
+                        
+                        if c_response.get("success", True) and c_response.get("response", "").strip():
+                            try:
+                                c_json = self._validate_and_repair_json(c_response.get("response", ""))
+                                for obj in c_json.get("objects", []):
+                                    if "bbox" in obj:
+                                        # Map coordinates back to global space
+                                        obj["bbox"] = self._map_local_bbox_to_global(obj["bbox"], crop_box, crop_img.size)
+                                        # Ensure unique ID namespace
+                                        obj["id"] = f"{obj.get('id', 'item')}_c{crop_idx + 1}"
+                                        crop_objects.append(obj)
+                            except Exception as e:
+                                logger.warning(f"Error parsing crop pass for {target.get('name')}: {str(e)}")
+                
+                if crop_objects:
+                    parsed_json["objects"].extend(crop_objects)
+
+            # Run local Object Fusion per viewpoint to clean up duplicate detections between tiles/crops
+            if parsed_json.get("objects"):
+                fusion = ObjectFusion()
+                fused_viewpoint_objects = fusion.fuse_objects(parsed_json["objects"])
+                parsed_json["objects"] = _normalise_ids_list(fused_viewpoint_objects)
+
             # Save single image intermediate output
             save_json(parsed_json, session_path / f"image_{idx + 1}_output.json")
             single_outputs.append(parsed_json)
@@ -513,6 +642,73 @@ class VisionAgent:
                 logger.error("Batch task %d failed: %s", idx, str(e))
                 batch_results.append({"status": "failed", "task_index": idx, "error": str(e)})
         return batch_results
+
+    def _split_image_into_tiles(self, img: Image.Image) -> List[Tuple[Image.Image, Tuple[int, int, int, int]]]:
+        """Splits an image into a 2x2 grid of tiles.
+        
+        Returns a list of tuples: (tile_image, (left, top, right, bottom) relative to original image size).
+        """
+        w, h = img.size
+        half_w = w // 2
+        half_h = h // 2
+        
+        # Define crop coordinates
+        boxes = [
+            (0, 0, half_w, half_h),          # Top-Left
+            (half_w, 0, w, half_h),          # Top-Right
+            (0, half_h, half_w, h),          # Bottom-Left
+            (half_w, half_h, w, h),          # Bottom-Right
+        ]
+        
+        tiles = []
+        for box in boxes:
+            tiles.append((img.crop(box), box))
+        return tiles
+
+    def _map_local_bbox_to_global(
+        self,
+        bbox: Dict[str, float],
+        crop_box: Tuple[int, int, int, int],
+        source_size: Tuple[int, int]
+    ) -> Dict[str, float]:
+        """Maps bounding box coordinates from a crop/tile back to global image coordinates.
+        
+        Supports both 0-1000 normalized coordinates and raw pixel coordinates.
+        """
+        left, top, right, bottom = crop_box
+        crop_w = right - left
+        crop_h = bottom - top
+        src_w, src_h = source_size
+        
+        local_x = float(bbox.get("x", 0))
+        local_y = float(bbox.get("y", 0))
+        local_w = float(bbox.get("width", 0))
+        local_h = float(bbox.get("height", 0))
+        
+        # Check if coordinates are normalized (0-1000 range)
+        is_normalized_1000 = False
+        if local_x <= 1000 and local_y <= 1000 and local_w <= 1000 and local_h <= 1000:
+            if crop_w != 1000 and crop_h != 1000:
+                is_normalized_1000 = True
+                
+        if is_normalized_1000:
+            global_x = left + (local_x / 1000.0) * crop_w
+            global_y = top + (local_y / 1000.0) * crop_h
+            global_w = (local_w / 1000.0) * crop_w
+            global_h = (local_h / 1000.0) * crop_h
+        else:
+            # Scale coordinates relative to source_size passed to the model
+            global_x = left + (local_x / src_w) * crop_w
+            global_y = top + (local_y / src_h) * crop_h
+            global_w = (local_w / src_w) * crop_w
+            global_h = (local_h / src_h) * crop_h
+            
+        return {
+            "x": round(global_x, 1),
+            "y": round(global_y, 1),
+            "width": round(global_w, 1),
+            "height": round(global_h, 1)
+        }
 
     # -------------------------------------------------------------------------
     # Helper: LLM Inference with Retry Recovery
