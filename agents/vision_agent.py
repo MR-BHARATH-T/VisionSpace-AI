@@ -512,6 +512,7 @@ class VisionAgent:
             if parsed_json.get("objects"):
                 fusion = ObjectFusion()
                 fused_viewpoint_objects = fusion.fuse_objects(parsed_json["objects"])
+                fused_viewpoint_objects = self._filter_by_confidence_policy(fused_viewpoint_objects)
                 parsed_json["objects"] = _normalise_ids_list(fused_viewpoint_objects)
 
             # Save single image intermediate output
@@ -945,6 +946,7 @@ class VisionAgent:
 
         fusion = ObjectFusion()
         merged_objects = fusion.fuse_objects(all_objects)
+        merged_objects = self._filter_by_confidence_policy(merged_objects)
         merged_objects = _normalise_ids_list(merged_objects)
 
         # Base merge dictionary using the first scene
@@ -1047,3 +1049,45 @@ class VisionAgent:
                 torch.cuda.ipc_collect()
             except Exception as e:
                 logger.debug("Failed to release CUDA locks: %s", str(e))
+
+    def _filter_by_confidence_policy(self, objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Filters objects based on Phase 5 Confidence Policy:
+        - Large furniture: >= 0.65
+        - Medium objects: >= 0.50
+        - Small objects: >= 0.25
+        - Decorative objects: >= 0.20
+        """
+        filtered = []
+        large_keywords = {
+            "bed", "sofa", "couch", "wardrobe", "desk", "table", "bookshelf", "bookcase",
+            "tv unit", "dining table", "cabinet", "dresser", "nightstand", "bedside table",
+            "cupboard", "sideboard", "credenza", "furniture", "chest of drawers", "shelving unit"
+        }
+        decorative_keywords = {
+            "plant", "flower", "decor", "decorative", "art", "frame", "picture", "poster",
+            "mirror", "clock", "vase", "curtain", "blind", "rug", "carpet", "tapestry",
+            "cushion", "pillow", "throw", "wall art", "sculpture", "ornament", "painting"
+        }
+        small_keywords = {
+            "laptop", "keyboard", "mouse", "lamp", "bottle", "charger", "extension",
+            "headphone", "book", "notebook", "phone", "remote", "cable", "pen", "pencil",
+            "cup", "glass", "mug", "stationery", "accessory", "utensil", "plate", "bowl",
+            "controller", "cables", "mousepad", "tray", "organizer", "headphones"
+        }
+        for obj in objects:
+            conf = float(obj.get("confidence", 1.0))
+            name = str(obj.get("name", "")).lower()
+            category = str(obj.get("category", "")).lower()
+            subcategory = str(obj.get("subcategory", "")).lower()
+            combined = f"{name} {category} {subcategory}"
+            if any(k in combined for k in large_keywords):
+                min_conf = 0.65
+            elif any(k in combined for k in small_keywords):
+                min_conf = 0.25
+            elif any(k in combined for k in decorative_keywords):
+                min_conf = 0.20
+            else:
+                min_conf = 0.50
+            if conf >= min_conf:
+                filtered.append(obj)
+        return filtered
