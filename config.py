@@ -8,6 +8,8 @@ MODEL = "Qwen/Qwen3-VL-8B-Thinking"
 # MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 # MODEL = "Qwen/Qwen2.5-VL-32B-Instruct"
 
+SERP_API = "c4d8337a0efa46f024138f66b99be987882697ecfab07dfb75a893d437a1a803"
+
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 DTYPE = torch.float16

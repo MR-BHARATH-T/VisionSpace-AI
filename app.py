@@ -82,6 +82,7 @@ def main():
         print(f"7. Budget Utilization profile: {session_path}/budget_analysis.json")
         print(f"8. Recommendation Rationale: {session_path}/explain_analysis.json")
         print(f"9. Layout Transition Delta: {session_path}/reconstruction_analysis.json")
+        print(f"10. Visual Reconstruction Preview: {session_path}/reconstruction_preview.json")
         
         # Zip outputs for ease of downloading
         print("\n📦 Zipping output files...")

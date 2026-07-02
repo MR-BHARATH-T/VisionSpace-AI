@@ -47,11 +47,27 @@ class ReconstructionAgent:
 
         diff_summary.append("Preserved ceiling height (280 cm) and window lighting alignment.")
 
+        # Generate prompt coordinates for FLUX Kontext
+        prompts = []
+        for item in recommended:
+            prompts.append(
+                f"Insert a {item.get('brand')} {item.get('name')} in matching location, preserving ambient shadows and geometry."
+            )
+
         # Map to final spec format
         output = {
             "before_image": "original_1.png",
             "after_image": "processed_reconstructed.png",
-            "difference_summary": diff_summary
+            "difference_summary": diff_summary,
+            "reconstruction_pipeline": {
+                "model": "FLUX Kontext",
+                "parameters": {
+                    "preserve_lighting": True,
+                    "preserve_perspective": True,
+                    "preserve_dimensions": True,
+                    "prompts": prompts
+                }
+            }
         }
 
         # Save output if path is given

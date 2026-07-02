@@ -131,6 +131,10 @@ class ProductionPipelineV2:
                 user_preferences=user_preferences,
                 session_path=session_path
             )
+            self.commerce_agent.generate_visual_preview(
+                products=commerce_output.get("recommended_products", []),
+                session_path=str(session_path)
+            )
         else:
             logger.warning("Bypassing Phase 4 Commerce Agent due to failed guard scores.")
             commerce_output = {"recommended_products": []}

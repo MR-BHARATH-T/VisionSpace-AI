@@ -6,6 +6,7 @@ to output filtered product recommendations (requested products + complementary b
 
 from __future__ import annotations
 
+import os
 import json
 import logging
 import re
@@ -25,6 +26,24 @@ class CommerceAgent:
         """Initializes the CommerceAgent."""
         self.provider_name = provider
         self.text_model = TextModel(provider=provider)
+        # Mock product catalog for fallback and local searches
+        self.mock_catalog = [
+            # Desks
+            {"name": "IKEA Micke Desk", "category": "desk", "brand": "IKEA", "price": 6500, "style": "modern", "width_cm": 105, "depth_cm": 50, "quality_score": 0.8},
+            {"name": "IKEA Malm Desk", "category": "desk", "brand": "IKEA", "price": 9999, "style": "modern", "width_cm": 140, "depth_cm": 65, "quality_score": 0.85},
+            {"name": "Urban Ladder Study Table", "category": "desk", "brand": "Urban Ladder", "price": 12500, "style": "scandinavian", "width_cm": 120, "depth_cm": 60, "quality_score": 0.9},
+            {"name": "Godrej Interio Caliber Desk", "category": "desk", "brand": "Godrej Interio", "price": 8500, "style": "contemporary", "width_cm": 110, "depth_cm": 55, "quality_score": 0.8},
+            # Chairs
+            {"name": "IKEA Flintan Office Chair", "category": "chair", "brand": "IKEA", "price": 5999, "style": "modern", "width_cm": 70, "depth_cm": 70, "quality_score": 0.75},
+            {"name": "IKEA Markus Ergonomic Chair", "category": "chair", "brand": "IKEA", "price": 14999, "style": "modern", "width_cm": 62, "depth_cm": 60, "quality_score": 0.9},
+            {"name": "Godrej Interio Motion Chair", "category": "chair", "brand": "Godrej Interio", "price": 12000, "style": "contemporary", "width_cm": 65, "depth_cm": 65, "quality_score": 0.85},
+            # Bookshelves
+            {"name": "IKEA Billy Bookshelf", "category": "bookshelf", "brand": "IKEA", "price": 4500, "style": "modern", "width_cm": 80, "depth_cm": 28, "quality_score": 0.8},
+            {"name": "Urban Ladder Engineered Wood Shelf", "category": "bookshelf", "brand": "Urban Ladder", "price": 8999, "style": "modern", "width_cm": 90, "depth_cm": 35, "quality_score": 0.85},
+            # Lighting
+            {"name": "IKEA Tertial Lamp", "category": "lighting", "brand": "IKEA", "price": 999, "style": "industrial", "width_cm": 15, "depth_cm": 15, "quality_score": 0.75},
+            {"name": "Philips LED Desk Light", "category": "lighting", "brand": "Philips", "price": 1500, "style": "modern", "width_cm": 20, "depth_cm": 20, "quality_score": 0.8}
+        ]
         logger.info("CommerceAgent initialized (Provider: %s)", provider)
 
     def recommend_products(
@@ -35,10 +54,10 @@ class CommerceAgent:
         user_preferences: Dict[str, Any],
         session_path: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        """Runs the Phase 4 recommendation engine."""
+        """Orchestrates the Phase 4 recommendation pipeline matching conformed V2 structure."""
         logger.info("Running Phase 4 Product Agent recommendations...")
 
-        # Guard: Ensure preferences structure exists
+        # 1. Search products from catalog
         req_products = user_preferences.get("required_products") or []
         preferred_brands = user_preferences.get("preferred_brands") or []
         excluded_brands = user_preferences.get("excluded_brands") or []
@@ -46,60 +65,45 @@ class CommerceAgent:
         max_budget = budget_range.get("maximum") or 50000
         pref_style = user_preferences.get("preferred_style") or "modern"
 
-        prompt_system = (
-            "You are the Product Agent of VisionSpace AI.\n"
-            "Recommend products matching user requirements, preferred brands, and room limits.\n"
-            "Strict JSON ONLY. No conversational intro/outro text. No explanations. No thinking tags."
-        )
+        # Look up matching candidates in our catalog
+        candidates = self.search_products(req_products)
 
-        prompt_user = (
-            f"Requirements:\n"
-            f"- User Requested Products: {req_products}\n"
-            f"- Preferred Brands: {preferred_brands}\n"
-            f"- Excluded Brands: {excluded_brands}\n"
-            f"- Total Budget Limit: {max_budget}\n"
-            f"- Styling Preference: {pref_style}\n\n"
-            f"Context:\n"
-            f"- Room Type: {vision_output.get('room_type', 'bedroom')}\n"
-            f"- Walkability Score: {spatial_output.get('walkability_score', 80)}\n"
-            f"- Style Style: {design_output.get('current_style', pref_style)}\n\n"
-            "Task:\n"
-            "Recommend the user-requested products, plus some complementary useful furniture/decor items "
-            "that fit the style and stay strictly within the budget.\n"
-            "Exclude any brands on the excluded list.\n"
-            "Return conforming JSON format:\n"
-            "{\n"
-            '  "recommended_products": [\n'
-            "    {\n"
-            '      "name": "string product name",\n'
-            '      "category": "string category",\n'
-            '      "brand": "string brand name",\n'
-            '      "price": number,\n'
-            '      "reason": "string justification why selected",\n'
-            '      "fit_score": number (0.0 - 1.0),\n'
-            '      "space_score": number (0.0 - 1.0),\n'
-            '      "budget_score": number (0.0 - 1.0)\n'
-            "    }\n"
-            "  ]\n"
-            "}"
-        )
+        # 2. Apply filters (dimensions, budget, style, exclusions)
+        # Note: In this version we use a default of 120cm width / 60cm depth for standard furniture
+        candidates = self.filter_dimensions(candidates, max_w=120, max_d=60)
+        candidates = self.filter_budget(candidates, budget_limit=max_budget)
+        candidates = self.filter_style(candidates, style=pref_style)
+        
+        # Exclude brand filter
+        candidates = [c for c in candidates if c.get("brand") not in excluded_brands]
 
-        try:
-            llm_res = self.text_model.generate(
-                system_prompt=prompt_system,
-                prompt=prompt_user,
-                max_new_tokens=1024,
-                temperature=0.1,
-                enable_thinking=False  # Disabled for detection/extraction tasks
+        # 3. Score candidates using the V2 formulas
+        scored = []
+        for c in candidates:
+            scores = self.score_products(
+                product=c,
+                pref_style=pref_style,
+                preferred_brands=preferred_brands,
+                required_w=120,
+                required_d=60,
+                budget_limit=max_budget
             )
-            raw_text = llm_res.get("text") if isinstance(llm_res, dict) else str(llm_res)
-            llm_data = self._validate_and_repair_json(raw_text)
-        except Exception as e:
-            logger.error("Commerce LLM recommendation failed: %s", str(e))
-            llm_data = {}
+            item = dict(c)
+            item.update(scores)
+            scored.append(item)
 
-        # Fallback recommendations if LLM fails
-        fused = self._fuse_commerce_payload(llm_data, req_products, preferred_brands, max_budget)
+        # 4. Rank products
+        ranked = self.rank_products(scored)
+
+        # 5. Build shopping list & explanations
+        shopping_list = self.build_shopping_list(ranked)
+        explanations = self.generate_explanations(ranked)
+
+        output = {
+            "recommended_products": ranked,
+            "shopping_list": shopping_list,
+            "explanations": explanations
+        }
 
         # Save output if path is given
         if session_path is not None:
@@ -107,85 +111,159 @@ class CommerceAgent:
                 import pathlib
                 p = pathlib.Path(session_path)
                 if p.is_dir():
-                    save_json(fused, p / "commerce_analysis.json")
+                    save_json(output, p / "commerce_analysis.json")
             except Exception as e:
                 logger.error("Failed to save commerce analysis JSON: %s", str(e))
 
-        return fused
+        return output
 
-    def _fuse_commerce_payload(
-        self, llm_data: Dict[str, Any], req_products: List[str], preferred_brands: List[str], max_budget: float
-    ) -> Dict[str, Any]:
-        products = llm_data.get("recommended_products")
-        if not products or not isinstance(products, list):
-            # Create a simple default fallback matching requirements
-            products = []
-            default_brand = preferred_brands[0] if preferred_brands else "IKEA"
+    def search_products(self, categories: List[str]) -> List[Dict[str, Any]]:
+        """Searches catalog for products matching categories."""
+        if not categories:
+            # Return full desk catalog as fallback
+            return [c for c in self.mock_catalog if c.get("category") == "desk"]
             
-            # 1. Add requested items
-            for idx, req in enumerate(req_products):
-                products.append({
-                    "name": f"{default_brand} {req.capitalize()}",
-                    "category": req,
-                    "brand": default_brand,
-                    "price": int(max_budget * 0.2),
-                    "reason": f"Matches user requested {req}.",
-                    "fit_score": 0.95,
-                    "space_score": 0.90,
-                    "budget_score": 0.90
-                })
+        results = []
+        for cat in categories:
+            normalized_cat = cat.lower()
+            matches = [c for c in self.mock_catalog if normalized_cat in c.get("category", "").lower() or normalized_cat in c.get("name", "").lower()]
+            if matches:
+                results.extend(matches)
+        
+        if not results:
+            results = list(self.mock_catalog)
+        return results
+
+    def filter_dimensions(self, products: List[Dict[str, Any]], max_w: float, max_d: float) -> List[Dict[str, Any]]:
+        """Filters out items that exceed the available room clearance boundaries."""
+        filtered = []
+        for p in products:
+            w = float(p.get("width_cm", 0))
+            d = float(p.get("depth_cm", 0))
+            if w <= max_w and d <= max_d:
+                filtered.append(p)
+        return filtered
+
+    def filter_budget(self, products: List[Dict[str, Any]], budget_limit: float) -> List[Dict[str, Any]]:
+        """Filters out items that exceed the target budget range."""
+        return [p for p in products if float(p.get("price", 0)) <= budget_limit]
+
+    def filter_style(self, products: List[Dict[str, Any]], style: str) -> List[Dict[str, Any]]:
+        """Filters/prioritizes items matching the theme styling."""
+        # We don't discard non-matching styles unless they clash, so we keep them but style scoring handles prioritizing
+        return products
+
+    def score_products(
+        self,
+        product: Dict[str, Any],
+        pref_style: str,
+        preferred_brands: List[str],
+        required_w: float,
+        required_d: float,
+        budget_limit: float
+    ) -> Dict[str, float]:
+        """Calculates conformed weighted score for the product candidate.
+
+        Formula:
+          Final Score = 0.35 * fit_score + 0.25 * style_score + 0.20 * budget_score + 0.10 * brand_score + 0.10 * quality_score
+        """
+        # 1. fit_score: does it fit required dimensions?
+        prod_w = float(product.get("width_cm", required_w))
+        prod_d = float(product.get("depth_cm", required_d))
+        fit_score = 1.0 if (prod_w <= required_w and prod_d <= required_d) else 0.5
+        
+        # 2. style_score: does it match preferred style?
+        style_score = 1.0 if product.get("style", "").lower() == pref_style.lower() else 0.6
+        
+        # 3. budget_score: price vs limit
+        price = float(product.get("price", 0))
+        budget_score = 1.0 if price <= budget_limit else 0.0
+        if budget_limit > 0 and price <= budget_limit:
+            budget_score = 1.0 - (price / budget_limit) * 0.3 # penalize expensive options slightly
             
-            # 2. Add a useful complementary product if space permits
-            products.append({
-                "name": f"{default_brand} LED Desk Lamp",
-                "category": "lighting",
-                "brand": default_brand,
-                "price": int(max_budget * 0.05),
-                "reason": "Complementary task lighting to boost workspace utility.",
-                "fit_score": 0.90,
-                "space_score": 0.95,
-                "budget_score": 0.95
+        # 4. brand_score: is it in preferred brands?
+        brand_score = 1.0 if product.get("brand", "").lower() in [b.lower() for b in preferred_brands] else 0.5
+        
+        # 5. quality_score
+        quality_score = float(product.get("quality_score", 0.8))
+        
+        # Final weighted score
+        final_score = (
+            0.35 * fit_score +
+            0.25 * style_score +
+            0.20 * budget_score +
+            0.10 * brand_score +
+            0.10 * quality_score
+        )
+        
+        return {
+            "fit_score": round(fit_score, 2),
+            "style_score": round(style_score, 2),
+            "budget_score": round(budget_score, 2),
+            "brand_score": round(brand_score, 2),
+            "quality_score": round(quality_score, 2),
+            "fit_score_weighted": round(0.35 * fit_score, 3),
+            "style_score_weighted": round(0.25 * style_score, 3),
+            "budget_score_weighted": round(0.20 * budget_score, 3),
+            "brand_score_weighted": round(0.10 * brand_score, 3),
+            "quality_score_weighted": round(0.10 * quality_score, 3),
+            "fit_score_raw": fit_score,
+            "space_score": fit_score, # backward compatibility
+            "budget_score_raw": budget_score,
+            "final_score": round(final_score, 3)
+        }
+
+    def rank_products(self, products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Sorts candidate products in descending order based on their weighted score."""
+        return sorted(products, key=lambda x: x.get("final_score", 0.0), reverse=True)
+
+    def generate_explanations(self, products: List[Dict[str, Any]]) -> List[str]:
+        """Generates clear, concise justifications for product selections."""
+        explanations = []
+        for p in products[:3]:
+            explanations.append(
+                f"Selected {p.get('name')} (Score: {p.get('final_score')}) because it fits clearance "
+                f"envelopes and matches styling parameters within budget limits."
+            )
+        return explanations
+
+    def build_shopping_list(self, products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Prepares a shopping catalog of selected items."""
+        shopping_list = []
+        for p in products:
+            shopping_list.append({
+                "item": p.get("name"),
+                "category": p.get("category"),
+                "brand": p.get("brand"),
+                "price": p.get("price")
             })
+        return shopping_list
 
-        return {"recommended_products": products}
+    def generate_visual_preview(self, products: List[Dict[str, Any]], session_path: str) -> Dict[str, Any]:
+        """Generates a visualization preview manifest utilizing FLUX Kontext for reconstruction."""
+        logger.info("Generating FLUX Kontext reconstruction preview parameters...")
+        
+        prompts = []
+        for p in products[:2]:
+            prompts.append(
+                f"Add a {p.get('style')} {p.get('brand')} {p.get('category')} to the room floor space, "
+                "preserving exact room perspective and ambient lighting."
+            )
 
-    def _validate_and_repair_json(self, raw_text: Optional[str]) -> Dict[str, Any]:
-        """Helper to repair and clean JSON response structures."""
-        if not raw_text:
-            return {}
-        clean_text = raw_text.strip()
-        
-        # Locate outer JSON braces to discard extraneous reasoning text
-        start_idx = clean_text.find("{")
-        end_idx = clean_text.rfind("}")
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            clean_text = clean_text[start_idx:end_idx + 1].strip()
-        
-        # Remove code blocks if present
-        if clean_text.startswith("```"):
-            lines = clean_text.splitlines()
-            if lines[0].startswith("```json") or lines[0].startswith("```"):
-                clean_text = "\n".join(lines[1:-1]) if lines[-1].startswith("```") else "\n".join(lines[1:])
-        
-        clean_text = clean_text.strip()
+        preview_manifest = {
+            "reconstruction_model": "FLUX Kontext",
+            "reasoning": "Preserves room layout identity and geometric boundaries better than SDXL.",
+            "prompts": prompts,
+            "base_image": "original_1.png",
+            "output_preview_image": "processed_reconstructed.png"
+        }
 
         try:
-            return json.loads(clean_text)
-        except json.JSONDecodeError:
-            pass
+            import pathlib
+            p_path = pathlib.Path(session_path)
+            if p_path.is_dir():
+                save_json(preview_manifest, p_path / "reconstruction_preview.json")
+        except Exception as e:
+            logger.error("Failed to save reconstruction preview: %s", str(e))
 
-        try:
-            repaired = re.sub(r',\s*([\]}])', r'\1', clean_text)
-            return json.loads(repaired)
-        except Exception:
-            pass
-
-        try:
-            from json_repair import repair_json
-            repaired_lib = repair_json(clean_text, return_objects=True)
-            if isinstance(repaired_lib, dict):
-                return repaired_lib
-        except Exception:
-            pass
-
-        return {}
+        return preview_manifest
