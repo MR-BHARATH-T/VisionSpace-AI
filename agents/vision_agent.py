@@ -354,7 +354,7 @@ class VisionAgent:
                     f"\nThis is image index {idx + 1} of a multi-view series containing {len(preprocessed_images)} views. "
                     "Focus on identifying spatial details, camera angles, and objects relative to other views."
                 )
-            user_prompt = p_template["user"] + mv_instructions
+            user_prompt = p_template["user"] + mv_instructions + "\n\nIMPORTANT: Return ONLY valid JSON. Do not output any conversational introduction, thoughts, reasoning, or explanation. Immediately output the final raw JSON block."
 
             t_inf_start = time.perf_counter()
             response_data = self._generate_with_retry(
@@ -398,10 +398,10 @@ class VisionAgent:
                     )
                     # Allocate enough tokens to fit CoT thoughts and full JSON payload
                     tile_kwargs = dict(kwargs)
-                    tile_kwargs["max_new_tokens"] = 1024
+                    tile_kwargs["max_new_tokens"] = 512
                     
                     # Append strict JSON-only instruction for thinking models
-                    tile_prompt = t_template["user"] + "\n\nIMPORTANT: Do not output any conversational introduction or explanation outside the <think>...</think> block. Immediately output the final raw JSON block after the thoughts."
+                    tile_prompt = t_template["user"] + "\n\nIMPORTANT: Return ONLY valid JSON. Do not output any conversational introduction, thoughts, reasoning, or explanation. Immediately output the final raw JSON block."
                     
                     t_response = self._generate_with_retry(
                         prompt=tile_prompt,
@@ -448,7 +448,7 @@ class VisionAgent:
                     return float(bbox.get("width", 0)) * float(bbox.get("height", 0))
                 
                 targets.sort(key=get_bbox_area, reverse=True)
-                max_crops = kwargs.get("max_crops", getattr(config, "VISION_CONFIG", {}).get("max_crops", 3))
+                max_crops = kwargs.get("max_crops", getattr(config, "VISION_CONFIG", {}).get("max_crops", 2))
                 targets_to_crop = targets[:max_crops]
                 
                 crop_objects = []
@@ -480,10 +480,10 @@ class VisionAgent:
                             confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
                         )
                         crop_kwargs = dict(kwargs)
-                        crop_kwargs["max_new_tokens"] = 1024
+                        crop_kwargs["max_new_tokens"] = 512
                         
                         # Append strict JSON-only instruction for thinking models
-                        crop_prompt = c_template["user"] + "\n\nIMPORTANT: Do not output any conversational introduction or explanation outside the <think>...</think> block. Immediately output the final raw JSON block after the thoughts."
+                        crop_prompt = c_template["user"] + "\n\nIMPORTANT: Return ONLY valid JSON. Do not output any conversational introduction, thoughts, reasoning, or explanation. Immediately output the final raw JSON block."
                         
                         c_response = self._generate_with_retry(
                             prompt=crop_prompt,

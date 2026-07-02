@@ -27,15 +27,9 @@ HF_REVISION = "main"
 
 
 GENERATION_CONFIG = {
-
-    "temperature": 0.1,
-
-    "top_p": 0.9,
-
-    "max_new_tokens": 8192,
-
+    "temperature": 0.0,
+    "max_new_tokens": 512,
     "do_sample": False
-
 }
 
 MAX_IMAGE_SIZE = 1024
@@ -66,5 +60,5 @@ VISION_CONFIG = {
     "enable_multiview_merge": True,
     "enable_tiling": True,
     "enable_adaptive_crops": True,
-    "max_crops": 3
+    "max_crops": 2
 }
