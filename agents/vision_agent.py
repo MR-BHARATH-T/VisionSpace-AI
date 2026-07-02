@@ -452,6 +452,8 @@ class VisionAgent:
                 
                 targets.sort(key=get_bbox_area, reverse=True)
                 max_crops = kwargs.get("max_crops", getattr(config, "VISION_CONFIG", {}).get("max_crops", 2))
+                if len(preprocessed_images) > 1:
+                    max_crops = min(max_crops, 1)
                 targets_to_crop = targets[:max_crops]
                 
                 crop_objects = []

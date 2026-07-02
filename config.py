@@ -28,7 +28,7 @@ HF_REVISION = "main"
 
 GENERATION_CONFIG = {
     "temperature": 0.0,
-    "max_new_tokens": 2048,
+    "max_new_tokens": 768,
     "do_sample": False
 }
 
