@@ -17,22 +17,35 @@ def main():
     print("Initializing Multi-Agent Pipeline (v2)...")
     pipeline = ProductionPipelineV2()
     
-    # Check for default assets
-    fallback_paths = [
-        "assets/front-view.png", 
-        "assets/left-view.png", 
-        "assets/right-view.png"
-    ]
+    # Check for uploaded images first in the uploads/ folder
+    uploads_dir = pathlib.Path("uploads")
     images = []
     
-    for path in fallback_paths:
-        p = pathlib.Path(path)
-        if p.exists():
-            img = Image.open(p)
-            images.append(img)
-            print(f"  Loaded local asset: {p.name} ({img.width}x{img.height} px)")
-        else:
-            print(f"  Fallback file not found at: {path}")
+    if uploads_dir.exists() and uploads_dir.is_dir():
+        for path in uploads_dir.iterdir():
+            if path.suffix.lower() in ('.png', '.jpg', '.jpeg', '.webp'):
+                try:
+                    img = Image.open(path)
+                    images.append(img)
+                    print(f"  Loaded uploaded image: {path.name} ({img.width}x{img.height} px)")
+                except Exception as e:
+                    print(f"  Error loading upload {path.name}: {e}")
+
+    # Fallback to default assets if uploads/ is empty
+    if not images:
+        fallback_paths = [
+            "assets/front-view.png", 
+            "assets/left-view.png", 
+            "assets/right-view.png"
+        ]
+        for path in fallback_paths:
+            p = pathlib.Path(path)
+            if p.exists():
+                img = Image.open(p)
+                images.append(img)
+                print(f"  Loaded local asset: {p.name} ({img.width}x{img.height} px)")
+            else:
+                print(f"  Fallback file not found at: {path}")
 
     # Fallback to creating a dummy image if assets folder is completely missing
     if not images:
