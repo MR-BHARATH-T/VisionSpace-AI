@@ -90,21 +90,13 @@ class CommerceAgent:
         # Look up matching candidates in our catalog
         candidates = self.search_products(req_products, preferred_brands=preferred_brands)
 
-        # Prioritize preferred brands to get at least 10 items
-        if preferred_brands:
-            brand_candidates = [c for c in self.mock_catalog if c.get("brand").lower() in [b.lower() for b in preferred_brands]]
-            if brand_candidates:
-                seen = set()
-                merged_candidates = []
-                for c in brand_candidates:
-                    if c["name"] not in seen:
-                        seen.add(c["name"])
-                        merged_candidates.append(c)
-                for c in candidates:
-                    if c["name"] not in seen:
-                        seen.add(c["name"])
-                        merged_candidates.append(c)
-                candidates = merged_candidates
+        # Sort candidates to prioritize preferred brands first
+        if preferred_brands and candidates:
+            candidates = sorted(
+                candidates,
+                key=lambda x: x.get("brand", "").lower() in [b.lower() for b in preferred_brands],
+                reverse=True
+            )
 
         # 2. Apply filters (dimensions, budget, style, exclusions)
         # Note: In this version we use a default of 120cm width / 60cm depth for standard furniture
@@ -160,7 +152,8 @@ class CommerceAgent:
 
     def search_products(self, categories: List[str], preferred_brands: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Searches Google Shopping dynamically using SerpAPI if API key is provided, else falls back to mock catalog."""
-        api_key = os.environ.get("SERPAPI_API_KEY")
+        import config
+        api_key = os.environ.get("SERPAPI_API_KEY") or getattr(config, "SERP_API", None)
         if not api_key:
             # Try UserSecretsClient if on Kaggle
             try:
