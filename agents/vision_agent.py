@@ -379,7 +379,7 @@ class VisionAgent:
 
         global_kwargs = dict(kwargs)
         global_kwargs["enable_thinking"] = False
-        global_kwargs["max_new_tokens"] = 768
+        global_kwargs["max_new_tokens"] = 1536
 
         t_inf_start = time.perf_counter()
         response_data = self._generate_with_retry(
