@@ -767,6 +767,11 @@ class VisionAgent:
         """Cleans response formatting and populates missing fields with null values."""
         clean_text = response_text.strip()
         
+        # Strip thinking block (<think>...</think>) if present
+        if "<think>" in clean_text.lower() and "</think>" in clean_text.lower():
+            idx = clean_text.lower().find("</think>")
+            clean_text = clean_text[idx + len("</think>"):].strip()
+        
         # Strip markdown frames if present
         if clean_text.startswith("```"):
             lines = clean_text.splitlines()
