@@ -88,7 +88,7 @@ class CommerceAgent:
         pref_style = user_preferences.get("preferred_style") or "modern"
 
         # Look up matching candidates in our catalog
-        candidates = self.search_products(req_products)
+        candidates = self.search_products(req_products, preferred_brands=preferred_brands)
 
         # Prioritize preferred brands to get at least 10 items
         if preferred_brands:
@@ -158,10 +158,100 @@ class CommerceAgent:
 
         return output
 
-    def search_products(self, categories: List[str]) -> List[Dict[str, Any]]:
-        """Searches catalog for products matching categories."""
+    def search_products(self, categories: List[str], preferred_brands: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Searches Google Shopping dynamically using SerpAPI if API key is provided, else falls back to mock catalog."""
+        api_key = os.environ.get("SERPAPI_API_KEY")
+        if not api_key:
+            # Try UserSecretsClient if on Kaggle
+            try:
+                from kaggle_secrets import UserSecretsClient
+                api_key = UserSecretsClient().get_secret("SERPAPI_API_KEY")
+            except Exception:
+                pass
+
+        if not api_key:
+            logger.warning("SerpAPI API key not found. Falling back to local catalog search.")
+            return self._search_mock_catalog(categories)
+
+        import urllib.request
+        import urllib.parse
+        
+        brands = preferred_brands or [""]
+        results = []
+        
+        # Build search queries (e.g. "IKEA desk", "Urban Ladder chair")
+        queries = []
+        for cat in categories or ["desk"]:
+            for brand in brands:
+                q = f"{brand} {cat}".strip()
+                if q:
+                    queries.append((cat, q))
+                    
+        for cat, query in queries[:5]:  # Limit query batching to avoid rate limits
+            try:
+                logger.info("Executing dynamic Google Shopping query on SerpAPI: '%s'", query)
+                query_encoded = urllib.parse.quote(query)
+                url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
+                
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=8) as response:
+                    data = json.loads(response.read().decode('utf-8'))
+                    shopping_results = data.get("shopping_results", [])
+                    
+                    for item in shopping_results:
+                        title = item.get("title", "")
+                        price_str = item.get("price", "0")
+                        # Extract price digits
+                        price_cleaned = re.sub(r'[^\d.]', '', price_str)
+                        try:
+                            price = float(price_cleaned) if price_cleaned else 0.0
+                        except Exception:
+                            price = 0.0
+                            
+                        # Detect brand from title or source
+                        source = item.get("source", "")
+                        detected_brand = source
+                        for b in (preferred_brands or ["IKEA", "Urban Ladder", "Godrej Interio"]):
+                            if b.lower() in title.lower():
+                                detected_brand = b
+                                break
+                                
+                        rating = float(item.get("rating", 4.0))
+                        quality_score = rating / 5.0 if rating > 0 else 0.8
+                        
+                        # Parse dimensions from title
+                        w_cm, d_cm = 120.0, 60.0
+                        match = re.search(r'(\d+)\s*(?:x|by)\s*(\d+)', title.lower())
+                        if match:
+                            try:
+                                w_cm = float(match.group(1))
+                                d_cm = float(match.group(2))
+                            except Exception:
+                                pass
+                                
+                        results.append({
+                            "name": title,
+                            "category": cat,
+                            "brand": detected_brand,
+                            "price": price,
+                            "style": "modern",  # default
+                            "width_cm": w_cm,
+                            "depth_cm": d_cm,
+                            "quality_score": round(quality_score, 2),
+                            "link": item.get("link", "")
+                        })
+            except Exception as e:
+                logger.error("SerpAPI query failed for '%s': %s", query, str(e))
+                
+        # If dynamic search yielded nothing, use mock catalog
+        if not results:
+            return self._search_mock_catalog(categories)
+            
+        return results
+
+    def _search_mock_catalog(self, categories: List[str]) -> List[Dict[str, Any]]:
+        """Fallback search logic using local mock catalog."""
         if not categories:
-            # Return full desk catalog as fallback
             return [c for c in self.mock_catalog if c.get("category") == "desk"]
             
         results = []
