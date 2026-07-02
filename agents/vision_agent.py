@@ -777,9 +777,17 @@ class VisionAgent:
         clean_text = response_text.strip()
         
         # Strip thinking block (<think>...</think>) if present
-        if "<think>" in clean_text.lower() and "</think>" in clean_text.lower():
-            idx = clean_text.lower().find("</think>")
-            clean_text = clean_text[idx + len("</think>"):].strip()
+        if "<think>" in clean_text.lower():
+            if "</think>" in clean_text.lower():
+                idx = clean_text.lower().find("</think>")
+                clean_text = clean_text[idx + len("</think>"):].strip()
+            else:
+                idx = clean_text.lower().find("<think>")
+                brace_idx = clean_text.find("{", idx)
+                if brace_idx != -1:
+                    clean_text = clean_text[brace_idx:].strip()
+                else:
+                    clean_text = clean_text[idx + len("<think>"):].strip()
         
         # Strip markdown frames if present
         if clean_text.startswith("```"):
