@@ -1057,8 +1057,11 @@ class HuggingFaceProvider(BaseProvider):
         else:
             # ── Text-only path ─────────────────────────────────────────────
             text = self._apply_chat_template_cached(messages)
-            tok = self._get_tokenizer()
-            inputs = dict(tok([text], padding=True, return_tensors="pt"))
+            if self.processor is not None:
+                inputs = dict(self.processor(text=[text], padding=True, return_tensors="pt"))
+            else:
+                tok = self._get_tokenizer()
+                inputs = dict(tok([text], padding=True, return_tensors="pt"))
 
         target_device = self.model.device if hasattr(self.model, "device") else DEVICE
         inputs = {
