@@ -44,3 +44,6 @@ outputs_test/
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Project Code Compilation Summary
+all_project_code.txt
