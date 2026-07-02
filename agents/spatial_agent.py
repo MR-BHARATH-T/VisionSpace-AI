@@ -48,6 +48,20 @@ class SpatialAgent:
         """
         logger.info("Starting layout spatial analysis...")
 
+        # Guard: Execute only if vision.confidence_score >= 0.75
+        confidence_score = room_data.get("confidence_score", 1.0)
+        if confidence_score < 0.75:
+            logger.warning("Vision confidence score %s < 0.75. Skipping Spatial Analysis.", confidence_score)
+            return {
+                "walkability_score": 0,
+                "clearance_issues": ["Skipped: Vision confidence score too low."],
+                "unused_space": [],
+                "collision_objects": [],
+                "usable_area_percentage": 0,
+                "status": "skipped",
+                "reason": f"confidence_score ({confidence_score}) < 0.75"
+            }
+
         # A. Run python-based geometric reasoning engine
         if "merged_scene" in room_data:
             room_data = room_data["merged_scene"]
@@ -134,20 +148,40 @@ class SpatialAgent:
             geom_report["furniture_fit_validation"] = fit_validations
 
         # B. Call LLM for qualitative reasoning
-        prompt_data = spatial_analysis_prompt(room_data, geom_report, proposed_furniture)
+        prompt_system = (
+            "You are the Spatial Agent of VisionSpace AI. Perform layout geometry reasoning.\n"
+            "Analyze walkability, clearance issues, dead/unused spaces, and collisions.\n"
+            "Strict JSON ONLY. No conversational intro/outro text. No explanations. No thinking tags in output JSON."
+        )
+        prompt_user = (
+            f"Factual geometric metrics computed:\n"
+            f"- Mass Balance Score: {geom_report.get('balance_score_heuristic'):.1f}\n"
+            f"- Symmetry Score: {geom_report.get('symmetry_score_heuristic'):.1f}\n"
+            f"- Clearance Violations: {[c['description'] for c in clearances]}\n"
+            f"- Collisions: {[c['description'] for c in collisions]}\n\n"
+            "Using this factual geometric context, return strictly conforming JSON:\n"
+            "{\n"
+            '  "walkability_score": number (0-100),\n'
+            '  "clearance_issues": ["list of strings"],\n'
+            '  "unused_space": ["list of strings"],\n'
+            '  "collision_objects": ["list of strings"],\n'
+            '  "usable_area_percentage": number (0-100)\n'
+            "}"
+        )
         
         try:
             llm_res = self.text_model.generate(
-                system_prompt=prompt_data["system"],
-                prompt=prompt_data["user"],
+                system_prompt=prompt_system,
+                prompt=prompt_user,
                 max_new_tokens=512,
-                temperature=0.1
+                temperature=0.1,
+                enable_thinking=True
             )
             raw_text = llm_res.get("text") if isinstance(llm_res, dict) else str(llm_res)
             llm_data = self._validate_and_repair_json(raw_text)
         except Exception as e:
             logger.error("LLM Spatial generation failed, falling back to heuristics: %s", str(e))
-            llm_data = self._get_fallback_layout_json(geom_report, fit_validations)
+            llm_data = {}
 
         # C. Fuse LLM feedback with our computed reports (to guarantee correctness)
         final_output = self._fuse_spatial_payload(llm_data, geom_report, fit_validations)
@@ -748,54 +782,18 @@ class SpatialAgent:
     def _fuse_spatial_payload(
         self, llm_data: Dict[str, Any], geom: Dict[str, Any], fits: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """Combines the exact outputs of LLM qualitative analysis with the correct geometric checks."""
-        fused = dict(llm_data)
-
-        # Merge analysis keys
-        if "layout_analysis" not in fused or not isinstance(fused["layout_analysis"], dict):
-            fused["layout_analysis"] = {
-                "layout_score": 85,
-                "flow_score": 80,
-                "accessibility_score": 80,
-                "balance_score": 80,
-                "space_utilization_score": 80,
-                "focal_point": "bed",
-                "traffic_flow": "standard",
-                "functional_zones": ["sleeping", "study"]
-            }
-
-        # Override computed scores if LLM returned 0/empty
-        la = fused["layout_analysis"]
-        if not la.get("balance_score") or la["balance_score"] == 0:
-            la["balance_score"] = int(geom["balance_score_heuristic"])
-        if not la.get("accessibility_score") or la["accessibility_score"] == 0:
-            la["accessibility_score"] = int(geom["symmetry_score_heuristic"])
-
-        # Directly override geometric outputs to guarantee 100% mathematical correctness
-        fused["collision_report"] = geom["collision_report"]
-        fused["clearance_violations"] = geom["clearance_violations"]
-        fused["walking_paths"] = geom["walking_paths"]
-        fused["placement_candidates"] = geom["placement_candidates"]
-        fused["furniture_fit_validation"] = fits
-
-        # Populate safety defaults if missing
-        if "safety_analysis" not in fused or not fused["safety_analysis"]:
-            fused["safety_analysis"] = [
-                {
-                    "hazard": "Exposed cables",
-                    "severity": "low",
-                    "mitigation": "Install cable managers along the desk wall."
-                }
-            ]
-
-        # Conforming data types
-        for k in ("layout_score", "flow_score", "accessibility_score", "balance_score", "space_utilization_score"):
-            if k in la:
-                try:
-                    la[k] = int(la[k])
-                except (ValueError, TypeError):
-                    la[k] = 80
-
+        """Combines LLM spatial evaluation with factual geometric validation into strict V2 format."""
+        fused = {}
+        
+        # Calculate usability percentage based on mass balance heuristic
+        balance = geom.get("balance_score_heuristic", 80.0)
+        
+        fused["walkability_score"] = int(llm_data.get("walkability_score", 80) if llm_data.get("walkability_score") is not None else 80)
+        fused["clearance_issues"] = list(llm_data.get("clearance_issues") or [c["description"] for c in geom.get("clearance_violations", [])])
+        fused["unused_space"] = list(llm_data.get("unused_space") or ["Unutilized corners near the window."])
+        fused["collision_objects"] = list(llm_data.get("collision_objects") or [c["description"] for c in geom.get("collision_report", [])])
+        fused["usable_area_percentage"] = int(llm_data.get("usable_area_percentage", balance) if llm_data.get("usable_area_percentage") is not None else balance)
+        
         return fused
 
     def _validate_and_repair_json(self, raw_text: Optional[str]) -> Dict[str, Any]:

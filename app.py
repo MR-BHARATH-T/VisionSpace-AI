@@ -10,16 +10,12 @@ root_path = os.path.dirname(os.path.abspath(__file__))
 if root_path not in sys.path:
     sys.path.insert(0, root_path)
 
-from agents.vision_agent import VisionAgent
-from agents.spatial_agent import SpatialAgent
-from agents.design_agent import DesignAgent
+from workflow.langgraph_workflow import ProductionPipelineV2
 
 def main():
     print("==================================================")
-    print("Initializing Multi-Agent Pipeline...")
-    vision_agent = VisionAgent()
-    spatial_agent = SpatialAgent()
-    design_agent = DesignAgent()
+    print("Initializing Multi-Agent Pipeline (v2)...")
+    pipeline = ProductionPipelineV2()
     
     # Check for default assets
     fallback_paths = [
@@ -45,56 +41,47 @@ def main():
         images.append(img)
     
     try:
-        # 1. Run Vision Agent (What exists?)
-        print("\n🏠 Step 1: Running Vision Agent...")
-        vision_output = vision_agent.analyze_room(
+        # Phase 0: User Preference Collection
+        print("\n📥 Step 0: Collecting User Preferences...")
+        user_prefs = {
+            "required_products": ["study table", "office chair"],
+            "preferred_brands": ["IKEA", "Godrej Interio"],
+            "excluded_brands": ["Local"],
+            "budget_range": {
+                "minimum": 10000,
+                "maximum": 50000
+            },
+            "preferred_style": "modern",
+            "color_preferences": ["white", "wood"],
+            "priority": ["workspace", "budget"]
+        }
+        
+        # Run Phase 1 - Phase 7 Production Pipeline v2
+        print("\n🚀 Executing Production Pipeline v2 (Phase 1 to Phase 7)...")
+        pipeline_output = pipeline.run_pipeline(
             images=images,
-            room_type="living_room",
-            style_preference="modern",
+            user_preferences=user_prefs,
+            room_type="bedroom",
             progress_callback=lambda step: print(f"  [Step] {step}")
         )
-        session_id = vision_output["session_id"]
-        session_path = vision_output["metadata"]["session_path"]
-        print(f"Vision Agent finished. Session ID: {session_id}")
-
-        # 2. Run Spatial Agent (What can fit?)
-        print("\n🧠 Step 2: Running Spatial Agent...")
-        spatial_output = spatial_agent.analyze_layout(
-            room_data=vision_output,
-            proposed_furniture=None,
-            session_path=session_path
-        )
-        print("Spatial Agent finished layout analysis successfully.")
         
-        # 3. Run Design Agent (What SHOULD this room become?)
-        print("\n🌌 Step 3: Running Design Agent...")
-        design_output = design_agent.generate_recommendations(
-            vision_output=vision_output,
-            spatial_output=spatial_output,
-            budget=50000,
-            preferred_style="modern",
-            preferred_colors=["white", "oak", "light_grey"],
-            preferred_brands=["IKEA", "Urban Ladder"],
-            constraints={
-                "retain_existing_bed": True,
-                "keep_window_access": True,
-                "wheelchair_accessible": False,
-                "work_from_home": True
-            },
-            session_path=session_path
-        )
-        print("Design Agent recommendations completed successfully.")
+        session_id = pipeline_output["session_id"]
+        session_path = pipeline_output["session_path"]
         
         print("\n✅ Multi-Agent Pipeline Analysis Complete!")
         print(f"Session ID: {session_id}")
-        print(f"All spatial and design outputs are stored in: {session_path}")
+        print(f"All outputs are stored in: {session_path}")
         
         print("\n--- Output Files Exported ---")
         print(f"1. Unified Scene Graph: {session_path}/scene_graph.json")
         print(f"2. Occupancy Grid matrix: {session_path}/occupancy_grid.json")
-        print(f"3. Merged Scene: {session_path}/merged_output.json")
-        print(f"4. Spatial Layout Analysis: {session_path}/spatial_analysis.json")
-        print(f"5. Design Recommendation: {session_path}/design_analysis.json")
+        print(f"3. Merged Scene Inventory (V1/V2): {session_path}/merged_output.json")
+        print(f"4. Spatial Clearance Audit: {session_path}/spatial_analysis.json")
+        print(f"5. Design Style Alignment: {session_path}/design_analysis.json")
+        print(f"6. Product Recommendations: {session_path}/commerce_analysis.json")
+        print(f"7. Budget Utilization profile: {session_path}/budget_analysis.json")
+        print(f"8. Recommendation Rationale: {session_path}/explain_analysis.json")
+        print(f"9. Layout Transition Delta: {session_path}/reconstruction_analysis.json")
         
         # Zip outputs for ease of downloading
         print("\n📦 Zipping output files...")

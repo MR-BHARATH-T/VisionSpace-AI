@@ -170,6 +170,7 @@ class TextModel:
         prompt_file: Optional[str] = None,
         variables: Optional[Dict[str, Any]] = None,
         validator: Optional[Dict[str, Any]] = None,
+        enable_thinking: Optional[bool] = None,
     ) -> Union[Dict[str, Any], Generator[str, None, None]]:
         """Inference routing facade. Generates output text predictions via ModelManager."""
         self._sync_callbacks()
@@ -193,6 +194,8 @@ class TextModel:
             kwargs["variables"] = variables
         if validator is not None:
             kwargs["validator"] = validator
+        if enable_thinking is not None:
+            kwargs["enable_thinking"] = enable_thinking
 
         kwargs["stream"] = stream
 

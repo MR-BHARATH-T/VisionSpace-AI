@@ -332,243 +332,105 @@ class VisionAgent:
 
         t_preprocess_duration = time.perf_counter() - t_preprocess_start
 
-        # Inference loop
-        single_outputs = []
-        t_inference_duration = 0.0
+        # 1. Batched VLM global pass (combining all views)
+        if progress_callback:
+            progress_callback("Running Unified Vision Pass (Batched)...")
 
-        for idx, p_img in enumerate(preprocessed_images):
-            if progress_callback:
-                progress_callback(f"Running Vision Model (Image {idx + 1}/{len(preprocessed_images)})...")
-
-            # Dynamic prompt injection context details
-            p_template = vision_analysis_prompt(
-                room_type=room_type,
-                confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
-                max_objects=kwargs.get("max_objects", 30)
+        p_template = {
+            "system": (
+                "You are the Vision Agent of VisionSpace AI.\n"
+                "Analyze the uploaded room viewpoints and return a unified inventory.\n"
+                "Strict rules:\n"
+                "- Return strictly valid JSON only.\n"
+                "- No recommendations, design suggestions, reasoning, or explanations.\n"
+                "- Never use markdown formatting or code block wrappers.\n"
+                "- Never output a <think> block or reasoning trace."
+            ),
+            "user": (
+                f"Analyze all {len(preprocessed_images)} viewpoints of this {room_type} room simultaneously.\n"
+                "Extract room details and detect all furniture, doors, windows, and empty regions.\n"
+                "Output format must be EXACTLY:\n"
+                "{\n"
+                '  "room_type": "string",\n'
+                '  "dimensions_estimate": {\n'
+                '    "width_cm": number,\n'
+                '    "depth_cm": number,\n'
+                '    "height_cm": number\n'
+                "  },\n"
+                '  "detected_objects": [\n'
+                "    {\n"
+                '      "name": "string",\n'
+                '      "category": "string",\n'
+                '      "confidence": number,\n'
+                '      "bbox": [x, y, w, h]\n'
+                "    }\n"
+                "  ],\n"
+                '  "empty_regions": [\n'
+                "    {\n"
+                '      "width_cm": number,\n'
+                '      "depth_cm": number,\n'
+                '      "suitable_for": ["string"]\n'
+                "    }\n"
+                "  ],\n"
+                '  "confidence_score": number\n'
+                "}"
             )
+        }
 
-            # Insert runtime metadata instructions directly to guide model
-            mv_instructions = ""
-            if len(preprocessed_images) > 1:
-                mv_instructions = (
-                    f"\nThis is image index {idx + 1} of a multi-view series containing {len(preprocessed_images)} views. "
-                    "Focus on identifying spatial details, camera angles, and objects relative to other views."
-                )
-            user_prompt = p_template["user"] + mv_instructions + "\n\nIMPORTANT: Do not output any conversational introduction or explanation outside the <think>...</think> block. Immediately output the final raw JSON block after the thoughts."
+        global_kwargs = dict(kwargs)
+        global_kwargs["enable_thinking"] = False
+        global_kwargs["max_new_tokens"] = 768
 
+        t_inf_start = time.perf_counter()
+        response_data = self._generate_with_retry(
+            prompt=p_template["user"],
+            image=preprocessed_images,
+            system_prompt=p_template["system"],
+            **global_kwargs
+        )
+        t_inference_duration = time.perf_counter() - t_inf_start
+
+        response_text = response_data.get("response", "").strip()
+
+        # Guard: Check if output contains <think> and retry once
+        if "<think>" in response_text:
+            logger.warning("VLM output contained <think> block during Phase 1 detection task. Retrying with strict instruction...")
+            retry_prompt = p_template["user"] + "\n\nCRITICAL: DO NOT use <think> tags. Do not explain. Return raw JSON ONLY."
             t_inf_start = time.perf_counter()
-            global_kwargs = dict(kwargs)
-            global_kwargs["enable_thinking"] = True
             response_data = self._generate_with_retry(
-                prompt=user_prompt,
-                image=p_img,
+                prompt=retry_prompt,
+                image=preprocessed_images,
                 system_prompt=p_template["system"],
                 **global_kwargs
             )
             t_inference_duration += time.perf_counter() - t_inf_start
+            response_text = response_data.get("response", "").strip()
 
-            if progress_callback:
-                progress_callback(f"Parsing JSON (Image {idx + 1}/{len(preprocessed_images)})...")
-
-            # Guard: raise early if inference failed (provider returns success=False)
-            if not response_data.get("success", True) or not response_data.get("response", "").strip():
-                provider_error = response_data.get("error", "Unknown inference error")
-                raise RuntimeError(
-                    f"VisionModel inference failed for image {idx + 1}: {provider_error}"
-                )
-
-            # Validate schema format
-            parsed_json = self._validate_and_repair_json(response_data.get("response", ""))
-            
-            # Run image tiling for high-resolution detail extraction
-            enable_tiling = kwargs.get("enable_tiling", config.VISION_CONFIG.get("enable_tiling", True))
-            if enable_tiling:
-                # Proactively reclaim VRAM before starting memory-intensive tiling pass
-                self._clear_memory()
-                if progress_callback:
-                    progress_callback(f"Running Tile-Inference Pass (Image {idx + 1}/{len(preprocessed_images)})...")
-                
-                # Split image into 2x2 grid tiles
-                tiles = self._split_image_into_tiles(p_img)
-                tile_objects = []
-                
-                for t_idx, (tile_img, t_box) in enumerate(tiles):
-                    t_template = vision_tile_analysis_prompt(
-                        room_type=room_type,
-                        tile_index=t_idx + 1,
-                        confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
-                    )
-                    # Allocate enough tokens for direct JSON payload (no thoughts generated)
-                    tile_kwargs = dict(kwargs)
-                    tile_kwargs["max_new_tokens"] = 256
-                    tile_kwargs["enable_thinking"] = False
-                    
-                    # Direct instructions forcing raw JSON block output immediately
-                    tile_prompt = t_template["user"] + "\n\nIMPORTANT: Return ONLY valid JSON. Do not explain. Do not think. Do not reason. Output raw JSON only."
-                    
-                    t_response = self._generate_with_retry(
-                        prompt=tile_prompt,
-                        image=tile_img,
-                        system_prompt=t_template["system"],
-                        **tile_kwargs
-                    )
-                    
-                    if t_response.get("success", True) and t_response.get("response", "").strip():
-                        try:
-                            t_json = self._validate_and_repair_json(t_response.get("response", ""))
-                            for obj in t_json.get("objects", []):
-                                if "bbox" in obj:
-                                    # Map coordinates back to global space
-                                    obj["bbox"] = self._map_local_bbox_to_global(obj["bbox"], t_box, tile_img.size)
-                                    # Ensure unique ID namespace
-                                    obj["id"] = f"{obj.get('id', 'item')}_t{t_idx + 1}"
-                                    tile_objects.append(obj)
-                        except Exception as e:
-                            logger.warning(f"Error parsing tile {t_idx + 1}: {str(e)}")
-                
-                if tile_objects:
-                    parsed_json["objects"].extend(tile_objects)
-
-            # Run adaptive crop pass for focused furniture items
-            enable_adaptive_crops = kwargs.get("enable_adaptive_crops", config.VISION_CONFIG.get("enable_adaptive_crops", True))
-            if enable_adaptive_crops:
-                # Proactively reclaim VRAM before starting memory-intensive crop pass
-                self._clear_memory()
-                # Find target furniture categories to crop (high-density zones only)
-                target_categories = {"desk", "workstation", "shelf", "bookshelf", "tv unit", "entertainment", "nightstand", "bedside table", "dresser"}
-                targets = []
-                for obj in parsed_json.get("objects", []):
-                    cat = str(obj.get("category", "")).lower()
-                    subcat = str(obj.get("subcategory", "")).lower()
-                    name = str(obj.get("name", "")).lower()
-                    if cat in target_categories or subcat in target_categories or any(t in name for t in target_categories):
-                        if "bbox" in obj:
-                            targets.append(obj)
-                
-                # Limit to top 3 largest target furniture objects (high-density zones) to scan surfaces
-                def get_bbox_area(obj):
-                    bbox = obj.get("bbox", {})
-                    return float(bbox.get("width", 0)) * float(bbox.get("height", 0))
-                
-                targets.sort(key=get_bbox_area, reverse=True)
-                max_crops = kwargs.get("max_crops", getattr(config, "VISION_CONFIG", {}).get("max_crops", 2))
-                if len(preprocessed_images) > 1:
-                    max_crops = min(max_crops, 1)
-                targets_to_crop = targets[:max_crops]
-                
-                crop_objects = []
-                for crop_idx, target in enumerate(targets_to_crop):
-                    if progress_callback:
-                        progress_callback(f"Running Crop-Inference Pass for {target.get('name')} (Image {idx + 1}/{len(preprocessed_images)})...")
-                    
-                    bbox = target["bbox"]
-                    x, y, w_val, h_val = bbox.get("x", 0), bbox.get("y", 0), bbox.get("width", 0), bbox.get("height", 0)
-                    img_w, img_h = p_img.size
-                    
-                    # Expand crop window by 20% margin to capture surrounding objects
-                    margin_w = w_val * 0.2
-                    margin_h = h_val * 0.2
-                    
-                    left = max(0, int(x - margin_w))
-                    top = max(0, int(y - margin_h))
-                    right = min(img_w, int(x + w_val + margin_w))
-                    bottom = min(img_h, int(y + h_val + margin_h))
-                    
-                    # Prevent empty crops
-                    if right > left and bottom > top:
-                        crop_box = (left, top, right, bottom)
-                        crop_img = p_img.crop(crop_box)
-                        
-                        c_template = vision_crop_analysis_prompt(
-                            furniture_name=target.get("name", "furniture"),
-                            room_type=room_type,
-                            confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
-                        )
-                        # Allocate enough tokens for direct JSON payload (no thoughts generated)
-                        crop_kwargs = dict(kwargs)
-                        crop_kwargs["max_new_tokens"] = 256
-                        crop_kwargs["enable_thinking"] = False
-                        
-                        # Direct instructions forcing raw JSON block output immediately
-                        crop_prompt = c_template["user"] + "\n\nIMPORTANT: Return ONLY valid JSON. Do not explain. Do not think. Do not reason. Output raw JSON only."
-                        
-                        c_response = self._generate_with_retry(
-                            prompt=crop_prompt,
-                            image=crop_img,
-                            system_prompt=c_template["system"],
-                            **crop_kwargs
-                        )
-                        
-                        if c_response.get("success", True) and c_response.get("response", "").strip():
-                            try:
-                                c_json = self._validate_and_repair_json(c_response.get("response", ""))
-                                for obj in c_json.get("objects", []):
-                                    if "bbox" in obj:
-                                        # Map coordinates back to global space
-                                        obj["bbox"] = self._map_local_bbox_to_global(obj["bbox"], crop_box, crop_img.size)
-                                        # Ensure unique ID namespace
-                                        obj["id"] = f"{obj.get('id', 'item')}_c{crop_idx + 1}"
-                                        crop_objects.append(obj)
-                            except Exception as e:
-                                logger.warning(f"Error parsing crop pass for {target.get('name')}: {str(e)}")
-                
-                if crop_objects:
-                    parsed_json["objects"].extend(crop_objects)
-
-            # Run local Object Fusion per viewpoint to clean up duplicate detections between tiles/crops
-            if parsed_json.get("objects"):
-                fusion = ObjectFusion()
-                fused_viewpoint_objects = fusion.fuse_objects(parsed_json["objects"])
-                fused_viewpoint_objects = self._filter_by_confidence_policy(fused_viewpoint_objects)
-                parsed_json["objects"] = _normalise_ids_list(fused_viewpoint_objects)
-
-            # Save single image intermediate output
-            save_json(parsed_json, session_path / f"image_{idx + 1}_output.json")
-            single_outputs.append(parsed_json)
-
-        # Merge outputs if multi-image
-        if progress_callback:
-            progress_callback("Merging...")
-
-        t_merge_start = time.perf_counter()
-        if len(single_outputs) > 1:
-            merged_output = self._merge_multi_view(single_outputs, session_path)
-        else:
-            merged_output = self._merge_multi_view([single_outputs[0]], session_path)
-
-        # Add visual schema helper tags for downstream visual agents
-        merged_output["segmentation_masks"] = []
-        merged_output["placement_regions"] = merged_output.get("candidate_furniture_locations", [])
+        # Parse & repair strict JSON
+        parsed_json = self._parse_strict_json(response_text)
         
-        # Populate free space polygon schemas from floor analyses (fallback only)
-        if "free_space_polygons" not in merged_output or not merged_output["free_space_polygons"]:
-            merged_output["free_space_polygons"] = merged_output.get("walking_paths", [])
-
-        t_merge_duration = time.perf_counter() - t_merge_start
+        # Merge duration is 0 because it was a unified pass
+        t_merge_duration = 0.0
 
         if progress_callback:
-            progress_callback("Saving...")
+            progress_callback("Saving outputs...")
 
-        # Save merged scene graph (remove raw 2D occupancy grid cells to keep JSON clean)
-        import copy
-        merged_output_copy = copy.deepcopy(merged_output)
-        if "occupancy_grid" in merged_output_copy and isinstance(merged_output_copy["occupancy_grid"], dict):
-            merged_output_copy["occupancy_grid"].pop("cells", None)
-            merged_output_copy["occupancy_grid"]["occupancy_grid_path"] = "occupancy_grid.json"
-        save_json(merged_output_copy, session_path / "merged_output.json")
+        # Structure individual scene outputs to be backwards compatible with app.py zipping
+        single_outputs = [parsed_json]
+        for i in range(len(preprocessed_images)):
+            save_json(parsed_json, session_path / f"image_{i + 1}_output.json")
+
+        save_json(parsed_json, session_path / "merged_output.json")
 
         t_total_duration = time.perf_counter() - t_total_start
-
-        # VRAM and hardware status info
         vram_info = self.model_manager.get_memory_usage()
 
-        # Session metadata
         metadata = {
             "session_id": session_id,
             "session_path": str(session_path),
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-            "model_name": getattr(config, "MODEL", "Qwen/Qwen3-VL-8B-Instruct"),
-            "prompt_version": "25-feature-scene-understanding-v1",
+            "model_name": getattr(config, "MODEL", "Qwen/Qwen3-VL-8B-Thinking"),
+            "prompt_version": "production-pipeline-v2",
             "image_count": len(preprocessed_images),
             "gpu_device": vram_info.get("device_name", "N/A") if torch.cuda.is_available() else "CPU",
             "performance_metrics": {
@@ -581,27 +443,24 @@ class VisionAgent:
         }
         save_json(metadata, session_path / "metadata.json")
 
-        # Session logs
         logs = {
             "session_id": session_id,
             "logs": [
                 f"[{datetime.now().isoformat()}] Session started.",
                 f"[{datetime.now().isoformat()}] Loaded {len(raw_images)} inputs, normalized to {len(valid_images)} unique images.",
-                f"[{datetime.now().isoformat()}] Completed image preprocessing pipeline.",
-                f"[{datetime.now().isoformat()}] Finished LLM inference runs.",
-                f"[{datetime.now().isoformat()}] Merged multi-view inputs.",
+                f"[{datetime.now().isoformat()}] Completed unified batched pre-processing.",
+                f"[{datetime.now().isoformat()}] Finished unified VLM inference pass.",
                 f"[{datetime.now().isoformat()}] Session files successfully saved."
             ]
         }
         save_json(logs, session_path / "logs.json")
 
-        # Cleanup memory
         self._clear_memory()
 
         return {
             "session_id": session_id,
             "metadata": metadata,
-            "merged_scene": merged_output,
+            "merged_scene": parsed_json,
             "individual_scenes": single_outputs
         }
 
@@ -737,24 +596,26 @@ class VisionAgent:
     def _generate_with_retry(
         self,
         prompt: str,
-        image: Image.Image,
+        image: Union[Image.Image, List[Image.Image]],
         system_prompt: str,
         **kwargs
     ) -> Dict[str, Any]:
         """Runs image token generation, catching CUDA OOMs and executing dynamic reloads."""
         # Filter kwargs to only those accepted by VisionModel.generate
         allowed_keys = {
-            "max_new_tokens", "temperature", "top_p", "do_sample", "stream", "profile", "response_format"
+            "max_new_tokens", "temperature", "top_p", "do_sample", "stream", "profile", "response_format", "enable_thinking"
         }
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in allowed_keys}
         if "profile" not in filtered_kwargs and self.model_profile:
             filtered_kwargs["profile"] = self.model_profile
 
+        img_list = image if isinstance(image, list) else [image]
+
         try:
             # Route to VisionModel facade
             return self.vision_model.generate(
                 prompt=prompt,
-                images=[image],
+                images=img_list,
                 system_prompt=system_prompt,
                 response_format="json",
                 **filtered_kwargs
@@ -768,7 +629,7 @@ class VisionAgent:
                 # Retry once
                 return self.vision_model.generate(
                     prompt=prompt,
-                    images=[image],
+                    images=img_list,
                     system_prompt=system_prompt,
                     response_format="json",
                     **filtered_kwargs
@@ -1179,3 +1040,41 @@ class VisionAgent:
             if conf >= min_conf:
                 filtered.append(obj)
         return filtered
+
+    def _parse_strict_json(self, response_text: str) -> Dict[str, Any]:
+        """Strict JSON parser adhering to Production Pipeline v2 rules."""
+        if not response_text:
+            return {
+                "status": "partial_success",
+                "reason": "json_generation_failed"
+            }
+            
+        clean_text = response_text.strip()
+        
+        # Attempt 1: Direct parse
+        try:
+            return json.loads(clean_text)
+        except Exception:
+            pass
+            
+        # Attempt 2: Extract first JSON object from '{' to matching '}'
+        start_idx = clean_text.find("{")
+        end_idx = clean_text.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            candidate = clean_text[start_idx:end_idx + 1].strip()
+            try:
+                return json.loads(candidate)
+            except Exception:
+                # Try json-repair once
+                try:
+                    from json_repair import repair_json
+                    repaired = repair_json(candidate, return_objects=True)
+                    if isinstance(repaired, dict):
+                        return repaired
+                except Exception:
+                    pass
+                    
+        return {
+            "status": "partial_success",
+            "reason": "json_generation_failed"
+        }

@@ -57,8 +57,5 @@ VISION_CONFIG = {
     "max_images": 6,
     "max_visual_tokens": 12000,
     "min_confidence": 0.20,
-    "enable_multiview_merge": True,
-    "enable_tiling": False,
-    "enable_adaptive_crops": True,
-    "max_crops": 2
+    "enable_multiview_merge": True
 }
