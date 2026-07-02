@@ -83,6 +83,17 @@ def main():
         print(f"8. Recommendation Rationale: {session_path}/explain_analysis.json")
         print(f"9. Layout Transition Delta: {session_path}/reconstruction_analysis.json")
         print(f"10. Visual Reconstruction Preview: {session_path}/reconstruction_preview.json")
+
+        # Interactive notebook visualization block
+        try:
+            recon_img_path = pathlib.Path(session_path) / "processed_reconstructed.png"
+            if recon_img_path.exists():
+                print("\n🖼️ Rendering Reconstructed Room Layout visualization...")
+                from IPython.display import display as ipy_display
+                from PIL import Image as PILImage
+                ipy_display(PILImage.open(recon_img_path))
+        except Exception:
+            pass
         
         # Zip outputs for ease of downloading
         print("\n📦 Zipping output files...")
