@@ -72,6 +72,12 @@ def main():
         print(f"Session ID: {session_id}")
         print(f"All outputs are stored in: {session_path}")
         
+        # Display Top 10 Recommended Products from Preferred Brands
+        print("\n🛍️ Top 10 Best Recommended Products from Preferred Brands:")
+        rec_products = pipeline_output.get("commerce", {}).get("recommended_products", [])
+        for idx, item in enumerate(rec_products[:10]):
+            print(f"  {idx+1:02d}. {item.get('brand')} - {item.get('name')} (Price: Rs. {item.get('price')}) | Style: {item.get('style')} | Score: {item.get('final_score')}")
+        
         print("\n--- Output Files Exported ---")
         print(f"1. Unified Scene Graph: {session_path}/scene_graph.json")
         print(f"2. Occupancy Grid matrix: {session_path}/occupancy_grid.json")

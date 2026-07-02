@@ -28,21 +28,43 @@ class CommerceAgent:
         self.text_model = TextModel(provider=provider)
         # Mock product catalog for fallback and local searches
         self.mock_catalog = [
-            # Desks
+            # IKEA (12 products)
             {"name": "IKEA Micke Desk", "category": "desk", "brand": "IKEA", "price": 6500, "style": "modern", "width_cm": 105, "depth_cm": 50, "quality_score": 0.8},
             {"name": "IKEA Malm Desk", "category": "desk", "brand": "IKEA", "price": 9999, "style": "modern", "width_cm": 140, "depth_cm": 65, "quality_score": 0.85},
-            {"name": "Urban Ladder Study Table", "category": "desk", "brand": "Urban Ladder", "price": 12500, "style": "scandinavian", "width_cm": 120, "depth_cm": 60, "quality_score": 0.9},
-            {"name": "Godrej Interio Caliber Desk", "category": "desk", "brand": "Godrej Interio", "price": 8500, "style": "contemporary", "width_cm": 110, "depth_cm": 55, "quality_score": 0.8},
-            # Chairs
             {"name": "IKEA Flintan Office Chair", "category": "chair", "brand": "IKEA", "price": 5999, "style": "modern", "width_cm": 70, "depth_cm": 70, "quality_score": 0.75},
             {"name": "IKEA Markus Ergonomic Chair", "category": "chair", "brand": "IKEA", "price": 14999, "style": "modern", "width_cm": 62, "depth_cm": 60, "quality_score": 0.9},
-            {"name": "Godrej Interio Motion Chair", "category": "chair", "brand": "Godrej Interio", "price": 12000, "style": "contemporary", "width_cm": 65, "depth_cm": 65, "quality_score": 0.85},
-            # Bookshelves
             {"name": "IKEA Billy Bookshelf", "category": "bookshelf", "brand": "IKEA", "price": 4500, "style": "modern", "width_cm": 80, "depth_cm": 28, "quality_score": 0.8},
-            {"name": "Urban Ladder Engineered Wood Shelf", "category": "bookshelf", "brand": "Urban Ladder", "price": 8999, "style": "modern", "width_cm": 90, "depth_cm": 35, "quality_score": 0.85},
-            # Lighting
             {"name": "IKEA Tertial Lamp", "category": "lighting", "brand": "IKEA", "price": 999, "style": "industrial", "width_cm": 15, "depth_cm": 15, "quality_score": 0.75},
-            {"name": "Philips LED Desk Light", "category": "lighting", "brand": "Philips", "price": 1500, "style": "modern", "width_cm": 20, "depth_cm": 20, "quality_score": 0.8}
+            {"name": "IKEA Kallax Storage Unit", "category": "bookshelf", "brand": "IKEA", "price": 3999, "style": "modern", "width_cm": 77, "depth_cm": 39, "quality_score": 0.8},
+            {"name": "IKEA Lack Side Table", "category": "table", "brand": "IKEA", "price": 899, "style": "modern", "width_cm": 55, "depth_cm": 55, "quality_score": 0.7},
+            {"name": "IKEA Poang Armchair", "category": "chair", "brand": "IKEA", "price": 6999, "style": "scandinavian", "width_cm": 68, "depth_cm": 82, "quality_score": 0.85},
+            {"name": "IKEA Linnmon Work Table", "category": "desk", "brand": "IKEA", "price": 2500, "style": "modern", "width_cm": 100, "depth_cm": 60, "quality_score": 0.75},
+            {"name": "IKEA Alex Drawer Unit", "category": "drawer", "brand": "IKEA", "price": 6500, "style": "modern", "width_cm": 36, "depth_cm": 58, "quality_score": 0.85},
+            {"name": "IKEA Renberget Swivel Chair", "category": "chair", "brand": "IKEA", "price": 4999, "style": "modern", "width_cm": 59, "depth_cm": 65, "quality_score": 0.75},
+
+            # Urban Ladder (10 products)
+            {"name": "Urban Ladder Study Table", "category": "desk", "brand": "Urban Ladder", "price": 12500, "style": "scandinavian", "width_cm": 120, "depth_cm": 60, "quality_score": 0.9},
+            {"name": "Urban Ladder Engineered Wood Shelf", "category": "bookshelf", "brand": "Urban Ladder", "price": 8999, "style": "modern", "width_cm": 90, "depth_cm": 35, "quality_score": 0.85},
+            {"name": "Urban Ladder Crescent Study Chair", "category": "chair", "brand": "Urban Ladder", "price": 7999, "style": "contemporary", "width_cm": 60, "depth_cm": 60, "quality_score": 0.85},
+            {"name": "Urban Ladder Malabar Bookshelf", "category": "bookshelf", "brand": "Urban Ladder", "price": 14500, "style": "classic", "width_cm": 85, "depth_cm": 30, "quality_score": 0.9},
+            {"name": "Urban Ladder Oki Desk Organizer", "category": "organizer", "brand": "Urban Ladder", "price": 1200, "style": "minimalist", "width_cm": 30, "depth_cm": 20, "quality_score": 0.8},
+            {"name": "Urban Ladder Boston Study Table", "category": "desk", "brand": "Urban Ladder", "price": 18500, "style": "scandinavian", "width_cm": 115, "depth_cm": 60, "quality_score": 0.9},
+            {"name": "Urban Ladder Aeris Desk Chair", "category": "chair", "brand": "Urban Ladder", "price": 11500, "style": "modern", "width_cm": 65, "depth_cm": 65, "quality_score": 0.88},
+            {"name": "Urban Ladder Carson Side Table", "category": "table", "brand": "Urban Ladder", "price": 4500, "style": "contemporary", "width_cm": 45, "depth_cm": 45, "quality_score": 0.82},
+            {"name": "Urban Ladder Flora Table Lamp", "category": "lighting", "brand": "Urban Ladder", "price": 2500, "style": "modern", "width_cm": 22, "depth_cm": 22, "quality_score": 0.85},
+            {"name": "Urban Ladder Stanhope Desk", "category": "desk", "brand": "Urban Ladder", "price": 22000, "style": "scandinavian", "width_cm": 120, "depth_cm": 60, "quality_score": 0.92},
+
+            # Godrej Interio (10 products)
+            {"name": "Godrej Interio Caliber Desk", "category": "desk", "brand": "Godrej Interio", "price": 8500, "style": "contemporary", "width_cm": 110, "depth_cm": 55, "quality_score": 0.8},
+            {"name": "Godrej Interio Motion Chair", "category": "chair", "brand": "Godrej Interio", "price": 12000, "style": "contemporary", "width_cm": 65, "depth_cm": 65, "quality_score": 0.85},
+            {"name": "Godrej Interio Companion Cabinet", "category": "cabinet", "brand": "Godrej Interio", "price": 9500, "style": "classic", "width_cm": 90, "depth_cm": 45, "quality_score": 0.8},
+            {"name": "Godrej Interio Unwind Chair", "category": "chair", "brand": "Godrej Interio", "price": 4500, "style": "modern", "width_cm": 55, "depth_cm": 55, "quality_score": 0.78},
+            {"name": "Godrej Interio Script Desk", "category": "desk", "brand": "Godrej Interio", "price": 16500, "style": "contemporary", "width_cm": 120, "depth_cm": 60, "quality_score": 0.88},
+            {"name": "Godrej Interio Premier Table", "category": "desk", "brand": "Godrej Interio", "price": 10500, "style": "classic", "width_cm": 115, "depth_cm": 60, "quality_score": 0.82},
+            {"name": "Godrej Interio Slimline Wardrobe", "category": "wardrobe", "brand": "Godrej Interio", "price": 21000, "style": "classic", "width_cm": 90, "depth_cm": 50, "quality_score": 0.85},
+            {"name": "Godrej Interio Versatile Shelf", "category": "bookshelf", "brand": "Godrej Interio", "price": 7500, "style": "modern", "width_cm": 80, "depth_cm": 30, "quality_score": 0.8},
+            {"name": "Godrej Interio Accent Lamp", "category": "lighting", "brand": "Godrej Interio", "price": 3000, "style": "contemporary", "width_cm": 25, "depth_cm": 25, "quality_score": 0.82},
+            {"name": "Godrej Interio Work Desk Combo", "category": "desk", "brand": "Godrej Interio", "price": 19999, "style": "contemporary", "width_cm": 120, "depth_cm": 60, "quality_score": 0.88}
         ]
         logger.info("CommerceAgent initialized (Provider: %s)", provider)
 
@@ -67,6 +89,22 @@ class CommerceAgent:
 
         # Look up matching candidates in our catalog
         candidates = self.search_products(req_products)
+
+        # Prioritize preferred brands to get at least 10 items
+        if preferred_brands:
+            brand_candidates = [c for c in self.mock_catalog if c.get("brand").lower() in [b.lower() for b in preferred_brands]]
+            if brand_candidates:
+                seen = set()
+                merged_candidates = []
+                for c in brand_candidates:
+                    if c["name"] not in seen:
+                        seen.add(c["name"])
+                        merged_candidates.append(c)
+                for c in candidates:
+                    if c["name"] not in seen:
+                        seen.add(c["name"])
+                        merged_candidates.append(c)
+                candidates = merged_candidates
 
         # 2. Apply filters (dimensions, budget, style, exclusions)
         # Note: In this version we use a default of 120cm width / 60cm depth for standard furniture
@@ -94,6 +132,9 @@ class CommerceAgent:
 
         # 4. Rank products
         ranked = self.rank_products(scored)
+        
+        # Keep top 10 ranked products
+        ranked = ranked[:10]
 
         # 5. Build shopping list & explanations
         shopping_list = self.build_shopping_list(ranked)
