@@ -203,6 +203,7 @@ class VisionModel:
         stream: bool = False,
         profile: Optional[str] = None,
         response_format: Optional[str] = None,
+        enable_thinking: Optional[bool] = None,
     ) -> Union[Dict[str, Any], Any]:
         """Runs model inference routing query to ModelManager orchestrator."""
         self._sync_callbacks()
@@ -223,6 +224,8 @@ class VisionModel:
             kwargs["profile"] = profile
         if response_format is not None:
             kwargs["response_format"] = response_format
+        if enable_thinking is not None:
+            kwargs["enable_thinking"] = enable_thinking
 
         kwargs["stream"] = stream
         kwargs["images"] = processed_images
