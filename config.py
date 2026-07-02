@@ -3,8 +3,8 @@ import torch
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-MODEL = "Qwen/Qwen3-VL-8B-Instruct"
-# MODEL = "Qwen/Qwen3-VL-8B-Thinking"
+# MODEL = "Qwen/Qwen3-VL-8B-Instruct"
+MODEL = "Qwen/Qwen3-VL-8B-Thinking"
 # MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 # MODEL = "Qwen/Qwen2.5-VL-32B-Instruct"
 
@@ -65,5 +65,6 @@ VISION_CONFIG = {
     "min_confidence": 0.20,
     "enable_multiview_merge": True,
     "enable_tiling": True,
-    "enable_adaptive_crops": True
+    "enable_adaptive_crops": True,
+    "max_crops": 5
 }

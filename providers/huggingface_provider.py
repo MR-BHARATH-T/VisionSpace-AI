@@ -930,7 +930,26 @@ class HuggingFaceProvider(BaseProvider):
 
             if proc_images:
                 try:
-                    img_out = image_processor(images=proc_images, return_tensors="pt")
+                    # Dynamically set max_pixels to minimize token resolution, speeding up self-attention by up to 4x
+                    max_visual_tokens_limit = 640
+                    # Detect tiling or crop pass from message text
+                    msg_str = str(messages).lower()
+                    if "cropped tile quadrant" in msg_str or "close-up cropped region" in msg_str:
+                        max_visual_tokens_limit = 384
+                    
+                    min_pixels = 256 * 28 * 28
+                    max_pixels = max_visual_tokens_limit * 28 * 28
+                    
+                    try:
+                        img_out = image_processor(
+                            images=proc_images,
+                            return_tensors="pt",
+                            min_pixels=min_pixels,
+                            max_pixels=max_pixels
+                        )
+                    except TypeError:
+                        img_out = image_processor(images=proc_images, return_tensors="pt")
+
                     image_tensors = {k: v for k, v in img_out.items()
                                      if isinstance(v, torch.Tensor)}
                     image_grid_thw = img_out.get("image_grid_thw")  # [n_imgs, 3]

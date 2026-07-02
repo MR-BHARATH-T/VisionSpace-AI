@@ -445,7 +445,8 @@ class VisionAgent:
                     return float(bbox.get("width", 0)) * float(bbox.get("height", 0))
                 
                 targets.sort(key=get_bbox_area, reverse=True)
-                targets_to_crop = targets[:4]
+                max_crops = kwargs.get("max_crops", getattr(config, "VISION_CONFIG", {}).get("max_crops", 2))
+                targets_to_crop = targets[:max_crops]
                 
                 crop_objects = []
                 for crop_idx, target in enumerate(targets_to_crop):
