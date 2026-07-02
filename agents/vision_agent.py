@@ -396,12 +396,15 @@ class VisionAgent:
                         tile_index=t_idx + 1,
                         confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
                     )
-                    # Limit tokens for fast tiles inference pass
+                    # Allocate enough tokens to fit CoT thoughts and full JSON payload
                     tile_kwargs = dict(kwargs)
-                    tile_kwargs["max_new_tokens"] = 512
+                    tile_kwargs["max_new_tokens"] = 1024
+                    
+                    # Append strict JSON-only instruction for thinking models
+                    tile_prompt = t_template["user"] + "\n\nIMPORTANT: Do not output any conversational introduction or explanation outside the <think>...</think> block. Immediately output the final raw JSON block after the thoughts."
                     
                     t_response = self._generate_with_retry(
-                        prompt=t_template["user"],
+                        prompt=tile_prompt,
                         image=tile_img,
                         system_prompt=t_template["system"],
                         **tile_kwargs
@@ -477,10 +480,13 @@ class VisionAgent:
                             confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
                         )
                         crop_kwargs = dict(kwargs)
-                        crop_kwargs["max_new_tokens"] = 512
+                        crop_kwargs["max_new_tokens"] = 1024
+                        
+                        # Append strict JSON-only instruction for thinking models
+                        crop_prompt = c_template["user"] + "\n\nIMPORTANT: Do not output any conversational introduction or explanation outside the <think>...</think> block. Immediately output the final raw JSON block after the thoughts."
                         
                         c_response = self._generate_with_retry(
-                            prompt=c_template["user"],
+                            prompt=crop_prompt,
                             image=crop_img,
                             system_prompt=c_template["system"],
                             **crop_kwargs

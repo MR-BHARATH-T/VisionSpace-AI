@@ -1,7 +1,7 @@
 import os
-import torch
-
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+import torch
 
 # MODEL = "Qwen/Qwen3-VL-8B-Instruct"
 MODEL = "Qwen/Qwen3-VL-8B-Thinking"

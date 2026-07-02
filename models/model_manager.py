@@ -610,7 +610,8 @@ class ModelManager:
         self._last_used_time[task] = time.time()
         
         # 1. Ensure target model is loaded (supporting dynamic profiling sizes)
-        self.load_model(task, profile=profile)
+        if not self.load_model(task, profile=profile):
+            raise RuntimeError(f"Failed to load model weights for task '{task}'. See logs for details.")
         self._set_state(task, "Generating")
         self.prompt_count += 1
         

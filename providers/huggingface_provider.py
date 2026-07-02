@@ -370,6 +370,16 @@ class HuggingFaceProvider(BaseProvider):
                     self.after_loading()
                 return
 
+            # Proactively clear VRAM cache to give from_pretrained max GPU space, avoiding CPU offloading
+            if torch.cuda.is_available():
+                try:
+                    torch.cuda.synchronize()
+                    torch.cuda.empty_cache()
+                    torch.cuda.ipc_collect()
+                except Exception:
+                    pass
+            gc.collect()
+
             print(f"[Loading] Loading Hugging Face model config & weights from cache/hub for: {model_name}...")
             logger.info("HuggingFaceProvider loading '%s' for task '%s'", model_name, task)
             cache_dir = getattr(config, "HF_CACHE_DIR", None)
