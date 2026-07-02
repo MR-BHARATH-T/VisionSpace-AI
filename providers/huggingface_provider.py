@@ -941,11 +941,12 @@ class HuggingFaceProvider(BaseProvider):
             if proc_images:
                 try:
                     # Dynamically set max_pixels to minimize token resolution, speeding up self-attention by up to 4x
-                    max_visual_tokens_limit = 640
-                    # Detect tiling or crop pass from message text
+                    max_visual_tokens_limit = 1024  # Global pass: full image at 1024 resolution
                     msg_str = str(messages).lower()
-                    if "cropped tile quadrant" in msg_str or "close-up cropped region" in msg_str:
-                        max_visual_tokens_limit = 384
+                    if "cropped tile quadrant" in msg_str:
+                        max_visual_tokens_limit = 640  # Tile analysis: preserve resolution in 4 quadrants
+                    elif "close-up cropped region" in msg_str:
+                        max_visual_tokens_limit = 384  # Crop refinement: close up details
                     
                     min_pixels = 256 * 28 * 28
                     max_pixels = max_visual_tokens_limit * 28 * 28

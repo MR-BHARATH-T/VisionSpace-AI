@@ -431,8 +431,8 @@ class VisionAgent:
             if enable_adaptive_crops:
                 # Proactively reclaim VRAM before starting memory-intensive crop pass
                 self._clear_memory()
-                # Find target furniture categories to crop
-                target_categories = {"desk", "table", "bed", "sofa", "nightstand", "dresser", "shelf", "cabinet", "wardrobe", "tv", "television", "entertainment"}
+                # Find target furniture categories to crop (high-density zones only)
+                target_categories = {"desk", "workstation", "shelf", "bookshelf", "tv unit", "entertainment", "nightstand", "bedside table", "dresser"}
                 targets = []
                 for obj in parsed_json.get("objects", []):
                     cat = str(obj.get("category", "")).lower()
@@ -442,13 +442,13 @@ class VisionAgent:
                         if "bbox" in obj:
                             targets.append(obj)
                 
-                # Limit to top 4 largest target furniture objects to scan all surfaces
+                # Limit to top 3 largest target furniture objects (high-density zones) to scan surfaces
                 def get_bbox_area(obj):
                     bbox = obj.get("bbox", {})
                     return float(bbox.get("width", 0)) * float(bbox.get("height", 0))
                 
                 targets.sort(key=get_bbox_area, reverse=True)
-                max_crops = kwargs.get("max_crops", getattr(config, "VISION_CONFIG", {}).get("max_crops", 2))
+                max_crops = kwargs.get("max_crops", getattr(config, "VISION_CONFIG", {}).get("max_crops", 3))
                 targets_to_crop = targets[:max_crops]
                 
                 crop_objects = []
@@ -655,20 +655,22 @@ class VisionAgent:
         return batch_results
 
     def _split_image_into_tiles(self, img: Image.Image) -> List[Tuple[Image.Image, Tuple[int, int, int, int]]]:
-        """Splits an image into a 2x2 grid of tiles.
+        """Splits an image into a 2x2 grid of overlapping tiles.
         
         Returns a list of tuples: (tile_image, (left, top, right, bottom) relative to original image size).
         """
         w, h = img.size
         half_w = w // 2
         half_h = h // 2
+        overlap_w = int(w * 0.1)
+        overlap_h = int(h * 0.1)
         
-        # Define crop coordinates
+        # Define crop coordinates with 10% overlap
         boxes = [
-            (0, 0, half_w, half_h),          # Top-Left
-            (half_w, 0, w, half_h),          # Top-Right
-            (0, half_h, half_w, h),          # Bottom-Left
-            (half_w, half_h, w, h),          # Bottom-Right
+            (0, 0, min(w, half_w + overlap_w), min(h, half_h + overlap_h)),                # Top-Left
+            (max(0, half_w - overlap_w), 0, w, min(h, half_h + overlap_h)),                # Top-Right
+            (0, max(0, half_h - overlap_h), min(w, half_w + overlap_w), h),                # Bottom-Left
+            (max(0, half_w - overlap_w), max(0, half_h - overlap_h), w, h),                # Bottom-Right
         ]
         
         tiles = []

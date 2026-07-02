@@ -66,5 +66,5 @@ VISION_CONFIG = {
     "enable_multiview_merge": True,
     "enable_tiling": True,
     "enable_adaptive_crops": True,
-    "max_crops": 5
+    "max_crops": 3
 }
