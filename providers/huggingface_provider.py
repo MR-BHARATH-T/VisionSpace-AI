@@ -861,6 +861,7 @@ class HuggingFaceProvider(BaseProvider):
         messages: List[Dict[str, Any]],
         images: Optional[List[Any]] = None,
         videos: Optional[List[Any]] = None,
+        **kwargs: Any
     ) -> Dict[str, Any]:
         """Formats messages and images into model-ready tensor inputs.
 
@@ -982,64 +983,70 @@ class HuggingFaceProvider(BaseProvider):
             vision_end_id   = _tok_id("<|vision_end|>")
             image_pad_id    = _tok_id("<|image_pad|>")
 
-            # ── Build token sequence manually ─────────────────────────────
+            # ── Build token sequence via apply_chat_template to honor enable_thinking ──────────────────────
+            enable_thinking = kwargs.get("enable_thinking", True)
+            
+            # Format raw chat template string using the processor
+            clean_messages = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    clean_content = []
+                    for blk in content:
+                        if isinstance(blk, dict):
+                            btype = blk.get("type", "")
+                            if btype in ("image", "image_url"):
+                                clean_content.append({"type": "image"})
+                            elif btype == "text":
+                                clean_content.append({"type": "text", "text": blk.get("text", "")})
+                            else:
+                                clean_content.append(blk)
+                        else:
+                            clean_content.append(blk)
+                else:
+                    clean_content = content
+                clean_messages.append({"role": role, "content": clean_content})
+
+            try:
+                text_prompt = self.processor.apply_chat_template(
+                    clean_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=enable_thinking
+                )
+            except Exception as e:
+                logger.warning("apply_chat_template failed: %s — falling back to manual template.", e)
+                text_prompt = ""
+                for msg in messages:
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if isinstance(content, list):
+                        text_content = ""
+                        for c in content:
+                            if isinstance(c, dict) and c.get("type") == "text":
+                                text_content += c.get("text", "")
+                        content = text_content
+                    text_prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+                text_prompt += "<|im_start|>assistant\n"
+
+            # Encode prompt string to tokens
+            raw_input_ids = tokenizer.encode(text_prompt, add_special_tokens=False)
+
+            # Reconstruct tokens, replacing single <|image_pad|> token with visual patch padding tokens
             all_tokens: List[int] = []
             img_blk_idx = 0
-
-            for msg in messages:
-                role    = msg.get("role", "user")
-                content = msg.get("content", "")
-                if content is None:
-                    content = ""
-
-                # <|im_start|>role\n
-                all_tokens += tokenizer.encode(
-                    f"<|im_start|>{role}\n", add_special_tokens=False
-                )
-
-                # Prepend remaining images if this is a user message and no image blocks are present in its content
-                if role == "user" and image_grid_thw is not None and img_blk_idx < len(image_grid_thw):
-                    has_image_blocks = False
-                    if isinstance(content, list):
-                        has_image_blocks = any(isinstance(b, dict) and b.get("type") in ("image", "image_url") for b in content)
-                    
-                    if not has_image_blocks:
-                        while img_blk_idx < len(image_grid_thw):
-                            n_pad = int(image_grid_thw[img_blk_idx].prod().item()) // (merge_size ** 2)
-                            img_blk_idx += 1
-                            all_tokens += [vision_start_id] + [image_pad_id] * n_pad + [vision_end_id]
-
-                if isinstance(content, str):
-                    all_tokens += tokenizer.encode(content, add_special_tokens=False)
-
-                elif isinstance(content, list):
-                    for blk in content:
-                        if not isinstance(blk, dict):
-                            continue
-                        btype = blk.get("type", "")
-
-                        if btype in ("image", "image_url"):
-                            # Compute exact token count from grid dimensions
-                            if image_grid_thw is not None and img_blk_idx < len(image_grid_thw):
-                                n_pad = int(image_grid_thw[img_blk_idx].prod().item()) // (merge_size ** 2)
-                                img_blk_idx += 1
-                            elif proc_images:
-                                n_pad = 256  # safe fallback (will still mismatch but won't crash)
-                            else:
-                                continue  # no images at all — skip block
-
-                            all_tokens += [vision_start_id] + [image_pad_id] * n_pad + [vision_end_id]
-
-                        elif btype == "text":
-                            all_tokens += tokenizer.encode(
-                                blk.get("text", ""), add_special_tokens=False
-                            )
-
-                # <|im_end|>\n
-                all_tokens += tokenizer.encode("<|im_end|>\n", add_special_tokens=False)
-
-            # <|im_start|>assistant\n  (generation prompt)
-            all_tokens += tokenizer.encode("<|im_start|>assistant\n", add_special_tokens=False)
+            
+            for tok in raw_input_ids:
+                if tok == image_pad_id:
+                    if image_grid_thw is not None and img_blk_idx < len(image_grid_thw):
+                        n_pad = int(image_grid_thw[img_blk_idx].prod().item()) // (merge_size ** 2)
+                        img_blk_idx += 1
+                    else:
+                        n_pad = 256
+                    all_tokens += [image_pad_id] * n_pad
+                else:
+                    all_tokens.append(tok)
 
             n_img_toks = all_tokens.count(image_pad_id)
             logger.debug("prepare_inputs: total_tokens=%d  image_pad_tokens=%d",
@@ -1262,13 +1269,18 @@ class HuggingFaceProvider(BaseProvider):
 
         # Config builder
         tok = self._get_tokenizer()
+        im_end_id = tok.convert_tokens_to_ids("<|im_end|>")
+        terminators = [tok.eos_token_id]
+        if im_end_id is not None:
+            terminators.append(im_end_id)
+            
         gen_config = GenerationConfig(
             max_new_tokens=max_new,
             do_sample=do_sample_val,
             temperature=temp if do_sample_val else None,
             top_p=top_p_val if do_sample_val else None,
             repetition_penalty=1.1,
-            eos_token_id=tok.eos_token_id,
+            eos_token_id=terminators,
             pad_token_id=tok.pad_token_id,
         )
 
@@ -1280,7 +1292,7 @@ class HuggingFaceProvider(BaseProvider):
         for attempt in range(max_attempts):
             try:
                 # Prepare inputs
-                inputs = self.prepare_inputs(final_messages, images=images, videos=videos)
+                inputs = self.prepare_inputs(final_messages, images=images, videos=videos, **kwargs)
                 input_length = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
 
                 # Dynamically scale max_length to bypass HF default limit (2048) without pre-allocation overhead
@@ -1293,6 +1305,7 @@ class HuggingFaceProvider(BaseProvider):
                             generation_config=gen_config,
                             max_new_tokens=max_new,
                             max_length=gen_config.max_length,
+                            eos_token_id=terminators,
                             stopping_criteria=stopping_list
                         )
                 except (torch.cuda.OutOfMemoryError, RuntimeError) as oom_err:
@@ -1436,12 +1449,18 @@ class HuggingFaceProvider(BaseProvider):
         do_sample: bool,
         images: Optional[List[Any]] = None,
         videos: Optional[List[Any]] = None,
+        **kwargs: Any
     ) -> Generator[str, None, None]:
         """Generator stream helper yielding tokens and updating streaming statistics."""
-        inputs = self.prepare_inputs(messages, images=images, videos=videos)
+        inputs = self.prepare_inputs(messages, images=images, videos=videos, **kwargs)
         input_length = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
         
         tok = self._get_tokenizer()
+        im_end_id = tok.convert_tokens_to_ids("<|im_end|>")
+        terminators = [tok.eos_token_id]
+        if im_end_id is not None:
+            terminators.append(im_end_id)
+
         streamer = TextIteratorStreamer(
             tok,
             skip_prompt=True,
@@ -1455,7 +1474,7 @@ class HuggingFaceProvider(BaseProvider):
             temperature=temperature if do_sample else None,
             top_p=top_p if do_sample else None,
             repetition_penalty=1.1,
-            eos_token_id=tok.eos_token_id,
+            eos_token_id=terminators,
             pad_token_id=tok.pad_token_id,
         )
 
@@ -1472,6 +1491,7 @@ class HuggingFaceProvider(BaseProvider):
             "generation_config": gen_config,
             "max_new_tokens": max_new_tokens,
             "max_length": gen_config.max_length,
+            "eos_token_id": terminators,
             "streamer": streamer,
             "stopping_criteria": stopping_list
         }

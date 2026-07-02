@@ -357,11 +357,13 @@ class VisionAgent:
             user_prompt = p_template["user"] + mv_instructions + "\n\nIMPORTANT: Do not output any conversational introduction or explanation outside the <think>...</think> block. Immediately output the final raw JSON block after the thoughts."
 
             t_inf_start = time.perf_counter()
+            global_kwargs = dict(kwargs)
+            global_kwargs["enable_thinking"] = True
             response_data = self._generate_with_retry(
                 prompt=user_prompt,
                 image=p_img,
                 system_prompt=p_template["system"],
-                **kwargs
+                **global_kwargs
             )
             t_inference_duration += time.perf_counter() - t_inf_start
 
@@ -396,12 +398,13 @@ class VisionAgent:
                         tile_index=t_idx + 1,
                         confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
                     )
-                    # Allocate enough tokens to fit CoT thoughts and full JSON payload
+                    # Allocate enough tokens for direct JSON payload (no thoughts generated)
                     tile_kwargs = dict(kwargs)
-                    tile_kwargs["max_new_tokens"] = 1024
+                    tile_kwargs["max_new_tokens"] = 256
+                    tile_kwargs["enable_thinking"] = False
                     
-                    # Append strict JSON-only instruction for thinking models
-                    tile_prompt = t_template["user"] + "\n\nIMPORTANT: Do not output any conversational introduction or explanation outside the <think>...</think> block. Immediately output the final raw JSON block after the thoughts."
+                    # Direct instructions forcing raw JSON block output immediately
+                    tile_prompt = t_template["user"] + "\n\nIMPORTANT: Return ONLY valid JSON. Do not explain. Do not think. Do not reason. Output raw JSON only."
                     
                     t_response = self._generate_with_retry(
                         prompt=tile_prompt,
@@ -479,11 +482,13 @@ class VisionAgent:
                             room_type=room_type,
                             confidence_threshold=kwargs.get("confidence_threshold", getattr(config, "VISION_CONFIG", {}).get("min_confidence", 0.35)),
                         )
+                        # Allocate enough tokens for direct JSON payload (no thoughts generated)
                         crop_kwargs = dict(kwargs)
-                        crop_kwargs["max_new_tokens"] = 1024
+                        crop_kwargs["max_new_tokens"] = 256
+                        crop_kwargs["enable_thinking"] = False
                         
-                        # Append strict JSON-only instruction for thinking models
-                        crop_prompt = c_template["user"] + "\n\nIMPORTANT: Do not output any conversational introduction or explanation outside the <think>...</think> block. Immediately output the final raw JSON block after the thoughts."
+                        # Direct instructions forcing raw JSON block output immediately
+                        crop_prompt = c_template["user"] + "\n\nIMPORTANT: Return ONLY valid JSON. Do not explain. Do not think. Do not reason. Output raw JSON only."
                         
                         c_response = self._generate_with_retry(
                             prompt=crop_prompt,
@@ -779,8 +784,8 @@ class VisionAgent:
         # Strip thinking block (<think>...</think>) if present
         if "<think>" in clean_text.lower():
             if "</think>" in clean_text.lower():
-                idx = clean_text.lower().find("</think>")
-                clean_text = clean_text[idx + len("</think>"):].strip()
+                parts = clean_text.split("</think>")
+                clean_text = parts[-1].strip()
             else:
                 idx = clean_text.lower().find("<think>")
                 brace_idx = clean_text.find("{", idx)
@@ -788,6 +793,12 @@ class VisionAgent:
                     clean_text = clean_text[brace_idx:].strip()
                 else:
                     clean_text = clean_text[idx + len("<think>"):].strip()
+        
+        # Locate outer JSON braces to discard extraneous reasoning text
+        start_idx = clean_text.find("{")
+        end_idx = clean_text.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            clean_text = clean_text[start_idx:end_idx + 1].strip()
         
         # Strip markdown frames if present
         if clean_text.startswith("```"):
@@ -910,13 +921,80 @@ class VisionAgent:
             "safety_analysis": []
         }
 
-        # Populate missing structures with defaults/nulls
-        for key, val in schema_defaults.items():
-            if key not in data:
-                data[key] = val
-            elif isinstance(val, dict) and isinstance(data[key], dict):
-                # Ensure child dictionary keys conform
-                pass # Can expand nested validation here if needed
+        # Populate missing structures with defaults/nulls and normalize objects
+        if isinstance(data, dict):
+            for key, val in schema_defaults.items():
+                if key not in data:
+                    data[key] = val
+
+            # Normalize objects list
+            if "objects" in data and isinstance(data["objects"], list):
+                normalized_objs = []
+                for idx, obj in enumerate(data["objects"]):
+                    if not isinstance(obj, dict):
+                        continue
+                    name = obj.get("name", "Unknown")
+                    
+                    # Convert bbox if list [x, y, w, h]
+                    bbox_raw = obj.get("bbox")
+                    bbox = {"x": 0, "y": 0, "width": 0, "height": 0}
+                    if isinstance(bbox_raw, list) and len(bbox_raw) == 4:
+                        bbox = {"x": bbox_raw[0], "y": bbox_raw[1], "width": bbox_raw[2], "height": bbox_raw[3]}
+                    elif isinstance(bbox_raw, dict):
+                        bbox = {
+                            "x": bbox_raw.get("x", 0),
+                            "y": bbox_raw.get("y", 0),
+                            "width": bbox_raw.get("width", 0),
+                            "height": bbox_raw.get("height", 0)
+                        }
+
+                    # Convert estimated_dimensions
+                    dims_raw = obj.get("estimated_dimensions")
+                    dims = {"width_cm": None, "depth_cm": None, "height_cm": None}
+                    if isinstance(dims_raw, dict):
+                        dims = {
+                            "width_cm": dims_raw.get("width_cm"),
+                            "depth_cm": dims_raw.get("depth_cm"),
+                            "height_cm": dims_raw.get("height_cm")
+                        }
+
+                    norm_obj = {
+                        "id": obj.get("id") or f"obj_{idx:03d}",
+                        "name": name,
+                        "category": obj.get("category") or "furniture",
+                        "subcategory": obj.get("subcategory"),
+                        "confidence": float(obj.get("confidence") if obj.get("confidence") is not None else 1.0),
+                        "material": obj.get("material"),
+                        "color": obj.get("color"),
+                        "style": obj.get("style"),
+                        "estimated_dimensions": dims,
+                        "bbox": bbox,
+                        "visibility": obj.get("visibility") or "full",
+                        "condition": obj.get("condition") or "good"
+                    }
+                    normalized_objs.append(norm_obj)
+                data["objects"] = normalized_objs
+
+            # Normalize doors and windows
+            for key in ["doors", "windows"]:
+                if key in data and isinstance(data[key], list):
+                    normalized = []
+                    for idx, item in enumerate(data[key]):
+                        if not isinstance(item, dict):
+                            continue
+                        bbox_raw = item.get("bbox")
+                        bbox = {"x": 0, "y": 0, "width": 0, "height": 0}
+                        if isinstance(bbox_raw, list) and len(bbox_raw) == 4:
+                            bbox = {"x": bbox_raw[0], "y": bbox_raw[1], "width": bbox_raw[2], "height": bbox_raw[3]}
+                        elif isinstance(bbox_raw, dict):
+                            bbox = {"x": bbox_raw.get("x", 0), "y": bbox_raw.get("y", 0), "width": bbox_raw.get("width", 0), "height": bbox_raw.get("height", 0)}
+                        
+                        normalized.append({
+                            "id": item.get("id") or f"{key[:-1]}_{idx:03d}",
+                            "bbox": bbox,
+                            "type": item.get("type") or "standard"
+                        })
+                    data[key] = normalized
 
         return data
 

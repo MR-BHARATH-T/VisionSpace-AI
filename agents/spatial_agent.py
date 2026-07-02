@@ -807,8 +807,8 @@ class SpatialAgent:
         # Strip thinking block (<think>...</think>) if present
         if "<think>" in clean_text.lower():
             if "</think>" in clean_text.lower():
-                idx = clean_text.lower().find("</think>")
-                clean_text = clean_text[idx + len("</think>"):].strip()
+                parts = clean_text.split("</think>")
+                clean_text = parts[-1].strip()
             else:
                 idx = clean_text.lower().find("<think>")
                 brace_idx = clean_text.find("{", idx)
@@ -816,6 +816,12 @@ class SpatialAgent:
                     clean_text = clean_text[brace_idx:].strip()
                 else:
                     clean_text = clean_text[idx + len("<think>"):].strip()
+        
+        # Locate outer JSON braces to discard extraneous reasoning text
+        start_idx = clean_text.find("{")
+        end_idx = clean_text.rfind("}")
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            clean_text = clean_text[start_idx:end_idx + 1].strip()
         
         # Remove code blocks if present
         if clean_text.startswith("```"):
