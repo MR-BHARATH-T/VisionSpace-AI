@@ -72,7 +72,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
     )
     
     run_btn = widgets.Button(
-        description="🚀 Run Production Pipeline",
+        description=" Run Production Pipeline",
         button_style="success",
         layout=widgets.Layout(width="250px", height="40px", margin="20px 0px")
     )
@@ -90,7 +90,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
 
     # Layout forms HBox/VBox
     form_layout = widgets.VBox([
-        widgets.HTML("<h3>🛠️ Step 2: Configure Workspace Selections (Phase 0)</h3>"),
+        widgets.HTML("<h3> Configure Workspace Selections (Phase 0)</h3>"),
         widgets.HTML("<b>1. Upload Room Snaps (Select one or more images):</b>"),
         uploader_widget,
         widgets.HTML("<br><b>2. Set Curation & Aesthetic Parameters:</b>"),
@@ -146,14 +146,14 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 
                 # Update the HTML comparison image box
                 state["image_box"].value = get_comparison_html(b64_before, b64_after)
-                print(f"✅ Success! Placed {product_item.get('name')} in the preview layout.")
+                print(f" Success! Placed {product_item.get('name')} in the preview layout.")
             except Exception as e:
-                print(f"❌ Product placement failed: {str(e)}")
+                print(f" Product placement failed: {str(e)}")
 
     def on_run_clicked(b: Any) -> None:
         with output_area:
             output_area.clear_output()
-            print("⏳ Checking uploaded images...")
+            print(" Checking uploaded images...")
             
             # Extract uploaded images
             uploaded_files = uploader_widget.value
@@ -183,10 +183,10 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         # Save to uploads dir
                         with open(uploads_dir / file_name, "wb") as f:
                             f.write(content)
-                print(f"✅ Loaded {len(images)} uploaded images.")
+                print(f" Loaded {len(images)} uploaded images.")
             else:
                 # Fallback check
-                print("ℹ️ No widget uploads detected. Searching fallback room view assets...")
+                print("ℹ No widget uploads detected. Searching fallback room view assets...")
                 fallback_paths = ["assets/front-view.png", "assets/left-view.png", "assets/right-view.png"]
                 for p in fallback_paths:
                     path = pathlib.Path(p)
@@ -196,10 +196,10 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         shutil.copy(path, uploads_dir / path.name)
                         
             if not images:
-                print("❌ Error: No room images found! Please upload files first.")
+                print(" Error: No room images found! Please upload files first.")
                 return
 
-            print("🤖 Instantiating orchestrator...")
+            print(" Instantiating orchestrator...")
             pipeline = ProductionPipelineV2()
 
             # Compile Phase 0 preferences
@@ -215,7 +215,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 "color_preferences": ["white", "wood"]
             }
 
-            print("\n🚀 Executing sequential pipeline workflow (Phases 1-7)...")
+            print("\n Executing sequential pipeline workflow (Phases 1-7)...")
             try:
                 out = pipeline.run_pipeline(
                     images=images,
@@ -290,20 +290,20 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 </style>
                 <div class="dashboard-container">
                     <div class="dashboard-header">
-                        <h2>🌌 VisionSpace AI Layout Reconstruction Dashboard</h2>
+                        <h2> VisionSpace AI Layout Reconstruction Dashboard</h2>
                         <p style="color: #94a3b8;">Interactive View Comparison and Product Curation Summary</p>
                     </div>
                     
                     <div class="details-grid">
                         <div class="info-card">
-                            <h4>📋 Spatial Audit & Design Alignment</h4>
+                            <h4> Spatial Audit & Design Alignment</h4>
                             <p><b>Walkability Index:</b> {out['spatial'].get('walkability_score')}/100</p>
                             <p><b>Style Theme Identified:</b> {out['design'].get('design_theme', 'modern minimal')}</p>
                             <p><b>Usable Floor Area:</b> {out['spatial'].get('usable_area', 0)} sqm</p>
                         </div>
                         
                         <div class="info-card">
-                            <h4>💰 Budget Breakdown</h4>
+                            <h4> Budget Breakdown</h4>
                             <p><b>Total Selected Cost:</b> Rs. {out['budget'].get('total')}</p>
                             <p><b>Limit Setting:</b> Rs. {out['budget'].get('budget_limit')}</p>
                             <p><b>Reserves Remaining:</b> Rs. {out['budget'].get('remaining_budget')}</p>
@@ -315,7 +315,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 display(state["image_box"])
 
                 # Render dynamic catalog cards with "Try in Room" callback buttons
-                print("\n🛒 Recommended Products List (Click '🛋️ Place in Room' to test in layout):")
+                print("\n Recommended Products List (Click '🛋️ Place in Room' to test in layout):")
                 
                 recommended_list = out["commerce"].get("recommended_products", [])
                 
@@ -350,7 +350,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     display(widgets.HBox([widgets.HTML(card_html), try_btn]))
 
             except Exception as e:
-                print(f"❌ Execution crashed: {str(e)}")
+                print(f" Execution crashed: {str(e)}")
                 raise e
 
     run_btn.on_click(on_run_clicked)
