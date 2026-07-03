@@ -426,16 +426,21 @@ class ModelManager:
 
         meta = MODEL_REGISTRY[task]
         provider_name = meta["provider"]
+        if provider_name != "future":
+            provider_name = getattr(config, "PROVIDER", "huggingface")
 
         if provider_name == "future":
             logger.warning("Task '%s' maps to a future provider model. Skipping load.", task)
             return False
 
-        # Resolve model name based on Dynamic Profile if specified
-        model_name = meta["model_name"]
-        if profile and task in MODEL_PROFILES and profile in MODEL_PROFILES[task]:
-            model_name = MODEL_PROFILES[task][profile]
-            logger.info("Dynamic Profile '%s' selected model: %s", profile, model_name)
+        # Resolve model name dynamically based on the active provider
+        if provider_name == "deepinfra":
+            model_name = getattr(config, "MODEL", "deepinfra/alibaba/qwen3-vl-instruct")
+        else:
+            model_name = meta["model_name"]
+            if profile and task in MODEL_PROFILES and profile in MODEL_PROFILES[task]:
+                model_name = MODEL_PROFILES[task][profile]
+                logger.info("Dynamic Profile '%s' selected model: %s", profile, model_name)
 
         provider = self._get_provider(provider_name, task)
 
@@ -1017,9 +1022,10 @@ class ModelManager:
         """Checks if model weights for task are active in VRAM."""
         if task not in MODEL_REGISTRY:
             return False
-        meta = MODEL_REGISTRY[task]
         provider_name = meta["provider"]
-        if provider_name == "future":
+        if provider_name != "future":
+            provider_name = getattr(config, "PROVIDER", "huggingface")
+        else:
             return False
         provider = self._get_provider(provider_name, task)
         return provider.loaded
