@@ -64,7 +64,14 @@ class CommerceAgent:
             {"name": "Godrej Interio Slimline Wardrobe", "category": "wardrobe", "brand": "Godrej Interio", "price": 21000, "style": "classic", "width_cm": 90, "depth_cm": 50, "quality_score": 0.85},
             {"name": "Godrej Interio Versatile Shelf", "category": "bookshelf", "brand": "Godrej Interio", "price": 7500, "style": "modern", "width_cm": 80, "depth_cm": 30, "quality_score": 0.8},
             {"name": "Godrej Interio Accent Lamp", "category": "lighting", "brand": "Godrej Interio", "price": 3000, "style": "contemporary", "width_cm": 25, "depth_cm": 25, "quality_score": 0.82},
-            {"name": "Godrej Interio Work Desk Combo", "category": "desk", "brand": "Godrej Interio", "price": 19999, "style": "contemporary", "width_cm": 120, "depth_cm": 60, "quality_score": 0.88}
+            {"name": "Godrej Interio Work Desk Combo", "category": "desk", "brand": "Godrej Interio", "price": 19999, "style": "contemporary", "width_cm": 120, "depth_cm": 60, "quality_score": 0.88},
+
+            # Projectors & Projector Screens (5 products)
+            {"name": "Epson EpiqVision Flex Projector", "category": "projector", "brand": "Epson", "price": 27389, "style": "modern", "width_cm": 30, "depth_cm": 30, "quality_score": 0.9, "image": "https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=150&q=80"},
+            {"name": "Vankyo Leisure Mini Projector", "category": "projector", "brand": "Vankyo", "price": 4979, "style": "modern", "width_cm": 20, "depth_cm": 15, "quality_score": 0.85, "image": "https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=150&q=80"},
+            {"name": "Vankyo Staytrue 120 Projector Screen", "category": "projector screen", "brand": "Vankyo", "price": 10789, "style": "modern", "width_cm": 260, "depth_cm": 10, "quality_score": 0.88, "image": "https://images.unsplash.com/photo-1583741893569-07301292b3bc?auto=format&fit=crop&w=150&q=80"},
+            {"name": "IKEA MITTzon Projector Frame", "category": "projector screen", "brand": "IKEA", "price": 26500, "style": "modern", "width_cm": 200, "depth_cm": 80, "quality_score": 0.86, "image": "https://images.unsplash.com/photo-1583741893569-07301292b3bc?auto=format&fit=crop&w=150&q=80"},
+            {"name": "Elite Screens Manual Projector Screen", "category": "projector screen", "brand": "Elite Screens", "price": 8999, "style": "classic", "width_cm": 240, "depth_cm": 12, "quality_score": 0.87, "image": "https://images.unsplash.com/photo-1583741893569-07301292b3bc?auto=format&fit=crop&w=150&q=80"}
         ]
         logger.info("CommerceAgent initialized (Provider: %s)", provider)
 
@@ -84,7 +91,7 @@ class CommerceAgent:
         preferred_brands = user_preferences.get("preferred_brands") or []
         excluded_brands = user_preferences.get("excluded_brands") or []
         budget_range = user_preferences.get("budget_range") or {"minimum": 0, "maximum": 50000}
-        max_budget = budget_range.get("maximum") or 50000
+        max_budget = float(budget_range.get("maximum") or 50000.0)
         pref_style = user_preferences.get("preferred_style") or "modern"
 
         # Look up matching candidates in our catalog
@@ -100,7 +107,34 @@ class CommerceAgent:
 
         # 2. Apply filters (dimensions, budget, style, exclusions)
         candidates = self.filter_dimensions(candidates, max_w=150, max_d=80)
-        candidates = self.filter_budget(candidates, budget_limit=max_budget)
+        
+        # Calculate budget per item to fit the total budget limit
+        num_items = len(req_products) if req_products else 1
+        budget_per_item = max_budget / num_items if num_items > 1 else max_budget
+        
+        # Try to filter by budget_per_item first, falling back to max_budget if empty
+        candidates_under_item_limit = [c for c in candidates if float(c.get("price", 0)) <= budget_per_item]
+        
+        # Check if we still have options for each required category
+        has_all_cats = True
+        for cat in req_products:
+            normalized_key = cat.lower().replace(" ", "_")
+            cat_found = False
+            for c in candidates_under_item_limit:
+                if (c.get("category", "").lower() == cat.lower() or 
+                    normalized_key in c.get("name", "").lower() or 
+                    cat.lower() in c.get("name", "").lower()):
+                    cat_found = True
+                    break
+            if not cat_found:
+                has_all_cats = False
+                break
+                
+        if has_all_cats:
+            candidates = candidates_under_item_limit
+        else:
+            # Fall back to individual max_budget limit
+            candidates = [c for c in candidates if float(c.get("price", 0)) <= max_budget]
         
         # Exclude brand filter
         candidates = [c for c in candidates if c.get("brand") not in excluded_brands]

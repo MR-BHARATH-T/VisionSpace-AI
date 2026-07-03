@@ -51,12 +51,9 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         description="Style Theme:"
     )
     
-    budget_widget = widgets.IntSlider(
+    budget_widget = widgets.IntText(
         value=40000,
-        min=5000,
-        max=200000,
-        step=5000,
-        description="Max Budget:"
+        description="Max Budget (Rs):"
     )
     
     brands_widget = widgets.SelectMultiple(
@@ -309,6 +306,34 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                             <p><b>Reserves Remaining:</b> Rs. {out['budget'].get('remaining_budget')}</p>
                         </div>
                     </div>
+
+                    <div class="info-card" style="margin-top: 15px; margin-bottom: 15px; border-color: #38bdf8;">
+                        <h4>🤖 Agent Execution Logs & Summaries</h4>
+                        <details style="margin-bottom: 8px; cursor: pointer;">
+                            <summary style="font-weight: bold; color: #38bdf8;">👁️ Phase 1: Unified Vision Agent Pass</summary>
+                            <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
+                                Loaded room snaps and executed unified Qwen-VL vision pass. Identified room architecture, doors, windows, and existing furniture positions with coordinates.
+                            </p>
+                        </details>
+                        <details style="margin-bottom: 8px; cursor: pointer;">
+                            <summary style="font-weight: bold; color: #38bdf8;">📐 Phase 2 & 3: Spatial clearance & Style Alignment Agent Pass</summary>
+                            <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
+                                Validated layout clearances using spatial clearance logic. Evaluated walkability constraints, generated structural collision paths, and aligned with aesthetic style metrics.
+                            </p>
+                        </details>
+                        <details style="margin-bottom: 8px; cursor: pointer;">
+                            <summary style="font-weight: bold; color: #38bdf8;">🛍️ Phase 4 & 5: Curation & Budget Curation Agent Pass</summary>
+                            <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
+                                Queried SerpAPI/Mock Catalog to suggest items fitting user specifications. Filtered items to match split budget parameters.
+                            </p>
+                        </details>
+                        <details style="margin-bottom: 8px; cursor: pointer;">
+                            <summary style="font-weight: bold; color: #38bdf8;">🖼️ Phase 6 & 7: Reconstruction & Output Delta Agent Pass</summary>
+                            <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
+                                Completed pixel reconstruction overlays. Pasted selected product visuals directly onto the empty zones. Compiled all JSON files and created a ZIP archive.
+                            </p>
+                        </details>
+                    </div>
                 </div>
                 """
                 display(HTML(dashboard_details))
@@ -329,6 +354,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         <div style="flex-grow: 1;">
                             <div style="font-weight: bold; font-size: 16px; color: #38bdf8;">{item.get('name')}</div>
                             <div style="color: #94a3b8; font-size: 13px; margin: 4px 0;">Brand: <b>{item.get('brand')}</b> | Style: {item.get('style')}</div>
+                            <div style="color: #cbd5e1; font-size: 12px; margin-bottom: 6px;"><b>Proposed Zone:</b> Placement in room empty floor coordinates bounds.</div>
                             <div>
                                 <span style="font-weight: bold; color: #fbbf24;">Rs. {item.get('price')}</span>
                                 <span class="score-tag" style="margin-left: 10px;">Rank Score: {item.get('final_score')}</span>
