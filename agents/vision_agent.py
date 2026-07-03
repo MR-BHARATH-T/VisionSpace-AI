@@ -337,43 +337,73 @@ class VisionAgent:
             progress_callback("Running Unified Vision Pass (Batched)...")
 
         p_template = {
-            "system": (
-                "You are the Vision Agent of VisionSpace AI.\n"
-                "Analyze the uploaded room viewpoints and return a unified inventory.\n"
-                "Strict rules:\n"
-                "- Return strictly valid JSON only.\n"
-                "- No recommendations, design suggestions, reasoning, or explanations.\n"
-                "- Never use markdown formatting or code block wrappers.\n"
-                "- Never output a <think> block or reasoning trace."
-            ),
+            "system": "You are VisionSpace Vision Agent.",
             "user": (
-                f"Analyze all {len(preprocessed_images)} viewpoints of this {room_type} room simultaneously.\n"
-                "Extract room details and detect all furniture, doors, windows, and empty regions.\n"
-                "Output format must be EXACTLY:\n"
+                f"Analyze all {len(preprocessed_images)} uploaded room viewpoints of this {room_type} room simultaneously.\n"
+                "Your objectives:\n"
+                "1. Detect every visible object regardless of size (classify as: furniture, electronics, decorative, structural).\n"
+                "2. Classify objects:\n"
+                "   - furniture\n"
+                "   - electronics\n"
+                "   - decorative\n"
+                "   - structural\n"
+                "3. Estimate:\n"
+                "   - room type\n"
+                "   - object dimensions (width_cm, depth_cm, height_cm)\n"
+                "   - object positions (x_cm, y_cm, z_cm / room_position coordinates relative to floor center)\n"
+                "   - object orientation (rotation degrees)\n"
+                "4. Detect:\n"
+                "   - walls (material, color, texture)\n"
+                "   - floor (material, color, texture)\n"
+                "   - ceiling (height_cm, color, material)\n"
+                "   - doors (type, location, dimensions)\n"
+                "   - windows (type, location, dimensions)\n"
+                "5. Produce machine-readable JSON only.\n\n"
+                "Return in this exact format:\n"
                 "{\n"
-                '  "room_type": "string",\n'
-                '  "dimensions_estimate": {\n'
-                '    "width_cm": number,\n'
-                '    "depth_cm": number,\n'
-                '    "height_cm": number\n'
-                "  },\n"
-                '  "detected_objects": [\n'
+                '  "room_type": "bedroom",\n'
+                '  "objects": [\n'
                 "    {\n"
                 '      "name": "string",\n'
-                '      "category": "string",\n'
-                '      "confidence": number,\n'
-                '      "bbox": [x, y, w, h]\n'
+                '      "category": "furniture|electronics|decorative|structural",\n'
+                '      "estimated_dimensions": {"width_cm": number, "depth_cm": number, "height_cm": number},\n'
+                '      "room_position": {"x_cm": number, "y_cm": number, "z_cm": number},\n'
+                '      "rotation": number\n'
                 "    }\n"
                 "  ],\n"
-                '  "empty_regions": [\n'
+                '  "doors": [\n'
                 "    {\n"
-                '      "width_cm": number,\n'
-                '      "depth_cm": number,\n'
-                '      "suitable_for": ["string"]\n'
+                '      "type": "string",\n'
+                '      "estimated_dimensions": {"width_cm": number, "depth_cm": number, "height_cm": number},\n'
+                '      "room_position": {"x_cm": number, "y_cm": number, "z_cm": number}\n'
                 "    }\n"
                 "  ],\n"
-                '  "confidence_score": number\n'
-                "}"
+                '  "windows": [\n'
+                "    {\n"
+                '      "type": "string",\n'
+                '      "estimated_dimensions": {"width_cm": number, "depth_cm": number, "height_cm": number},\n'
+                '      "room_position": {"x_cm": number, "y_cm": number, "z_cm": number}\n'
+                "    }\n"
+                "  ],\n"
+                '  "walls": [\n'
+                "    {\n"
+                '      "orientation": "north|south|east|west",\n'
+                '      "color": "string",\n'
+                '      "material": "string"\n'
+                "    }\n"
+                "  ],\n"
+                '  "floor": {\n'
+                '    "material": "string",\n'
+                '    "color": "string"\n'
+                '  },\n'
+                '  "ceiling": {\n'
+                '    "height_cm": number,\n'
+                '    "color": "string"\n'
+                '  },\n'
+                '  "confidence_score": 0.92\n'
+                "}\n\n"
+                "Do not provide explanations.\n"
+                "Return JSON only."
             )
         }
 
@@ -913,7 +943,7 @@ class VisionAgent:
 
         # 5. Occupancy Grid and Free Space Detection
         detector = FreeSpaceDetector(resolution_cm=5)
-        grid = detector.build_occupancy_grid(room_w, room_d, base_scene["objects"])
+        grid = detector.build_occupancy_grid(room_w, room_d, base_scene["objects"], doors=base_scene.get("doors"), windows=base_scene.get("windows"))
         empty_regions, free_polygons = detector.detect_free_regions(grid, room_w, room_d)
         
         base_scene["occupancy_grid"] = grid

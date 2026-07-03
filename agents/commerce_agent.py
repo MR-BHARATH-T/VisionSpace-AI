@@ -99,15 +99,13 @@ class CommerceAgent:
             )
 
         # 2. Apply filters (dimensions, budget, style, exclusions)
-        # Note: In this version we use a default of 120cm width / 60cm depth for standard furniture
-        candidates = self.filter_dimensions(candidates, max_w=120, max_d=60)
+        candidates = self.filter_dimensions(candidates, max_w=150, max_d=80)
         candidates = self.filter_budget(candidates, budget_limit=max_budget)
-        candidates = self.filter_style(candidates, style=pref_style)
         
         # Exclude brand filter
         candidates = [c for c in candidates if c.get("brand") not in excluded_brands]
 
-        # 3. Score candidates using the V2 formulas
+        # 3. Score candidates using the conformed 5-factor formulas
         scored = []
         for c in candidates:
             scores = self.score_products(
@@ -116,7 +114,8 @@ class CommerceAgent:
                 preferred_brands=preferred_brands,
                 required_w=120,
                 required_d=60,
-                budget_limit=max_budget
+                budget_limit=max_budget,
+                spatial_output=spatial_output
             )
             item = dict(c)
             item.update(scores)
@@ -125,18 +124,37 @@ class CommerceAgent:
         # 4. Rank products
         ranked = self.rank_products(scored)
         
-        # Keep top 10 ranked products
-        ranked = ranked[:10]
+        # Keep top 10 per category first to prevent crowding out
+        category_grouped = {}
+        for cat in req_products:
+            normalized_key = cat.lower().replace(" ", "_")
+            cat_list = []
+            for item in ranked:
+                if (item.get("category", "").lower() == cat.lower() or 
+                    normalized_key in item.get("name", "").lower() or 
+                    cat.lower() in item.get("name", "").lower()):
+                    cat_list.append(item)
+            category_grouped[normalized_key] = cat_list[:5] # Keep top 5 per category
+
+        # Union top 3 of each category for the main recommended list
+        curated_ranked = []
+        for cat_list in category_grouped.values():
+            curated_ranked.extend(cat_list[:3])
+        curated_ranked = self.rank_products(curated_ranked)
 
         # 5. Build shopping list & explanations
-        shopping_list = self.build_shopping_list(ranked)
-        explanations = self.generate_explanations(ranked)
+        shopping_list = self.build_shopping_list(curated_ranked)
+        explanations = self.generate_explanations(curated_ranked)
 
         output = {
-            "recommended_products": ranked,
+            "recommended_products": curated_ranked,
             "shopping_list": shopping_list,
             "explanations": explanations
         }
+
+        # Populate category-specific outputs
+        for k, v in category_grouped.items():
+            output[k] = v
 
         # Save output if path is given
         if session_path is not None:
@@ -153,12 +171,12 @@ class CommerceAgent:
     def search_products(self, categories: List[str], preferred_brands: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Searches Google Shopping dynamically using SerpAPI if API key is provided, else falls back to mock catalog."""
         import config
-        api_key = os.environ.get("SERPAPI_API_KEY") or getattr(config, "SERP_API", None)
+        api_key = os.environ.get("SERP_API_KEY") or os.environ.get("SERPAPI_API_KEY") or getattr(config, "SERP_API", None)
         if not api_key:
             # Try UserSecretsClient if on Kaggle
             try:
                 from kaggle_secrets import UserSecretsClient
-                api_key = UserSecretsClient().get_secret("SERPAPI_API_KEY")
+                api_key = UserSecretsClient().get_secret("SERP_API_KEY") or UserSecretsClient().get_secret("SERPAPI_API_KEY")
             except Exception:
                 pass
 
@@ -211,6 +229,8 @@ class CommerceAgent:
                                 
                         rating = float(item.get("rating", 4.0))
                         quality_score = rating / 5.0 if rating > 0 else 0.8
+                        reviews_count = int(item.get("reviews", 50))
+                        image_url = item.get("thumbnail", "")
                         
                         # Parse dimensions from title
                         w_cm, d_cm = 120.0, 60.0
@@ -231,32 +251,54 @@ class CommerceAgent:
                             "width_cm": w_cm,
                             "depth_cm": d_cm,
                             "quality_score": round(quality_score, 2),
+                            "rating": rating,
+                            "reviews": reviews_count,
+                            "image": image_url,
                             "link": item.get("link", "")
                         })
             except Exception as e:
                 logger.error("SerpAPI query failed for '%s': %s", query, str(e))
                 
-        # If dynamic search yielded nothing, use mock catalog
-        if not results:
-            return self._search_mock_catalog(categories)
-            
+        # Category fallback: check if any category has 0 results and populate from mock
+        for cat in categories or []:
+            has_match = False
+            normalized_cat = cat.lower()
+            for r in results:
+                if (r.get("category", "").lower() == normalized_cat or 
+                    normalized_cat in r.get("name", "").lower() or 
+                    normalized_cat.replace(" ", "_") in r.get("name", "").lower()):
+                    has_match = True
+                    break
+            if not has_match:
+                logger.info("Category '%s' yielded 0 live results. Injecting local mock catalog fallback.", cat)
+                results.extend(self._search_mock_catalog([cat]))
+
         return results
 
     def _search_mock_catalog(self, categories: List[str]) -> List[Dict[str, Any]]:
         """Fallback search logic using local mock catalog."""
         if not categories:
-            return [c for c in self.mock_catalog if c.get("category") == "desk"]
-            
-        results = []
-        for cat in categories:
-            normalized_cat = cat.lower()
-            matches = [c for c in self.mock_catalog if normalized_cat in c.get("category", "").lower() or normalized_cat in c.get("name", "").lower()]
-            if matches:
-                results.extend(matches)
+            matches = [c for c in self.mock_catalog if c.get("category") == "desk"]
+        else:
+            matches = []
+            for cat in categories:
+                normalized_cat = cat.lower()
+                cat_matches = [c for c in self.mock_catalog if normalized_cat in c.get("category", "").lower() or normalized_cat in c.get("name", "").lower()]
+                matches.extend(cat_matches)
         
-        if not results:
-            results = list(self.mock_catalog)
-        return results
+        if not matches:
+            matches = list(self.mock_catalog)
+
+        # Enrich with reviews, rating, image
+        enriched = []
+        for item in matches:
+            enriched_item = dict(item)
+            enriched_item["rating"] = item.get("rating", round(item.get("quality_score", 0.8) * 5.0, 1))
+            enriched_item["reviews"] = item.get("reviews", 50)
+            enriched_item["image"] = item.get("image", "https://via.placeholder.com/150")
+            enriched.append(enriched_item)
+            
+        return enriched
 
     def filter_dimensions(self, products: List[Dict[str, Any]], max_w: float, max_d: float) -> List[Dict[str, Any]]:
         """Filters out items that exceed the available room clearance boundaries."""
@@ -284,56 +326,63 @@ class CommerceAgent:
         preferred_brands: List[str],
         required_w: float,
         required_d: float,
-        budget_limit: float
+        budget_limit: float,
+        spatial_output: Dict[str, Any] = None
     ) -> Dict[str, float]:
         """Calculates conformed weighted score for the product candidate.
 
         Formula:
-          Final Score = 0.35 * fit_score + 0.25 * style_score + 0.20 * budget_score + 0.10 * brand_score + 0.10 * quality_score
+          Final Score = 0.40 * fit_score + 0.25 * rating_score + 0.15 * design_score + 0.10 * brand_score + 0.10 * popularity_score
         """
-        # 1. fit_score: does it fit required dimensions?
-        prod_w = float(product.get("width_cm", required_w))
-        prod_d = float(product.get("depth_cm", required_d))
-        fit_score = 1.0 if (prod_w <= required_w and prod_d <= required_d) else 0.5
+        # 1. fit_score: how well dimensions fit the empty regions/clearance boundaries (40%)
+        empty_regions = []
+        if spatial_output:
+            empty_regions = spatial_output.get("empty_regions") or []
+        prod_w = float(product.get("width_cm") or required_w)
+        prod_d = float(product.get("depth_cm") or required_d)
         
-        # 2. style_score: does it match preferred style?
-        style_score = 1.0 if product.get("style", "").lower() == pref_style.lower() else 0.6
-        
-        # 3. budget_score: price vs limit
-        price = float(product.get("price", 0))
-        budget_score = 1.0 if price <= budget_limit else 0.0
-        if budget_limit > 0 and price <= budget_limit:
-            budget_score = 1.0 - (price / budget_limit) * 0.3 # penalize expensive options slightly
-            
-        # 4. brand_score: is it in preferred brands?
-        brand_score = 1.0 if product.get("brand", "").lower() in [b.lower() for b in preferred_brands] else 0.5
-        
-        # 5. quality_score
-        quality_score = float(product.get("quality_score", 0.8))
-        
+        fit_score = 0.3
+        if empty_regions:
+            for region in empty_regions:
+                rw = float(region.get("width_cm") or 0.0)
+                rd = float(region.get("depth_cm") or 0.0)
+                if prod_w <= rw and prod_d <= rd:
+                    fit_score = 1.0
+                    break
+        else:
+            fit_score = 1.0 if (prod_w <= required_w and prod_d <= required_d) else 0.5
+
+        # 2. rating_score (25%)
+        rating = float(product.get("rating") or product.get("quality_score", 0.8) * 5.0 or 4.0)
+        rating_score = min(1.0, max(0.0, rating / 5.0))
+
+        # 3. design_score: style compatibility (15%)
+        style_match = product.get("style", "").lower() == pref_style.lower()
+        design_score = 1.0 if style_match else 0.6
+
+        # 4. brand_score: brand preference (10%)
+        brand_match = product.get("brand", "").lower() in [b.lower() for b in preferred_brands]
+        brand_score = 1.0 if brand_match else 0.5
+
+        # 5. popularity_score: based on reviews count or fallback (10%)
+        reviews_count = int(product.get("reviews", 50))
+        popularity_score = min(1.0, reviews_count / 100.0)
+
         # Final weighted score
         final_score = (
-            0.35 * fit_score +
-            0.25 * style_score +
-            0.20 * budget_score +
+            0.40 * fit_score +
+            0.25 * rating_score +
+            0.15 * design_score +
             0.10 * brand_score +
-            0.10 * quality_score
+            0.10 * popularity_score
         )
         
         return {
             "fit_score": round(fit_score, 2),
-            "style_score": round(style_score, 2),
-            "budget_score": round(budget_score, 2),
+            "rating_score": round(rating_score, 2),
+            "design_score": round(design_score, 2),
             "brand_score": round(brand_score, 2),
-            "quality_score": round(quality_score, 2),
-            "fit_score_weighted": round(0.35 * fit_score, 3),
-            "style_score_weighted": round(0.25 * style_score, 3),
-            "budget_score_weighted": round(0.20 * budget_score, 3),
-            "brand_score_weighted": round(0.10 * brand_score, 3),
-            "quality_score_weighted": round(0.10 * quality_score, 3),
-            "fit_score_raw": fit_score,
-            "space_score": fit_score, # backward compatibility
-            "budget_score_raw": budget_score,
+            "popularity_score": round(popularity_score, 2),
             "final_score": round(final_score, 3)
         }
 

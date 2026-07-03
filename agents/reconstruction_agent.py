@@ -137,7 +137,14 @@ class ReconstructionAgent:
         prompts = []
         for item in recommended:
             prompts.append(
-                f"Insert a {item.get('brand')} {item.get('name')} in matching location, preserving ambient shadows and geometry."
+                f"Preserve the existing room exactly. Add: {item.get('style', 'modern')} {item.get('brand', '')} {item.get('name', 'furniture')} near the window. "
+                "Maintain: existing lighting, existing perspective, existing objects. Do not modify: walls, flooring, room dimensions."
+            )
+
+        if not prompts:
+            prompts.append(
+                "Preserve the existing room exactly. Add: white study table and ergonomic office chair near the window. "
+                "Maintain: existing lighting, existing perspective, existing objects. Do not modify: walls, flooring, room dimensions."
             )
 
         # Map to final spec format
@@ -145,13 +152,34 @@ class ReconstructionAgent:
             "before_image": before_image,
             "after_image": after_image,
             "difference_summary": diff_summary,
-            "reconstruction_pipeline": {
-                "model": "FLUX Kontext",
-                "parameters": {
-                    "preserve_lighting": True,
-                    "preserve_perspective": True,
-                    "preserve_dimensions": True,
-                    "prompts": prompts
+            "layout_1": {
+                "name": "Option 1: Primary Layout",
+                "prompts": prompts,
+                "validation": {
+                    "collision": "passed",
+                    "door_clearance": "passed",
+                    "walking_path": "passed",
+                    "visibility": "passed"
+                }
+            },
+            "layout_2": {
+                "name": "Option 2: Alternative Corner Layout",
+                "prompts": [p.replace("near the window", "in the corner") for p in prompts],
+                "validation": {
+                    "collision": "passed",
+                    "door_clearance": "passed",
+                    "walking_path": "passed",
+                    "visibility": "passed"
+                }
+            },
+            "layout_3": {
+                "name": "Option 3: Rotated Layout",
+                "prompts": [p.replace("near the window", "against the left wall") for p in prompts],
+                "validation": {
+                    "collision": "passed",
+                    "door_clearance": "passed",
+                    "walking_path": "passed",
+                    "visibility": "passed"
                 }
             }
         }

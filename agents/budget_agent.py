@@ -36,37 +36,36 @@ class BudgetAgent:
         """Runs the Phase 5 budget analysis engine."""
         logger.info("Running Phase 5 Budget Agent analysis...")
 
-        products = commerce_output.get("recommended_products") or []
+        # Accept either recommended_products list or commerce_output dictionary directly
+        products = []
+        if isinstance(commerce_output, list):
+            products = commerce_output
+        elif isinstance(commerce_output, dict):
+            products = commerce_output.get("recommended_products") or []
+        
         total_requested_cost = sum(float(p.get("price", 0)) for p in products)
 
         prompt_system = (
             "You are the Budget Agent of VisionSpace AI.\n"
-            "Analyze item costs, calculate utilization metrics, and suggest alternatives.\n"
+            "Analyze item costs, calculate utilization metrics, and construct the budget profile.\n"
             "Strict JSON ONLY. No conversational intro/outro text. No explanations. No thinking tags."
         )
 
         prompt_user = (
             f"Cost Analysis:\n"
-            f"- Recommended Products: {products}\n"
+            f"- Selected Products: {products}\n"
             f"- Budget Limit: {budget_limit}\n"
-            f"- Current Total Cost: {total_requested_cost}\n\n"
+            f"- Current Subtotal Cost: {total_requested_cost}\n\n"
             "Task:\n"
-            "Format the total budget profile and identify alternative products (lower cost substitutions) "
-            "for the recommended list if the total cost exceeds the limit.\n"
+            "Format the total budget profile. Calculate subtotal, shipping, tax, total cost, and remaining budget.\n"
             "Return conforming JSON format:\n"
             "{\n"
-            '  "total_cost": number,\n'
+            '  "subtotal": number,\n'
+            '  "shipping": number,\n'
+            '  "tax": number,\n'
+            '  "total": number,\n'
             '  "budget_limit": number,\n'
-            '  "remaining_budget": number,\n'
-            '  "budget_utilization_percentage": number (0-100),\n'
-            '  "alternative_products": [\n'
-            "    {\n"
-            '      "original_name": "string",\n'
-            '      "alternative_name": "string",\n'
-            '      "price": number,\n'
-            '      "reason": "string why recommended"\n'
-            "    }\n"
-            "  ]\n"
+            '  "remaining_budget": number\n'
             "}"
         )
 
@@ -102,31 +101,21 @@ class BudgetAgent:
     def _fuse_budget_payload(
         self, llm_data: Dict[str, Any], total_requested_cost: float, budget_limit: float, products: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        fused = {}
-        
-        t_cost = float(llm_data.get("total_cost") if llm_data.get("total_cost") is not None else total_requested_cost)
+        subtotal = float(llm_data.get("subtotal") if llm_data.get("subtotal") is not None else total_requested_cost)
+        shipping = float(llm_data.get("shipping") if llm_data.get("shipping") is not None else 1200.0)
+        tax = float(llm_data.get("tax") if llm_data.get("tax") is not None else round(subtotal * 0.10, 2))
+        total = subtotal + shipping + tax
         b_limit = float(llm_data.get("budget_limit") if llm_data.get("budget_limit") is not None else budget_limit)
-        
-        fused["total_cost"] = t_cost
-        fused["budget_limit"] = b_limit
-        fused["remaining_budget"] = b_limit - t_cost
-        fused["budget_utilization_percentage"] = int(round((t_cost / b_limit) * 100)) if b_limit > 0 else 0
-        
-        alternatives = llm_data.get("alternative_products")
-        if not alternatives or not isinstance(alternatives, list):
-            alternatives = []
-            # Propose a standard fallback alternative for the first expensive item if total cost is tight
-            if products:
-                first_item = products[0]
-                alternatives.append({
-                    "original_name": first_item.get("name", "Item"),
-                    "alternative_name": f"Budget Alternative {first_item.get('category', 'Furniture')}",
-                    "price": int(float(first_item.get("price", 0)) * 0.75),
-                    "reason": "Lower-cost material alternative to improve budget headroom."
-                })
-        fused["alternative_products"] = alternatives
-        
-        return fused
+        remaining = b_limit - total
+
+        return {
+            "subtotal": subtotal,
+            "shipping": shipping,
+            "tax": tax,
+            "total": total,
+            "budget_limit": b_limit,
+            "remaining_budget": remaining
+        }
 
     def _validate_and_repair_json(self, raw_text: Optional[str]) -> Dict[str, Any]:
         """Helper to repair and clean JSON response structures."""

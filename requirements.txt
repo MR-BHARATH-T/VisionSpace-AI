@@ -19,3 +19,4 @@ requests
 requests
 nvidia-ml-py
 json-repair
+python-dotenv

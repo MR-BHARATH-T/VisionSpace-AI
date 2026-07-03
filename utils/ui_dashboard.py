@@ -272,20 +272,20 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
                         <div class="info-card">
                             <h4>📋 Spatial Audit & Design Alignment</h4>
                             <p><b>Walkability Index:</b> {out['spatial'].get('walkability_score')}/100</p>
-                            <p><b>Style Style Identified:</b> {out['design'].get('current_style', 'modern')}</p>
-                            <p><b>Usable Floor Area:</b> {out['spatial'].get('usable_area_percentage')}%</p>
+                            <p><b>Style Style Identified:</b> {out['design'].get('design_theme', out['design'].get('current_style', 'modern'))}</p>
+                            <p><b>Usable Floor Area:</b> {out['spatial'].get('usable_area', out['spatial'].get('usable_area_percentage', 0))} sqm</p>
                             <p><b>Improvement Opportunities:</b></p>
                             <ul>
-                                {"".join(f"<li>{item}</li>" for item in out['design'].get('improvement_opportunities', []))}
+                                {"".join(f"<li>{item}</li>" for item in out['design'].get('improvement_opportunities', [f"Applied design theme: {out['design'].get('design_theme', 'modern minimal')}"]))}
                             </ul>
                         </div>
                         
                         <div class="info-card">
                             <h4>💰 Budget Breakdown</h4>
-                            <p><b>Total Recommended Cost:</b> Rs. {out['budget'].get('total_cost')}</p>
+                            <p><b>Total Recommended Cost:</b> Rs. {out['budget'].get('total', out['budget'].get('total_cost', 0))}</p>
                             <p><b>Limit Setting:</b> Rs. {out['budget'].get('budget_limit')}</p>
                             <p><b>Reserves Remaining:</b> Rs. {out['budget'].get('remaining_budget')}</p>
-                            <p><b>Spending Utilization:</b> {out['budget'].get('budget_utilization_percentage')}%</p>
+                            <p><b>Spending Utilization:</b> {out['budget'].get('budget_utilization_percentage', int((out['budget'].get('total', 0) / max(1, out['budget'].get('budget_limit', 1))) * 100))}%</p>
                         </div>
                     </div>
 

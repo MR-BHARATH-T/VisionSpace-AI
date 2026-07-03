@@ -68,56 +68,32 @@ class ProductionPipelineV2:
         session_path = vision_output["metadata"]["session_path"]
         merged_scene = vision_output["merged_scene"]
 
-        # Phase 2: Spatial Agent Pass (Guarded by confidence_score >= 0.50)
-        spatial_output = {}
+        # Production Guard: If confidence score < 0.70, request more images and do not continue
         conf_score = merged_scene.get("confidence_score", 0.0)
-        
-        if conf_score >= 0.50:
-            if progress_callback:
-                progress_callback("Phase 2: Executing layout clearance validation...")
-            spatial_output = self.spatial_agent.analyze_layout(
-                room_data=merged_scene,
-                session_path=session_path
-            )
-        else:
-            logger.warning("Bypassing Phase 2 Spatial Agent (confidence_score %s < 0.50). Using fallbacks.", conf_score)
-            spatial_output = {
-                "walkability_score": 75,
-                "clearance_issues": ["Low vision confidence; using fallback clearance metrics."],
-                "unused_space": ["corners"],
-                "collision_objects": [],
-                "usable_area_percentage": 80,
-                "status": "fallback"
-            }
-            save_json(spatial_output, pathlib.Path(session_path) / "spatial_analysis.json")
+        if conf_score < 0.70:
+            logger.error("Low vision confidence score (%s < 0.70). Aborting pipeline.", conf_score)
+            raise ValueError(f"Aborting Pipeline: Low vision confidence score ({conf_score} < 0.70). Please upload more or clearer images.")
 
-        # Phase 3: Design Agent Pass (Guarded by walkability_score >= 50)
-        design_output = {}
-        walkability_score = spatial_output.get("walkability_score", 0)
-        
-        if walkability_score >= 50:
-            if progress_callback:
-                progress_callback("Phase 3: Performing design theme alignment...")
-            design_output = self.design_agent.generate_recommendations(
-                vision_output=merged_scene,
-                spatial_output=spatial_output,
-                budget=user_preferences.get("budget_range", {}).get("maximum", 50000),
-                preferred_style=user_preferences.get("preferred_style", "modern"),
-                preferred_colors=user_preferences.get("color_preferences"),
-                preferred_brands=user_preferences.get("preferred_brands"),
-                session_path=session_path
-            )
-        else:
-            logger.warning("Bypassing Phase 3 Design Agent (walkability_score %s < 50). Using fallbacks.", walkability_score)
-            design_output = {
-                "current_style": user_preferences.get("preferred_style", "modern"),
-                "style_confidence": 0.8,
-                "color_palette": ["white", "wood"],
-                "lighting_score": 75,
-                "improvement_opportunities": ["Using style alignment fallbacks."],
-                "status": "fallback"
-            }
-            save_json(design_output, pathlib.Path(session_path) / "design_analysis.json")
+        # Phase 2: Spatial Agent Pass
+        if progress_callback:
+            progress_callback("Phase 2: Executing layout clearance validation...")
+        spatial_output = self.spatial_agent.analyze_layout(
+            room_data=merged_scene,
+            session_path=session_path
+        )
+
+        # Phase 3: Design Agent Pass
+        if progress_callback:
+            progress_callback("Phase 3: Performing design theme alignment...")
+        design_output = self.design_agent.generate_recommendations(
+            vision_output=merged_scene,
+            spatial_output=spatial_output,
+            budget=user_preferences.get("budget_range", {}).get("maximum", 50000),
+            preferred_style=user_preferences.get("preferred_style", "modern"),
+            preferred_colors=user_preferences.get("color_preferences"),
+            preferred_brands=user_preferences.get("preferred_brands"),
+            session_path=session_path
+        )
 
         # Phase 4: Product Agent (Commerce Agent) recommendations - Always Run
         if progress_callback:
@@ -134,13 +110,25 @@ class ProductionPipelineV2:
             session_path=str(session_path)
         )
 
-        # Phase 5: Budget Agent cost optimization
+        # Simulate user selecting specific items (e.g. select the top ranked item for each category)
+        selected_products = []
+        req_products = user_preferences.get("required_products") or []
+        for cat in req_products:
+            normalized_key = cat.lower().replace(" ", "_")
+            cat_list = commerce_output.get(normalized_key) or []
+            if cat_list:
+                selected_products.append(cat_list[0])
+
+        if progress_callback:
+            progress_callback(f"Simulating user selection: Chosen {len(selected_products)} products.")
+
+        # Phase 5: Budget Agent cost optimization (Run on selected products)
         budget_output = {}
         if progress_callback:
-            progress_callback("Phase 5: Performing budget spending check...")
+            progress_callback("Phase 5: Performing budget spending check on selected products...")
         budget_limit = user_preferences.get("budget_range", {}).get("maximum", 50000)
         budget_output = self.budget_agent.analyze_budget(
-            commerce_output=commerce_output,
+            commerce_output=selected_products,
             budget_limit=budget_limit,
             session_path=session_path
         )
@@ -153,7 +141,7 @@ class ProductionPipelineV2:
             vision_output=merged_scene,
             spatial_output=spatial_output,
             design_output=design_output,
-            commerce_output=commerce_output,
+            commerce_output={"recommended_products": selected_products},
             budget_output=budget_output,
             session_path=session_path
         )
@@ -164,7 +152,7 @@ class ProductionPipelineV2:
             progress_callback("Phase 7: Mapping layout transformation delta...")
         reconstruct_output = self.reconstruction_agent.plan_reconstruction(
             vision_output=merged_scene,
-            commerce_output=commerce_output,
+            commerce_output={"recommended_products": selected_products},
             session_path=session_path
         )
 
@@ -176,6 +164,7 @@ class ProductionPipelineV2:
             "spatial": spatial_output,
             "design": design_output,
             "commerce": commerce_output,
+            "selected_products": selected_products,
             "budget": budget_output,
             "explanation": explain_output,
             "reconstruction": reconstruct_output

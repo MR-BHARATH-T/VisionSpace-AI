@@ -11,9 +11,9 @@ class FreeSpaceDetector:
         self.resolution = resolution_cm
 
     def build_occupancy_grid(
-        self, room_width_cm: int, room_depth_cm: int, objects: List[Dict[str, Any]]
+        self, room_width_cm: int, room_depth_cm: int, objects: List[Dict[str, Any]], doors: List[Dict[str, Any]] = None, windows: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Creates a grid matrix where 0 is free space and 1 is occupied."""
+        """Creates a grid matrix where 0 is free space, 1 is occupied, 2 is wall, 3 is window, and 4 is door clearance."""
         # Convert dimensions to grid cell coordinates
         grid_w = max(1, room_width_cm // self.resolution)
         grid_d = max(1, room_depth_cm // self.resolution)
@@ -21,16 +21,56 @@ class FreeSpaceDetector:
         # Initialize empty grid (0 = free)
         cells = [[0 for _ in range(grid_w)] for _ in range(grid_d)]
 
-        # Fill in occupied blocks from furniture dimensions
+        # 1. Fill walls on the outer boundaries (2 = wall)
+        for y in range(grid_d):
+            cells[y][0] = 2
+            cells[y][grid_w - 1] = 2
+        for x in range(grid_w):
+            cells[0][x] = 2
+            cells[grid_d - 1][x] = 2
+
+        # 2. Fill windows (3 = window)
+        if windows:
+            for win in windows:
+                pos = win.get("position", win.get("room_position", {"x_cm": 0, "y_cm": 0}))
+                dims = win.get("estimated_dimensions") or {"width_cm": 100, "depth_cm": 20}
+                w_cm = dims.get("width_cm") or 100.0
+                d_cm = dims.get("depth_cm") or 20.0
+                px, py = float(pos.get("x_cm") or 0.0), float(pos.get("y_cm") or 0.0)
+                
+                min_x = max(0, int((px - w_cm/2) / self.resolution))
+                max_x = min(grid_w, int((px + w_cm/2) / self.resolution))
+                min_y = max(0, int((py - d_cm/2) / self.resolution))
+                max_y = min(grid_d, int((py + d_cm/2) / self.resolution))
+                for y in range(min_y, max_y):
+                    for x in range(min_x, max_x):
+                        cells[y][x] = 3
+
+        # 3. Fill door clearances (4 = door clearance)
+        if doors:
+            for door in doors:
+                pos = door.get("position", door.get("room_position", {"x_cm": 0, "y_cm": 0}))
+                dims = door.get("estimated_dimensions") or {"width_cm": 90, "depth_cm": 90}
+                w_cm = dims.get("width_cm") or 90.0
+                d_cm = dims.get("depth_cm") or 90.0
+                px, py = float(pos.get("x_cm") or 0.0), float(pos.get("y_cm") or 0.0)
+                
+                min_x = max(0, int((px - w_cm/2) / self.resolution))
+                max_x = min(grid_w, int((px + w_cm/2) / self.resolution))
+                min_y = max(0, int((py - d_cm/2) / self.resolution))
+                max_y = min(grid_d, int((py + d_cm/2) / self.resolution))
+                for y in range(min_y, max_y):
+                    for x in range(min_x, max_x):
+                        cells[y][x] = 4
+
+        # 4. Fill occupied blocks from furniture dimensions (1 = occupied)
         for obj in objects:
-            pos = obj.get("position", {"x_cm": 0, "y_cm": 0})
+            pos = obj.get("position", obj.get("room_position", {"x_cm": 0, "y_cm": 0}))
             dims = obj.get("estimated_dimensions") or {"width_cm": 80, "depth_cm": 80}
             
             w_cm = dims.get("width_cm") or 80.0
             d_cm = dims.get("depth_cm") or 80.0
-
-            # Convert object bounds to cell coordinates
-            px, py = pos["x_cm"], pos["y_cm"]
+            px, py = float(pos.get("x_cm") or 0.0), float(pos.get("y_cm") or 0.0)
             
             # Map object relative to room bounds (clamp to valid ranges)
             min_x = max(0, int((px - w_cm/2) / self.resolution))
@@ -40,7 +80,8 @@ class FreeSpaceDetector:
 
             for y in range(min_y, max_y):
                 for x in range(min_x, max_x):
-                    cells[y][x] = 1
+                    if cells[y][x] == 0:
+                        cells[y][x] = 1
 
         return {
             "grid_resolution_cm": self.resolution,

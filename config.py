@@ -1,14 +1,31 @@
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import torch
 
-# MODEL = "Qwen/Qwen3-VL-8B-Instruct"
-MODEL = "Qwen/Qwen3-VL-8B-Thinking"
-# MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
-# MODEL = "Qwen/Qwen2.5-VL-32B-Instruct"
+VERCEL_API_KEY = os.getenv("VERCEL_API_KEY")
+DEEPINFRA_API_KEY = os.getenv("DEEPINFRA_API_KEY")
+SERP_API_KEY = os.getenv("SERP_API_KEY")
 
-SERP_API = "c4d8337a0efa46f024138f66b99be987882697ecfab07dfb75a893d437a1a803"
+if VERCEL_API_KEY:
+    MODEL = "deepinfra/alibaba/qwen3-vl-instruct"
+else:
+    MODEL = "Qwen/Qwen3-VL-8B-Instruct"
+    # MODEL = "Qwen/Qwen3-VL-8B-Thinking"
+    # MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
+    # MODEL = "Qwen/Qwen2.5-VL-32B-Instruct"
+
+# --- PROVIDER SELECTION ---
+# Set to "huggingface" to load models locally (e.g. on a Kaggle T4/L4 GPU).
+# Set to "deepinfra" to execute fast cloud completions (requires API key).
+PROVIDER = os.getenv("PROVIDER", "deepinfra" if (VERCEL_API_KEY or DEEPINFRA_API_KEY) else "huggingface")
+
+SERP_API = SERP_API_KEY or "c4d8337a0efa46f024138f66b99be987882697ecfab07dfb75a893d437a1a803"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 

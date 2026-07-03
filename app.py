@@ -5,6 +5,12 @@ import pathlib
 import pprint
 from PIL import Image
 
+# Force UTF-8 encoding for console stdout
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 # Ensure the root path is in the sys path
 root_path = os.path.dirname(os.path.abspath(__file__))
 if root_path not in sys.path:
@@ -57,15 +63,26 @@ def main():
         # Phase 0: User Preference Collection
         print("\n📥 Step 0: Collecting User Preferences...")
         user_prefs = {
-            "required_products": ["study table", "office chair"],
-            "preferred_brands": ["IKEA", "Godrej Interio"],
-            "excluded_brands": ["Local"],
+            "required_products": [
+                "study table",
+                "office chair",
+                "bookshelf"
+            ],
             "budget_range": {
                 "minimum": 10000,
-                "maximum": 50000
+                "maximum": 40000
             },
+            "preferred_brands": [
+                "IKEA",
+                "Godrej Interio",
+                "Green Soul"
+            ],
+            "excluded_brands": [],
             "preferred_style": "modern",
-            "color_preferences": ["white", "wood"],
+            "color_preferences": [
+                "white",
+                "oak wood"
+            ],
             "priority": ["workspace", "budget"]
         }
         
@@ -85,23 +102,45 @@ def main():
         print(f"Session ID: {session_id}")
         print(f"All outputs are stored in: {session_path}")
         
-        # Display Top 10 Recommended Products from Preferred Brands
-        print("\n🛍️ Top 10 Best Recommended Products from Preferred Brands:")
-        rec_products = pipeline_output.get("commerce", {}).get("recommended_products", [])
-        for idx, item in enumerate(rec_products[:10]):
-            print(f"  {idx+1:02d}. {item.get('brand')} - {item.get('name')} (Price: Rs. {item.get('price')}) | Style: {item.get('style')} | Score: {item.get('final_score')}")
+        # Display Recommended Products grouped by categories
+        print("\n🛍️ Recommended Products by Categories:")
+        for cat in user_prefs["required_products"]:
+            normalized_key = cat.lower().replace(" ", "_")
+            items = pipeline_output.get("commerce", {}).get(normalized_key, [])
+            print(f"  * {cat.upper()}:")
+            for idx, item in enumerate(items[:3]):
+                print(f"    - {idx+1}. {item.get('brand')} - {item.get('name')} (Price: Rs. {item.get('price')}) | Style: {item.get('style')} | Score: {item.get('final_score')}")
+
+        # Display Selected Products Costing & Budget compliance
+        budget_info = pipeline_output.get("budget", {})
+        print("\n💰 Budget Compliance Verification:")
+        print(f"  Subtotal: Rs. {budget_info.get('subtotal')}")
+        print(f"  Shipping: Rs. {budget_info.get('shipping')}")
+        print(f"  Tax (GST): Rs. {budget_info.get('tax')}")
+        print(f"  Total Cost: Rs. {budget_info.get('total')}")
+        print(f"  Budget Limit: Rs. {budget_info.get('budget_limit')}")
+        print(f"  Remaining Reserves: Rs. {budget_info.get('remaining_budget')}")
+
+        # Display Reconstruction Options and FLUX prompts
+        reconstruct_info = pipeline_output.get("reconstruction", {})
+        print("\n🖼️ Reconstruction Layout Options (FLUX prompts):")
+        for option_key in ["layout_1", "layout_2", "layout_3"]:
+            opt = reconstruct_info.get(option_key, {})
+            if opt:
+                print(f"  * {opt.get('name')}:")
+                for prompt in opt.get("prompts", []):
+                    print(f"    - Prompt: \"{prompt}\"")
+                print(f"    - Status: Collision {opt.get('validation', {}).get('collision')}, Path {opt.get('validation', {}).get('walking_path')}")
         
         print("\n--- Output Files Exported ---")
-        print(f"1. Unified Scene Graph: {session_path}/scene_graph.json")
+        print(f"1. Unified Scene Graph & Inventory: {session_path}/merged_output.json")
         print(f"2. Occupancy Grid matrix: {session_path}/occupancy_grid.json")
-        print(f"3. Merged Scene Inventory (V1/V2): {session_path}/merged_output.json")
-        print(f"4. Spatial Clearance Audit: {session_path}/spatial_analysis.json")
-        print(f"5. Design Style Alignment: {session_path}/design_analysis.json")
-        print(f"6. Product Recommendations: {session_path}/commerce_analysis.json")
-        print(f"7. Budget Utilization profile: {session_path}/budget_analysis.json")
-        print(f"8. Recommendation Rationale: {session_path}/explain_analysis.json")
-        print(f"9. Layout Transition Delta: {session_path}/reconstruction_analysis.json")
-        print(f"10. Visual Reconstruction Preview: {session_path}/reconstruction_preview.json")
+        print(f"3. Spatial Clearance Audit: {session_path}/spatial_analysis.json")
+        print(f"4. Design Style Alignment: {session_path}/design_analysis.json")
+        print(f"5. Product Recommendations: {session_path}/commerce_analysis.json")
+        print(f"6. Budget Utilization profile: {session_path}/budget_analysis.json")
+        print(f"7. Recommendation Rationale: {session_path}/explain_analysis.json")
+        print(f"8. Layout Transition Delta: {session_path}/reconstruction_analysis.json")
 
         # Interactive notebook visualization block
         try:

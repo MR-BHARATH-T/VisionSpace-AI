@@ -53,16 +53,17 @@ class ExplanationAgent:
         prompt_user = (
             f"Context details:\n"
             f"- Recommended Products: {products}\n"
-            f"- Usable Space Percentage: {spatial_output.get('usable_area_percentage', 80)}\n"
-            f"- Lighting Score: {design_output.get('lighting_score', 80)}\n"
-            f"- Budget Utilization: {budget_output.get('budget_utilization_percentage', 90)}% "
-            f"({total_cost} of {budget_limit})\n\n"
+            f"- Usable Space: {spatial_output.get('usable_area', 7.2)} sqm\n"
+            f"- Walkable Space: {spatial_output.get('walkable_area', 5.4)} sqm\n"
+            f"- Design Theme: {design_output.get('design_theme', 'modern minimal')}\n"
+            f"- Budget Status: {budget_output.get('subtotal', total_cost)} subtotal, limit: {budget_limit}\n\n"
             "Task:\n"
-            "Generate short explanations justifying the selection of each product, placement choice, "
-            "and budget optimization. Do not exceed 50 words per product explanation!\n"
+            "Generate short explanations justifying the selection of each product (why it fits and why it was chosen), "
+            "and why the placement location was selected (e.g. desk placed near window for natural light, chair selected because width fits free area).\n"
+            "Do not exceed 50 words per product explanation!\n"
             "Return conforming JSON format:\n"
             "{\n"
-            '  "product_explanations": ["list of strings justifying selected/rejected items"],\n'
+            '  "product_explanations": ["list of strings justifying selected items"],\n'
             '  "placement_explanations": ["list of strings justifying why objects were located in specific regions"],\n'
             '  "budget_explanations": ["list of strings detailing budget alignment/optimizations"]\n'
             "}"

@@ -80,31 +80,31 @@ MODEL_METADATA_CACHE = {
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "vision": {
         "model_name": HF_VISION_MODEL,
-        "provider": "huggingface",
+        "provider": getattr(config, "PROVIDER", "huggingface"),
     },
     "reasoning": {
         "model_name": HF_TEXT_MODEL,
-        "provider": "huggingface",
+        "provider": getattr(config, "PROVIDER", "huggingface"),
     },
     "spatial": {
         "model_name": HF_TEXT_MODEL,
-        "provider": "huggingface",
+        "provider": getattr(config, "PROVIDER", "huggingface"),
     },
     "design": {
         "model_name": HF_TEXT_MODEL,
-        "provider": "huggingface",
+        "provider": getattr(config, "PROVIDER", "huggingface"),
     },
     "commerce": {
         "model_name": HF_TEXT_MODEL,
-        "provider": "huggingface",
+        "provider": getattr(config, "PROVIDER", "huggingface"),
     },
     "budget": {
         "model_name": HF_TEXT_MODEL,
-        "provider": "huggingface",
+        "provider": getattr(config, "PROVIDER", "huggingface"),
     },
     "explain": {
         "model_name": HF_TEXT_MODEL,
-        "provider": "huggingface",
+        "provider": getattr(config, "PROVIDER", "huggingface"),
     },
     "embedding": {
         "model_name": "future-embedding",
@@ -306,6 +306,9 @@ class ModelManager:
                     if provider_name == "huggingface":
                         from providers.huggingface_provider import HuggingFaceProvider
                         self.providers[key] = HuggingFaceProvider()
+                    elif provider_name == "deepinfra":
+                        from providers.deepinfra_provider import DeepInfraProvider
+                        self.providers[key] = DeepInfraProvider()
                     else:
                         raise ValueError(f"Provider '{provider_name}' is currently unsupported.")
         return self.providers[key]
@@ -451,20 +454,22 @@ class ModelManager:
             self._set_state(task, "Loading")
             self.events.emit("model_loading", task=task, model_name=model_name)
 
-            # Download Manager Check
-            self._verify_and_download_model(model_name)
+            if provider_name == "huggingface":
+                # Download Manager Check
+                self._verify_and_download_model(model_name)
 
-            # Model Integrity Check
-            self._verify_model_integrity(model_name)
+                # Model Integrity Check
+                self._verify_model_integrity(model_name)
 
-            # Execute scheduling checks
-            self._schedule_vram(task)
+                # Execute scheduling checks
+                self._schedule_vram(task)
 
             start_time = time.perf_counter()
             try:
-                # Fetch tokenizer and processor from central pools and configure provider
-                provider.tokenizer = self.tokenizer_pool.get(model_name)
-                provider.processor = self.processor_pool.get(model_name)
+                if provider_name == "huggingface":
+                    # Fetch tokenizer and processor from central pools and configure provider
+                    provider.tokenizer = self.tokenizer_pool.get(model_name)
+                    provider.processor = self.processor_pool.get(model_name)
 
                 # Load provider weights
                 provider.load(model_name, task)

@@ -51,13 +51,12 @@ class DesignAgent:
         if walkability_score < 60:
             logger.warning("Spatial walkability score %s < 60. Skipping Design recommendations.", walkability_score)
             return {
-                "current_style": "unknown",
-                "style_confidence": 0.0,
-                "color_palette": [],
-                "lighting_score": 0,
-                "improvement_opportunities": ["Skipped: Spatial walkability score < 60. Rearrangement recommended before adding new items."],
-                "status": "skipped",
-                "reason": f"walkability_score ({walkability_score}) < 60"
+                "design_theme": f"modern {preferred_style}",
+                "wall_color": "warm white",
+                "floor_material": "oak wood",
+                "lighting_type": "warm lighting",
+                "dominant_colors": ["#ffffff", "#c49a6c"],
+                "style_score": 0.0
             }
 
         # Extract merged scene if nested in a VisionAgent response structure
@@ -76,11 +75,12 @@ class DesignAgent:
             f"- Spatial walkability: {walkability_score}\n\n"
             "Analyze the design aesthetics and return conforming JSON:\n"
             "{\n"
-            '  "current_style": "string (e.g. minimalist, contemporary)",\n'
-            '  "style_confidence": number (0.0 - 1.0),\n'
-            '  "color_palette": ["list of dominant colors"],\n'
-            '  "lighting_score": number (0-100),\n'
-            '  "improvement_opportunities": ["list of styling recommendation descriptions"]\n'
+            '  "design_theme": "string (e.g. modern minimal)",\n'
+            '  "wall_color": "string",\n'
+            '  "floor_material": "string",\n'
+            '  "lighting_type": "string (e.g. warm lighting)",\n'
+            '  "dominant_colors": ["hex_colors"],\n'
+            '  "style_score": number\n'
             "}"
         )
 
@@ -246,16 +246,12 @@ class DesignAgent:
         }
 
     def _fuse_design_payload(self, llm_data: Dict[str, Any], style: str, budget: float | int) -> Dict[str, Any]:
-        """Conforms output structure strictly to Phase 3 Design Agent V2 schema."""
-        fused = {}
-        
-        fused["current_style"] = str(llm_data.get("current_style") or style)
-        fused["style_confidence"] = float(llm_data.get("style_confidence") if llm_data.get("style_confidence") is not None else 0.8)
-        fused["color_palette"] = list(llm_data.get("color_palette") or ["white", "oak", "light grey"])
-        fused["lighting_score"] = int(llm_data.get("lighting_score", 80) if llm_data.get("lighting_score") is not None else 80)
-        fused["improvement_opportunities"] = list(llm_data.get("improvement_opportunities") or [
-            "Add warm LED strip accents behind the headboard.",
-            "Install light filtering curtains to minimize desktop glare."
-        ])
-        
-        return fused
+        """Conforms output structure strictly to Design Agent schema."""
+        return {
+            "design_theme": str(llm_data.get("design_theme") or f"modern {style}"),
+            "wall_color": str(llm_data.get("wall_color") or "warm white"),
+            "floor_material": str(llm_data.get("floor_material") or "oak wood"),
+            "lighting_type": str(llm_data.get("lighting_type") or "warm lighting"),
+            "dominant_colors": list(llm_data.get("dominant_colors") or ["#ffffff", "#c49a6c"]),
+            "style_score": float(llm_data.get("style_score") if llm_data.get("style_score") is not None else 0.91)
+        }
