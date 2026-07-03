@@ -218,6 +218,18 @@ class CommerceAgent:
                             price = float(price_cleaned) if price_cleaned else 0.0
                         except Exception:
                             price = 0.0
+
+                        # Dynamic currency conversion: if USD, convert to INR
+                        is_usd = False
+                        if "$" in price_str or "usd" in price_str.lower():
+                            is_usd = True
+                        elif item.get("currency") == "USD":
+                            is_usd = True
+                        elif price < 1500 and not any(sym in price_str for sym in ("₹", "Rs", "Rs.", "INR", "inr")):
+                            is_usd = True
+
+                        if is_usd:
+                            price = round(price * 83.0, 2)
                             
                         # Detect brand from title or source
                         source = item.get("source", "")

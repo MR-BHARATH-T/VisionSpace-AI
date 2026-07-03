@@ -90,13 +90,68 @@ class ReconstructionAgent:
                     fill_colors = [(46, 204, 113, 90), (245, 176, 65, 90), (52, 152, 219, 90)]
                     outline_colors = [(39, 174, 96, 255), (230, 126, 34, 255), (41, 128, 185, 255)]
                     
+                    # A. Optional high-fidelity FLUX.1-Kontext-dev generation (requires VRAM & accepted terms)
+                    import os
+                    if os.environ.get("USE_FLUX") == "True":
+                        try:
+                            logger.info("Attempting high-fidelity FLUX.1-Kontext-dev generation...")
+                            import torch
+                            from diffusers import FluxKontextPipeline
+                            
+                            # Build instruction-based edit prompt
+                            product_names = ", ".join([f"{item.get('style', '')} {item.get('brand', '')} {item.get('name', '')}" for item in recommended[:3]])
+                            flux_prompt = f"Preserve the existing room exactly. Add: {product_names}. Maintain: existing lighting, existing perspective, existing objects. Do not modify: walls, flooring, room dimensions."
+                            
+                            # Load model pipeline
+                            pipe = FluxKontextPipeline.from_pretrained("black-forest-labs/FLUX.1-Kontext-dev", torch_dtype=torch.bfloat16)
+                            pipe.to("cuda")
+                            
+                            # Generate edited image
+                            reconstructed_flux = pipe(
+                                image=Image.open(orig_image_path).convert("RGB"),
+                                prompt=flux_prompt,
+                                guidance_scale=2.5
+                            ).images[0]
+                            
+                            # Convert back to RGBA
+                            base_img = reconstructed_flux.convert("RGBA")
+                            logger.info("Successfully completed FLUX Kontext image editing generation!")
+                        except Exception as flux_err:
+                            logger.warning("FLUX.1-Kontext-dev pipeline load or inference failed: %s. Falling back to PIL visual compositing.", str(flux_err))
+
+                    # B. Fast & reliable PIL visual compositing (downloads and overlays product images)
                     for idx, item in enumerate(recommended[:3]):
                         coords = box_coords[idx]
                         f_color = fill_colors[idx]
                         o_color = outline_colors[idx]
                         
-                        # Draw translucent overlay block representing the placed furniture
-                        draw.rectangle(coords, fill=f_color, outline=o_color, width=4)
+                        # Attempt to download product image
+                        product_img = None
+                        img_url = item.get("image")
+                        if img_url:
+                            try:
+                                import requests
+                                from io import BytesIO
+                                response = requests.get(img_url, timeout=10)
+                                if response.status_code == 200:
+                                    product_img = Image.open(BytesIO(response.content)).convert("RGBA")
+                            except Exception as e:
+                                logger.warning("Failed to fetch product image from %s: %s", img_url, str(e))
+
+                        if product_img:
+                            # Resize product image to match target bounding box coordinates
+                            box_w = coords[2] - coords[0]
+                            box_h = coords[3] - coords[1]
+                            product_img_resized = product_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
+                            
+                            # Paste product image directly onto the base image
+                            base_img.paste(product_img_resized, (coords[0], coords[1]), product_img_resized)
+                            
+                            # Draw outline border around the pasted product image
+                            draw.rectangle(coords, fill=None, outline=o_color, width=3)
+                        else:
+                            # Draw fallback colored rectangle representation
+                            draw.rectangle(coords, fill=f_color, outline=o_color, width=4)
                         
                         # Draw lead card coordinates
                         text_x = coords[0] + 15

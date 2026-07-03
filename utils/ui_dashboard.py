@@ -349,6 +349,14 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     # Display card and button row
                     display(widgets.HBox([widgets.HTML(card_html), try_btn]))
 
+                # Zip output files
+                print("\n📦 Zipping output files...")
+                try:
+                    shutil.make_archive("outputs", "zip", "outputs")
+                    print("Zipping complete! Created outputs.zip successfully.")
+                except Exception as zip_err:
+                    print(f"⚠️ Warning: Zipping failed: {str(zip_err)}")
+
             except Exception as e:
                 print(f" Execution crashed: {str(e)}")
                 raise e
