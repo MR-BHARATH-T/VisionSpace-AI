@@ -32,9 +32,18 @@ def image_to_base64(img_path: pathlib.Path) -> str:
         return ""
 
 
-def display_interactive_dashboard(uploader_widget: Any) -> None:
+def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None:
     """Constructs and renders the interactive dashboard in a Jupyter/Kaggle cell."""
     
+    # Instantiate FileUpload widget natively if not passed
+    if uploader_widget is None:
+        uploader_widget = widgets.FileUpload(
+            accept='image/*',
+            multiple=True,
+            description="📸 Upload Room Snaps",
+            layout=widgets.Layout(width="250px", height="35px")
+        )
+
     # 1. Inputs control form widgets
     style_widget = widgets.Dropdown(
         options=["modern", "minimalist", "scandinavian", "contemporary", "industrial"],
@@ -43,7 +52,7 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
     )
     
     budget_widget = widgets.IntSlider(
-        value=50000,
+        value=40000,
         min=5000,
         max=200000,
         step=5000,
@@ -51,13 +60,13 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
     )
     
     brands_widget = widgets.SelectMultiple(
-        options=["IKEA", "Urban Ladder", "Godrej Interio"],
-        value=["IKEA", "Urban Ladder"],
+        options=["IKEA", "Urban Ladder", "Godrej Interio", "Green Soul"],
+        value=["IKEA", "Godrej Interio", "Green Soul"],
         description="Brands:"
     )
     
     products_widget = widgets.Text(
-        value="study table, office chair",
+        value="study table, office chair, bookshelf",
         placeholder="e.g. study desk, reading chair, lamp",
         description="Required Items:"
     )
@@ -68,11 +77,23 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
         layout=widgets.Layout(width="250px", height="40px", margin="20px 0px")
     )
     
+    # Main outputs container
     output_area = widgets.Output()
+    
+    # State tracking dictionary
+    state = {
+        "pipeline": None,
+        "out": None,
+        "session_path": None,
+        "image_box": None
+    }
 
     # Layout forms HBox/VBox
     form_layout = widgets.VBox([
         widgets.HTML("<h3>🛠️ Step 2: Configure Workspace Selections (Phase 0)</h3>"),
+        widgets.HTML("<b>1. Upload Room Snaps (Select one or more images):</b>"),
+        uploader_widget,
+        widgets.HTML("<br><b>2. Set Curation & Aesthetic Parameters:</b>"),
         style_widget,
         budget_widget,
         brands_widget,
@@ -82,6 +103,52 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
 
     display(form_layout)
     display(output_area)
+
+    def get_comparison_html(b64_before: str, b64_after: str) -> str:
+        return f"""
+        <div class="image-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                <img src="data:image/png;base64,{b64_before}" alt="Before View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Original Viewpoint</div>
+            </div>
+            <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Reconstructed Layout Preview</div>
+            </div>
+        </div>
+        """
+
+    def on_try_product(product_item: Dict[str, Any]) -> None:
+        if not state["pipeline"] or not state["session_path"]:
+            return
+        
+        with output_area:
+            print(f"🛋️ Try in Room: Placing '{product_item.get('name')}' in layout...")
+            try:
+                # Dynamically rerun reconstruction using only the selected product
+                recon = state["pipeline"].reconstruction_agent.plan_reconstruction(
+                    vision_output=state["out"]["vision"]["merged_scene"],
+                    commerce_output={"recommended_products": [product_item]},
+                    session_path=state["session_path"]
+                )
+                
+                # Fetch image paths
+                before_img_name = state["out"].get("reconstruction", {}).get("before_image", "original_1.png")
+                after_img_name = recon.get("after_image", "processed_reconstructed.png")
+                
+                before_path = state["session_path"] / "original_images" / before_img_name
+                if not before_path.exists():
+                    before_path = state["session_path"] / "processed_images" / "processed_1.png"
+                after_path = state["session_path"] / after_img_name
+                
+                b64_before = image_to_base64(before_path)
+                b64_after = image_to_base64(after_path)
+                
+                # Update the HTML comparison image box
+                state["image_box"].value = get_comparison_html(b64_before, b64_after)
+                print(f"✅ Success! Placed {product_item.get('name')} in the preview layout.")
+            except Exception as e:
+                print(f"❌ Product placement failed: {str(e)}")
 
     def on_run_clicked(b: Any) -> None:
         with output_area:
@@ -116,7 +183,7 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
                         # Save to uploads dir
                         with open(uploads_dir / file_name, "wb") as f:
                             f.write(content)
-                print(f"✅ Loaded {len(images)} uploaded images from Cell 2 widget.")
+                print(f"✅ Loaded {len(images)} uploaded images.")
             else:
                 # Fallback check
                 print("ℹ️ No widget uploads detected. Searching fallback room view assets...")
@@ -129,7 +196,7 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
                         shutil.copy(path, uploads_dir / path.name)
                         
             if not images:
-                print("❌ Error: No room images found! Please select files in Cell 2 first.")
+                print("❌ Error: No room images found! Please upload files first.")
                 return
 
             print("🤖 Instantiating orchestrator...")
@@ -139,7 +206,7 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
             user_prefs = {
                 "required_products": [p.strip() for p in products_widget.value.split(",") if p.strip()],
                 "preferred_brands": list(brands_widget.value),
-                "excluded_brands": ["Local"],
+                "excluded_brands": [],
                 "budget_range": {
                     "minimum": 0,
                     "maximum": budget_widget.value
@@ -157,8 +224,12 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
                     progress_callback=lambda step: print(f"  [Step] {step}")
                 )
                 
-                # Fetch results file paths
                 session_path = pathlib.Path(out["session_path"])
+                state["pipeline"] = pipeline
+                state["out"] = out
+                state["session_path"] = session_path
+
+                # Fetch results file paths
                 before_img_name = out.get("reconstruction", {}).get("before_image", "original_1.png")
                 after_img_name = out.get("reconstruction", {}).get("after_image", "processed_reconstructed.png")
                 
@@ -171,8 +242,11 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
                 b64_before = image_to_base64(before_path)
                 b64_after = image_to_base64(after_path)
 
+                # Initialize HTML comparison widget
+                state["image_box"] = widgets.HTML(value=get_comparison_html(b64_before, b64_after))
+
                 # Render dynamic styled dashboard
-                html_code = f"""
+                dashboard_details = f"""
                 <style>
                     .dashboard-container {{
                         font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -187,30 +261,6 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
                         margin-bottom: 25px;
                         border-bottom: 2px solid #2d3748;
                         padding-bottom: 10px;
-                    }}
-                    .image-grid {{
-                        display: grid;
-                        grid-template-columns: 1fr 1fr;
-                        gap: 20px;
-                        margin-bottom: 30px;
-                    }}
-                    .image-card {{
-                        background: #1a202c;
-                        border-radius: 8px;
-                        padding: 10px;
-                        border: 1px solid #2d3748;
-                        text-align: center;
-                    }}
-                    .image-card img {{
-                        max-width: 100%;
-                        border-radius: 6px;
-                        height: auto;
-                        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-                    }}
-                    .image-label {{
-                        font-weight: bold;
-                        margin-top: 8px;
-                        color: #a0aec0;
                     }}
                     .details-grid {{
                         display: grid;
@@ -230,19 +280,6 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
                         border-bottom: 1px solid #2d3748;
                         padding-bottom: 5px;
                     }}
-                    table {{
-                        width: 100%;
-                        border-collapse: collapse;
-                        margin-top: 10px;
-                    }}
-                    th, td {{
-                        text-align: left;
-                        padding: 8px;
-                        border-bottom: 1px solid #2d3748;
-                    }}
-                    th {{
-                        color: #94a3b8;
-                    }}
                     .score-tag {{
                         background: #1e293b;
                         padding: 2px 6px;
@@ -257,58 +294,61 @@ def display_interactive_dashboard(uploader_widget: Any) -> None:
                         <p style="color: #94a3b8;">Interactive View Comparison and Product Curation Summary</p>
                     </div>
                     
-                    <div class="image-grid">
-                        <div class="image-card">
-                            <img src="data:image/png;base64,{b64_before}" alt="Before Layout">
-                            <div class="image-label">Original Viewpoint</div>
-                        </div>
-                        <div class="image-card">
-                            <img src="data:image/png;base64,{b64_after}" alt="Reconstructed Layout">
-                            <div class="image-label">Visual Layout Preview (Product Placed Overlay)</div>
-                        </div>
-                    </div>
-
                     <div class="details-grid">
                         <div class="info-card">
                             <h4>📋 Spatial Audit & Design Alignment</h4>
                             <p><b>Walkability Index:</b> {out['spatial'].get('walkability_score')}/100</p>
-                            <p><b>Style Style Identified:</b> {out['design'].get('design_theme', out['design'].get('current_style', 'modern'))}</p>
-                            <p><b>Usable Floor Area:</b> {out['spatial'].get('usable_area', out['spatial'].get('usable_area_percentage', 0))} sqm</p>
-                            <p><b>Improvement Opportunities:</b></p>
-                            <ul>
-                                {"".join(f"<li>{item}</li>" for item in out['design'].get('improvement_opportunities', [f"Applied design theme: {out['design'].get('design_theme', 'modern minimal')}"]))}
-                            </ul>
+                            <p><b>Style Theme Identified:</b> {out['design'].get('design_theme', 'modern minimal')}</p>
+                            <p><b>Usable Floor Area:</b> {out['spatial'].get('usable_area', 0)} sqm</p>
                         </div>
                         
                         <div class="info-card">
                             <h4>💰 Budget Breakdown</h4>
-                            <p><b>Total Recommended Cost:</b> Rs. {out['budget'].get('total', out['budget'].get('total_cost', 0))}</p>
+                            <p><b>Total Selected Cost:</b> Rs. {out['budget'].get('total')}</p>
                             <p><b>Limit Setting:</b> Rs. {out['budget'].get('budget_limit')}</p>
                             <p><b>Reserves Remaining:</b> Rs. {out['budget'].get('remaining_budget')}</p>
-                            <p><b>Spending Utilization:</b> {out['budget'].get('budget_utilization_percentage', int((out['budget'].get('total', 0) / max(1, out['budget'].get('budget_limit', 1))) * 100))}%</p>
                         </div>
-                    </div>
-
-                    <div class="info-card">
-                        <h4>🛒 Dynamic Shopping Curation (Google Shopping Live Ranked Results)</h4>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Item</th>
-                                    <th>Brand</th>
-                                    <th>Price</th>
-                                    <th>Scoring Parameters (Fit / Style / Budget)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {"".join(f"<tr><td>{p.get('name')}</td><td>{p.get('brand')}</td><td>Rs. {p.get('price')}</td><td><span class='score-tag'>Rank Score: {p.get('final_score')}</span></td></tr>" for p in out['commerce'].get('recommended_products', []))}
-                            </tbody>
-                        </table>
                     </div>
                 </div>
                 """
-                display(HTML(html_code))
+                display(HTML(dashboard_details))
+                display(state["image_box"])
+
+                # Render dynamic catalog cards with "Try in Room" callback buttons
+                print("\n🛒 Recommended Products List (Click '🛋️ Place in Room' to test in layout):")
                 
+                recommended_list = out["commerce"].get("recommended_products", [])
+                
+                for item in recommended_list[:10]:
+                    img_url = item.get("image") or "https://via.placeholder.com/150"
+                    
+                    # Create card details layout
+                    card_html = f"""
+                    <div style="display: flex; align-items: center; background: #1a202c; border: 1px solid #2d3748; border-radius: 8px; padding: 12px; margin-bottom: 10px; width: 680px; color: #ffffff;">
+                        <img src="{img_url}" style="width: 80px; height: 80px; border-radius: 6px; object-fit: cover; margin-right: 15px; border: 1px solid #2d3748;">
+                        <div style="flex-grow: 1;">
+                            <div style="font-weight: bold; font-size: 16px; color: #38bdf8;">{item.get('name')}</div>
+                            <div style="color: #94a3b8; font-size: 13px; margin: 4px 0;">Brand: <b>{item.get('brand')}</b> | Style: {item.get('style')}</div>
+                            <div>
+                                <span style="font-weight: bold; color: #fbbf24;">Rs. {item.get('price')}</span>
+                                <span class="score-tag" style="margin-left: 10px;">Rank Score: {item.get('final_score')}</span>
+                            </div>
+                        </div>
+                    </div>
+                    """
+                    
+                    try_btn = widgets.Button(
+                        description="🛋️ Place in Room",
+                        button_style="info",
+                        layout=widgets.Layout(width="150px", height="35px", margin="auto 10px")
+                    )
+                    
+                    # Bind local callback
+                    try_btn.on_click(lambda b, p=item: on_try_product(p))
+                    
+                    # Display card and button row
+                    display(widgets.HBox([widgets.HTML(card_html), try_btn]))
+
             except Exception as e:
                 print(f"❌ Execution crashed: {str(e)}")
                 raise e
