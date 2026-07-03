@@ -157,6 +157,19 @@ class ProductionPipelineV2:
         reconstruct_output = {}
         if progress_callback:
             progress_callback("Phase 7: Mapping layout transformation delta...")
+            
+        # Free GPU memory before Reconstruction Phase
+        try:
+            self.vision_agent.model_manager.unload_all()
+            import torch
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            logger.info("Cleared VRAM memory to prepare for image reconstruction.")
+        except Exception as e:
+            logger.warning("Failed to clear VRAM: %s", str(e))
+
         reconstruct_output = self.reconstruction_agent.plan_reconstruction(
             vision_output=merged_scene,
             commerce_output={"recommended_products": selected_products},

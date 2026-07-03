@@ -108,34 +108,74 @@ class ReconstructionAgent:
                         fill_colors = [(46, 204, 113, 90), (245, 176, 65, 90), (52, 152, 219, 90)]
                         outline_colors = [(39, 174, 96, 255), (230, 126, 34, 255), (41, 128, 185, 255)]
                         
-                        # A. Optional high-fidelity FLUX.1-Kontext-dev generation (requires VRAM & accepted terms)
+                        # A. Natural, realistic image-to-image layout reconstruction (GPU-accelerated)
                         import os
-                        if os.environ.get("USE_FLUX") == "True":
-                            try:
-                                logger.info(f"Attempting high-fidelity FLUX.1-Kontext-dev generation for view {img_idx + 1}...")
-                                import torch
-                                from diffusers import FluxKontextPipeline
-                                
-                                # Build instruction-based edit prompt
-                                product_names = ", ".join([f"{item.get('style', '')} {item.get('brand', '')} {item.get('name', '')}" for item in recommended[:3]])
-                                flux_prompt = f"Preserve the existing room exactly. Add: {product_names}. Maintain: existing lighting, existing perspective, existing objects. Do not modify: walls, flooring, room dimensions."
-                                
-                                # Load model pipeline
-                                pipe = FluxKontextPipeline.from_pretrained("black-forest-labs/FLUX.1-Kontext-dev", torch_dtype=torch.bfloat16)
-                                pipe.to("cuda")
-                                
-                                # Generate edited image
-                                reconstructed_flux = pipe(
-                                    image=Image.open(orig_image_path).convert("RGB"),
-                                    prompt=flux_prompt,
-                                    guidance_scale=2.5
-                                ).images[0]
-                                
-                                # Convert back to RGBA
-                                base_img = reconstructed_flux.convert("RGBA")
-                                logger.info(f"Successfully completed FLUX Kontext image editing generation for view {img_idx + 1}!")
-                            except Exception as flux_err:
-                                logger.warning("FLUX.1-Kontext-dev pipeline load or inference failed: %s. Falling back to PIL visual compositing.", str(flux_err))
+                        run_editing = True
+                        if os.environ.get("SKIP_IMAGE_EDITING") == "True":
+                            run_editing = False
+
+                        if run_editing:
+                            # 1. Option: FLUX.1-Kontext-dev if explicitly requested
+                            if os.environ.get("USE_FLUX") == "True":
+                                try:
+                                    logger.info(f"Attempting high-fidelity FLUX.1-Kontext-dev generation for view {img_idx + 1}...")
+                                    import torch
+                                    from diffusers import FluxKontextPipeline
+                                    
+                                    # Build instruction-based edit prompt
+                                    product_names = ", ".join([f"{item.get('style', '')} {item.get('brand', '')} {item.get('name', '')}" for item in recommended[:3]])
+                                    flux_prompt = f"Preserve the existing room exactly. Add: {product_names}. Maintain: existing lighting, existing perspective, existing objects. Do not modify: walls, flooring, room dimensions."
+                                    
+                                    # Load model pipeline
+                                    pipe = FluxKontextPipeline.from_pretrained("black-forest-labs/FLUX.1-Kontext-dev", torch_dtype=torch.bfloat16)
+                                    pipe.to("cuda")
+                                    
+                                    # Generate edited image
+                                    reconstructed_flux = pipe(
+                                        image=Image.open(orig_image_path).convert("RGB"),
+                                        prompt=flux_prompt,
+                                        guidance_scale=2.5
+                                    ).images[0]
+                                    
+                                    # Convert back to RGBA
+                                    base_img = reconstructed_flux.convert("RGBA")
+                                    logger.info(f"Successfully completed FLUX Kontext image editing generation for view {img_idx + 1}!")
+                                except Exception as flux_err:
+                                    logger.warning("FLUX.1-Kontext-dev pipeline load or inference failed: %s. Falling back to InstructPix2Pix.", str(flux_err))
+
+                            # 2. Option: timbrooks/instruct-pix2pix by default (runs in ~5s, no HF gated terms required)
+                            if os.environ.get("USE_FLUX") != "True" or "reconstructed_flux" not in locals() or base_img is None:
+                                try:
+                                    logger.info(f"Attempting fast local instruct-pix2pix generation for view {img_idx + 1}...")
+                                    import torch
+                                    from diffusers import StableDiffusionInstructPix2PixPipeline
+                                    
+                                    # Load Stable Diffusion InstructPix2Pix pipeline (very fast, low memory, ungated weights)
+                                    pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained(
+                                        "timbrooks/instruct-pix2pix",
+                                        torch_dtype=torch.float16,
+                                        safety_checker=None
+                                    )
+                                    pipe.to("cuda")
+                                    
+                                    # Build instruction-based edit prompt
+                                    products_str = " and ".join([f"{item.get('style', '')} {item.get('brand', '')} {item.get('name', '')}" for item in recommended[:3]])
+                                    edit_prompt = f"add a {products_str} to the available empty space in the room naturally, matching style and perspective"
+                                    
+                                    # Run local image editing
+                                    reconstructed_img = pipe(
+                                        prompt=edit_prompt,
+                                        image=Image.open(orig_image_path).convert("RGB"),
+                                        num_inference_steps=20,
+                                        image_guidance_scale=1.5,
+                                        guidance_scale=7.5
+                                    ).images[0]
+                                    
+                                    # Convert back to RGBA
+                                    base_img = reconstructed_img.convert("RGBA")
+                                    logger.info(f"Successfully completed natural image-to-image reconstruction editing for view {img_idx + 1}!")
+                                except Exception as edit_err:
+                                    logger.warning("Local instruct-pix2pix pipeline load or inference failed: %s. Falling back to PIL visual compositing.", str(edit_err))
 
                         # B. Fast & reliable PIL visual compositing (downloads and overlays product images)
                         for idx, item in enumerate(recommended[:3]):
