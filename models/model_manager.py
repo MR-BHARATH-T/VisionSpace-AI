@@ -1022,6 +1022,7 @@ class ModelManager:
         """Checks if model weights for task are active in VRAM."""
         if task not in MODEL_REGISTRY:
             return False
+        meta = MODEL_REGISTRY[task]
         provider_name = meta["provider"]
         if provider_name != "future":
             provider_name = getattr(config, "PROVIDER", "huggingface")
