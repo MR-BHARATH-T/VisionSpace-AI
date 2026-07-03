@@ -74,6 +74,17 @@ class SpatialAgent:
         windows = room_data.get("windows", [])
         grid_data = room_data.get("occupancy_grid", room_data.get("occupancy_grid_data", {}))
         
+        # Ensure all objects, doors, and windows have unique ID keys
+        for idx, obj in enumerate(objects):
+            if "id" not in obj:
+                obj["id"] = f"{obj.get('name', 'object').lower().replace(' ', '_')}_{idx}"
+        for idx, door in enumerate(doors):
+            if "id" not in door:
+                door["id"] = f"door_{idx}"
+        for idx, win in enumerate(windows):
+            if "id" not in win:
+                win["id"] = f"window_{idx}"
+        
         # Fallback: if raw grid cells are missing (e.g. read from merged_output.json), load them from occupancy_grid.json
         if not grid_data.get("cells") and session_path:
             import json

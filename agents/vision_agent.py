@@ -1000,6 +1000,16 @@ class VisionAgent:
         # Serialize outputs to the session path if provided
         if session_path is not None:
             # Save scene graph
+            for idx, obj in enumerate(base_scene["objects"]):
+                if "id" not in obj:
+                    obj["id"] = f"{obj.get('name', 'object').lower().replace(' ', '_')}_{idx}"
+            for idx, d in enumerate(base_scene["doors"]):
+                if "id" not in d:
+                    d["id"] = f"door_{idx}"
+            for idx, w in enumerate(base_scene["windows"]):
+                if "id" not in w:
+                    w["id"] = f"window_{idx}"
+
             nodes = [obj["id"] for obj in base_scene["objects"]]
             for d in base_scene["doors"]:
                 nodes.append(d["id"])
