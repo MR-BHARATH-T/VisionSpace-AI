@@ -129,20 +129,45 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     session_path=state["session_path"]
                 )
                 
-                # Fetch image paths
-                before_img_name = state["out"].get("reconstruction", {}).get("before_image", "original_1.png")
-                after_img_name = recon.get("after_image", "processed_reconstructed.png")
+                # Fetch all processed viewpoint paths
+                reconstructed_views = sorted(list(state["session_path"].glob("processed_reconstructed_*.png")))
+                if not reconstructed_views:
+                    reconstructed_views = [state["session_path"] / "processed_reconstructed.png"]
                 
-                before_path = state["session_path"] / "original_images" / before_img_name
-                if not before_path.exists():
-                    before_path = state["session_path"] / "processed_images" / "processed_1.png"
-                after_path = state["session_path"] / after_img_name
+                comparison_html_list = []
+                for idx, after_path in enumerate(reconstructed_views):
+                    before_img_name = f"original_{idx + 1}.png"
+                    before_path = state["session_path"] / "original_images" / before_img_name
+                    if not before_path.exists():
+                        before_path = state["session_path"] / "processed_images" / f"processed_{idx + 1}.png"
+                    if not before_path.exists():
+                        before_path = state["session_path"] / "original_images" / "original_1.png"
+                    if not before_path.exists():
+                        before_path = state["session_path"] / "processed_images" / "processed_1.png"
+                        
+                    if after_path.exists() and before_path.exists():
+                        b64_before = image_to_base64(before_path)
+                        b64_after = image_to_base64(after_path)
+                        view_title = f"Viewpoint {idx + 1}"
+                        
+                        comparison_html = f"""
+                        <div style="margin-top: 15px; border-top: 1px solid #2d3748; padding-top: 15px;">
+                            <h4 style="color: #38bdf8; font-family: 'Inter', sans-serif; margin-bottom: 10px;">📸 Layout Reconstruction comparison - {view_title}</h4>
+                            <div class="image-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                                    <img src="data:image/png;base64,{b64_before}" alt="Before View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Original Viewpoint ({view_title})</div>
+                                </div>
+                                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                                    <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Reconstructed Layout Preview ({view_title})</div>
+                                </div>
+                            </div>
+                        </div>
+                        """
+                        comparison_html_list.append(comparison_html)
                 
-                b64_before = image_to_base64(before_path)
-                b64_after = image_to_base64(after_path)
-                
-                # Update the HTML comparison image box
-                state["image_box"].value = get_comparison_html(b64_before, b64_after)
+                state["image_box"].value = "\n".join(comparison_html_list)
                 print(f" Success! Placed {product_item.get('name')} in the preview layout.")
             except Exception as e:
                 print(f" Product placement failed: {str(e)}")
@@ -226,21 +251,46 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 state["out"] = out
                 state["session_path"] = session_path
 
-                # Fetch results file paths
-                before_img_name = out.get("reconstruction", {}).get("before_image", "original_1.png")
-                after_img_name = out.get("reconstruction", {}).get("after_image", "processed_reconstructed.png")
+                # Fetch all processed viewpoint paths
+                reconstructed_views = sorted(list(session_path.glob("processed_reconstructed_*.png")))
+                if not reconstructed_views:
+                    reconstructed_views = [session_path / "processed_reconstructed.png"]
                 
-                before_path = session_path / "original_images" / before_img_name
-                if not before_path.exists():
-                    before_path = session_path / "processed_images" / "processed_1.png"
-                after_path = session_path / after_img_name
-
-                # Load image base64 elements
-                b64_before = image_to_base64(before_path)
-                b64_after = image_to_base64(after_path)
-
-                # Initialize HTML comparison widget
-                state["image_box"] = widgets.HTML(value=get_comparison_html(b64_before, b64_after))
+                comparison_html_list = []
+                for idx, after_path in enumerate(reconstructed_views):
+                    before_img_name = f"original_{idx + 1}.png"
+                    before_path = session_path / "original_images" / before_img_name
+                    if not before_path.exists():
+                        before_path = session_path / "processed_images" / f"processed_{idx + 1}.png"
+                    if not before_path.exists():
+                        before_path = session_path / "original_images" / "original_1.png"
+                    if not before_path.exists():
+                        before_path = session_path / "processed_images" / "processed_1.png"
+                        
+                    if after_path.exists() and before_path.exists():
+                        b64_before = image_to_base64(before_path)
+                        b64_after = image_to_base64(after_path)
+                        view_title = f"Viewpoint {idx + 1}"
+                        
+                        comparison_html = f"""
+                        <div style="margin-top: 15px; border-top: 1px solid #2d3748; padding-top: 15px;">
+                            <h4 style="color: #38bdf8; font-family: 'Inter', sans-serif; margin-bottom: 10px;">📸 Layout Reconstruction comparison - {view_title}</h4>
+                            <div class="image-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                                    <img src="data:image/png;base64,{b64_before}" alt="Before View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Original Viewpoint ({view_title})</div>
+                                </div>
+                                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                                    <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Reconstructed Layout Preview ({view_title})</div>
+                                </div>
+                            </div>
+                        </div>
+                        """
+                        comparison_html_list.append(comparison_html)
+                
+                # Initialize HTML comparison widget containing all grids
+                state["image_box"] = widgets.HTML(value="\n".join(comparison_html_list))
 
                 # Render dynamic styled dashboard
                 dashboard_details = f"""
