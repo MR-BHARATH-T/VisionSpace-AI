@@ -18,7 +18,6 @@ pydantic
 einops
 tqdm
 requests
-requests
 nvidia-ml-py
 json-repair
 python-dotenv
