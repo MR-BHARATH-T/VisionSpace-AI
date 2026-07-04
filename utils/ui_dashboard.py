@@ -120,7 +120,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
             return
         
         with output_area:
-            print(f"🛋️ Try in Room: Placing '{product_item.get('name')}' in layout...")
+            print(f" Try in Room: Placing '{product_item.get('name')}' in layout...")
             try:
                 # Dynamically rerun reconstruction using only the selected product
                 recon = state["pipeline"].reconstruction_agent.plan_reconstruction(
@@ -358,27 +358,27 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     </div>
 
                     <div class="info-card" style="margin-top: 15px; margin-bottom: 15px; border-color: #38bdf8;">
-                        <h4>🤖 Agent Execution Logs & Summaries</h4>
+                        <h4> Agent Execution Logs & Summaries</h4>
                         <details style="margin-bottom: 8px; cursor: pointer;">
-                            <summary style="font-weight: bold; color: #38bdf8;">👁️ Phase 1: Unified Vision Agent Pass</summary>
+                            <summary style="font-weight: bold; color: #38bdf8;"> Phase 1: Unified Vision Agent Pass</summary>
                             <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
                                 Loaded room snaps and executed unified Qwen-VL vision pass. Identified room architecture, doors, windows, and existing furniture positions with coordinates.
                             </p>
                         </details>
                         <details style="margin-bottom: 8px; cursor: pointer;">
-                            <summary style="font-weight: bold; color: #38bdf8;">📐 Phase 2 & 3: Spatial clearance & Style Alignment Agent Pass</summary>
+                            <summary style="font-weight: bold; color: #38bdf8;"> Phase 2 & 3: Spatial clearance & Style Alignment Agent Pass</summary>
                             <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
                                 Validated layout clearances using spatial clearance logic. Evaluated walkability constraints, generated structural collision paths, and aligned with aesthetic style metrics.
                             </p>
                         </details>
                         <details style="margin-bottom: 8px; cursor: pointer;">
-                            <summary style="font-weight: bold; color: #38bdf8;">🛍️ Phase 4 & 5: Curation & Budget Curation Agent Pass</summary>
+                            <summary style="font-weight: bold; color: #38bdf8;"> Phase 4 & 5: Curation & Budget Curation Agent Pass</summary>
                             <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
                                 Queried SerpAPI/Mock Catalog to suggest items fitting user specifications. Filtered items to match split budget parameters.
                             </p>
                         </details>
                         <details style="margin-bottom: 8px; cursor: pointer;">
-                            <summary style="font-weight: bold; color: #38bdf8;">🖼️ Phase 6 & 7: Reconstruction & Output Delta Agent Pass</summary>
+                            <summary style="font-weight: bold; color: #38bdf8;"> Phase 6 & 7: Reconstruction & Output Delta Agent Pass</summary>
                             <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
                                 Completed pixel reconstruction overlays. Pasted selected product visuals directly onto the empty zones. Compiled all JSON files and created a ZIP archive.
                             </p>
@@ -390,7 +390,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 display(state["image_box"])
 
                 # Render dynamic catalog cards with "Try in Room" callback buttons
-                print("\n Recommended Products List (Click '🛋️ Place in Room' to test in layout):")
+                print("\n Recommended Products List (Click ' Place in Room' to test in layout):")
                 
                 recommended_list = out["commerce"].get("recommended_products", [])
                 
