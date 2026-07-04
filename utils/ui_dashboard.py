@@ -40,7 +40,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         uploader_widget = widgets.FileUpload(
             accept='image/*',
             multiple=True,
-            description="📸 Upload Room Snaps",
+            description=" Upload Room Snaps",
             layout=widgets.Layout(width="250px", height="35px")
         )
 
@@ -127,13 +127,13 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
             if product_item.get("name") in placed_names:
                 # Remove it
                 state["placed_products"] = [p for p in state["placed_products"] if p.get("name") != product_item.get("name")]
-                button.description = "🛋️ Place in Room"
+                button.description = " Place in Room"
                 button.button_style = "info"
                 print(f" Removed '{product_item.get('name')}' from layout placement list.")
             else:
                 # Add it
                 state["placed_products"].append(product_item)
-                button.description = "❌ Remove from Room"
+                button.description = " Remove from Room"
                 button.button_style = "danger"
                 print(f" Placed '{product_item.get('name')}' in layout placement list.")
                 
@@ -169,7 +169,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         
                         comparison_html = f"""
                         <div style="margin-top: 15px; border-top: 1px solid #2d3748; padding-top: 15px;">
-                            <h4 style="color: #38bdf8; font-family: 'Inter', sans-serif; margin-bottom: 10px;">📸 Layout Reconstruction comparison - {view_title}</h4>
+                            <h4 style="color: #38bdf8; font-family: 'Inter', sans-serif; margin-bottom: 10px;"> Layout Reconstruction comparison - {view_title}</h4>
                             <div class="image-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                                 <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
                                     <img src="data:image/png;base64,{b64_before}" alt="Before View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
@@ -294,7 +294,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         
                         comparison_html = f"""
                         <div style="margin-top: 15px; border-top: 1px solid #2d3748; padding-top: 15px;">
-                            <h4 style="color: #38bdf8; font-family: 'Inter', sans-serif; margin-bottom: 10px;">📸 Layout Reconstruction comparison - {view_title}</h4>
+                            <h4 style="color: #38bdf8; font-family: 'Inter', sans-serif; margin-bottom: 10px;"> Layout Reconstruction comparison - {view_title}</h4>
                             <div class="image-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
                                 <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
                                     <img src="data:image/png;base64,{b64_before}" alt="Before View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
@@ -304,7 +304,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                                     <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
                                     <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Reconstructed Layout Preview ({view_title})</div>
                                     <div style="margin-top: 10px;">
-                                        <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;">📥 Download Reconstructed View {idx+1}</a>
+                                        <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;"> Download Reconstructed View {idx+1}</a>
                                     </div>
                                 </div>
                             </div>
@@ -427,7 +427,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         <img src="{img_url}" style="width: 80px; height: 80px; border-radius: 6px; object-fit: cover; margin-right: 15px; border: 1px solid #2d3748;">
                         <div style="flex-grow: 1;">
                             <div style="font-weight: bold; font-size: 16px;">
-                                <a href="{item.get('link', '#')}" target="_blank" style="text-decoration: none; color: #38bdf8; font-weight: bold;">🔗 {item.get('name')}</a>
+                                <a href="{item.get('link', '#')}" target="_blank" style="text-decoration: none; color: #38bdf8; font-weight: bold;"> {item.get('name')}</a>
                             </div>
                             <div style="color: #94a3b8; font-size: 13px; margin: 4px 0;">Brand: <b>{item.get('brand')}</b> | Style: {item.get('style')}</div>
                             <div style="color: #cbd5e1; font-size: 12px; margin-bottom: 6px;"><b>Proposed Zone:</b> {item.get('proposed_location', 'Placement in empty floor coordinates.')}</div>
@@ -441,7 +441,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     
                     # Set button description and styling dynamically
                     is_placed = item.get("name") in placed_names
-                    btn_desc = "❌ Remove from Room" if is_placed else "🛋️ Place in Room"
+                    btn_desc = " Remove from Room" if is_placed else " Place in Room"
                     btn_style = "danger" if is_placed else "info"
                     
                     try_btn = widgets.Button(
@@ -457,12 +457,12 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     display(widgets.HBox([widgets.HTML(card_html), try_btn]))
 
                 # Zip output files
-                print("\n📦 Zipping output files...")
+                print("\n Zipping output files...")
                 try:
                     shutil.make_archive("outputs", "zip", "outputs")
                     print("Zipping complete! Created outputs.zip successfully.")
                 except Exception as zip_err:
-                    print(f"⚠️ Warning: Zipping failed: {str(zip_err)}")
+                    print(f" Warning: Zipping failed: {str(zip_err)}")
 
             except Exception as e:
                 print(f" Execution crashed: {str(e)}")
