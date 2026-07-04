@@ -179,7 +179,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                                     <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
                                     <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Reconstructed Layout Preview ({view_title})</div>
                                     <div style="margin-top: 10px;">
-                                        <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;">📥 Download Reconstructed View {idx+1}</a>
+                                        <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;"> Download Reconstructed View {idx+1}</a>
                                     </div>
                                 </div>
                             </div>
