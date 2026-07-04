@@ -213,7 +213,7 @@ class ReconstructionAgent:
                                     logger.warning("Local instruct-pix2pix pipeline load or inference failed: %s. Falling back to PIL visual compositing.", str(edit_err))
 
                         # B. Fast & reliable PIL visual compositing (downloads and overlays product images)
-                        for idx, item in enumerate(recommended[:3]):
+                        for idx, item in enumerate(recommended):
                             f_color = fill_colors[idx % len(fill_colors)]
                             o_color = outline_colors[idx % len(outline_colors)]
                             
@@ -223,47 +223,88 @@ class ReconstructionAgent:
                             # Default coordinates fallback
                             coords = box_coords[idx % len(box_coords)]
                             
-                            # Coordinates are mapped assuming a standard layout
-                            # We dynamically scale them based on the base image size (width, height)
-                            if "projector screen" in category or "screen" in category:
-                                # Center wall: placed above the bed where the picture frame is located (efficient & effective!)
-                                coords = (int(width * 0.28), int(height * 0.18), int(width * 0.72), int(height * 0.44))
-                            elif "projector" in category:
-                                # Place on the left bedside table table surface
-                                coords = (int(width * 0.14), int(height * 0.52), int(width * 0.26), int(height * 0.65))
-                            elif "tv" in category or "television" in category:
-                                # Center wall: placed above the bed or opposite wall
-                                coords = (int(width * 0.30), int(height * 0.20), int(width * 0.70), int(height * 0.46))
-                            elif "chair" in category or "stool" in category:
-                                # Desk area (right side of the room, in front of the desk)
-                                coords = (int(width * 0.72), int(height * 0.62), int(width * 0.88), int(height * 0.82))
-                            elif "desk" in category or "table" in category:
-                                # Desk area (right side of the room, against the wall)
-                                coords = (int(width * 0.68), int(height * 0.58), int(width * 0.94), int(height * 0.80))
-                            elif "lamp" in category or "light" in category:
-                                # Place on bedside table or desk
-                                coords = (int(width * 0.16), int(height * 0.42), int(width * 0.24), int(height * 0.54))
-
-                            # 2. Determine empty space placement location details
-                            pos_desc = "Location: Available empty floor bounds"
-                            if "projector screen" in category or "screen" in category:
-                                pos_desc = "Location: Center wall opposite bed / above headboard (Elevation: 130cm)"
-                            elif "projector" in category:
-                                pos_desc = "Location: Left Bedside Table (X 100cm, Y 140cm, Height 65cm)"
-                            elif "tv" in category or "television" in category:
-                                pos_desc = "Location: Center wall opposite bed (Elevation: 120cm)"
-                            elif "chair" in category or "stool" in category:
-                                pos_desc = "Location: Desk workspace area (X 310cm, Y 120cm)"
-                            elif "desk" in category or "table" in category:
-                                pos_desc = "Location: Study wall workspace boundary (X 310cm, Y 140cm)"
-                            elif "lamp" in category or "light" in category:
-                                pos_desc = "Location: Left Bedside Table surface"
+                            # Alternate coordinates if multiple items of same category are recommended/placed
+                            if idx == 0:
+                                if "projector screen" in category or "screen" in category:
+                                    coords = (int(width * 0.28), int(height * 0.18), int(width * 0.72), int(height * 0.44))
+                                    pos_desc = "Location: Center wall opposite bed / above headboard (Elevation: 130cm)"
+                                elif "projector" in category:
+                                    coords = (int(width * 0.14), int(height * 0.52), int(width * 0.26), int(height * 0.65))
+                                    pos_desc = "Location: Left Bedside Table (X 100cm, Y 140cm, Height 65cm)"
+                                elif "tv" in category or "television" in category:
+                                    coords = (int(width * 0.30), int(height * 0.20), int(width * 0.70), int(height * 0.46))
+                                    pos_desc = "Location: Center wall opposite bed (Elevation: 120cm)"
+                                elif "chair" in category or "stool" in category:
+                                    coords = (int(width * 0.72), int(height * 0.62), int(width * 0.88), int(height * 0.82))
+                                    pos_desc = "Location: Desk workspace area (X 310cm, Y 120cm)"
+                                elif "desk" in category or "table" in category:
+                                    coords = (int(width * 0.68), int(height * 0.58), int(width * 0.94), int(height * 0.80))
+                                    pos_desc = "Location: Study wall workspace boundary (X 310cm, Y 140cm)"
+                                elif "lamp" in category or "light" in category:
+                                    coords = (int(width * 0.16), int(height * 0.42), int(width * 0.24), int(height * 0.54))
+                                    pos_desc = "Location: Left Bedside Table surface"
+                                else:
+                                    if candidates and len(candidates) > 0:
+                                        cand = candidates[0]
+                                        cx_val = cand.get("center", {}).get("x_cm", 0)
+                                        cy_val = cand.get("center", {}).get("y_cm", 0)
+                                        pos_desc = f"Location: Empty space zone 1 (X {cx_val}cm, Y {cy_val}cm)"
+                                    else:
+                                        pos_desc = "Location: Available empty floor bounds"
+                            elif idx == 1:
+                                if "projector screen" in category or "screen" in category:
+                                    coords = (int(width * 0.32), int(height * 0.22), int(width * 0.68), int(height * 0.46))
+                                    pos_desc = "Location: Wall opposite bed (Sub-region 2, Elevation: 110cm)"
+                                elif "projector" in category:
+                                    coords = (int(width * 0.66), int(height * 0.52), int(width * 0.78), int(height * 0.65))
+                                    pos_desc = "Location: Right Bedside Table surface (X 220cm, Y 140cm)"
+                                elif "tv" in category or "television" in category:
+                                    coords = (int(width * 0.35), int(height * 0.22), int(width * 0.65), int(height * 0.44))
+                                    pos_desc = "Location: Center wall sub-mount opposite bed"
+                                elif "chair" in category or "stool" in category:
+                                    coords = (int(width * 0.60), int(height * 0.62), int(width * 0.74), int(height * 0.82))
+                                    pos_desc = "Location: Front desk chair space (X 280cm, Y 120cm)"
+                                elif "desk" in category or "table" in category:
+                                    coords = (int(width * 0.35), int(height * 0.60), int(width * 0.58), int(height * 0.82))
+                                    pos_desc = "Location: Alternative side wall desk layout boundary"
+                                elif "lamp" in category or "light" in category:
+                                    coords = (int(width * 0.68), int(height * 0.42), int(width * 0.76), int(height * 0.54))
+                                    pos_desc = "Location: Right Bedside Table surface"
+                                else:
+                                    if candidates and len(candidates) > 1:
+                                        cand = candidates[1]
+                                        cx_val = cand.get("center", {}).get("x_cm", 0)
+                                        cy_val = cand.get("center", {}).get("y_cm", 0)
+                                        pos_desc = f"Location: Empty space zone 2 (X {cx_val}cm, Y {cy_val}cm)"
+                                    else:
+                                        pos_desc = "Location: Secondary empty floor region"
                             else:
-                                if candidates and idx < len(candidates):
-                                    cand = candidates[idx]
-                                    cx_val = cand.get("center", {}).get("x_cm", 0)
-                                    cy_val = cand.get("center", {}).get("y_cm", 0)
-                                    pos_desc = f"Location: Empty space zone (X {cx_val}cm, Y {cy_val}cm)"
+                                if "projector screen" in category or "screen" in category:
+                                    coords = (int(width * 0.12), int(height * 0.18), int(width * 0.45), int(height * 0.44))
+                                    pos_desc = "Location: Side wall alignment (Elevation: 130cm)"
+                                elif "projector" in category:
+                                    coords = (int(width * 0.42), int(height * 0.60), int(width * 0.58), int(height * 0.72))
+                                    pos_desc = "Location: Central projector stand / floor mount"
+                                elif "tv" in category or "television" in category:
+                                    coords = (int(width * 0.12), int(height * 0.18), int(width * 0.45), int(height * 0.44))
+                                    pos_desc = "Location: Side wall mount alignments"
+                                elif "chair" in category or "stool" in category:
+                                    coords = (int(width * 0.45), int(height * 0.65), int(width * 0.58), int(height * 0.85))
+                                    pos_desc = "Location: Lounge chair alignment bounds"
+                                elif "desk" in category or "table" in category:
+                                    coords = (int(width * 0.12), int(height * 0.58), int(width * 0.35), int(height * 0.80))
+                                    pos_desc = "Location: Side wall console boundary"
+                                elif "lamp" in category or "light" in category:
+                                    coords = (int(width * 0.45), int(height * 0.55), int(width * 0.55), int(height * 0.68))
+                                    pos_desc = "Location: Center console shelf surface"
+                                else:
+                                    if candidates and len(candidates) > 2:
+                                        cand = candidates[2]
+                                        cx_val = cand.get("center", {}).get("x_cm", 0)
+                                        cy_val = cand.get("center", {}).get("y_cm", 0)
+                                        pos_desc = f"Location: Empty space zone 3 (X {cx_val}cm, Y {cy_val}cm)"
+                                    else:
+                                        pos_desc = "Location: Tertiary empty floor region"
                             
                             item["proposed_location"] = pos_desc
 

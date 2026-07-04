@@ -82,7 +82,8 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         "pipeline": None,
         "out": None,
         "session_path": None,
-        "image_box": None
+        "image_box": None,
+        "placed_products": []
     }
 
     # Layout forms HBox/VBox
@@ -115,17 +116,32 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         </div>
         """
 
-    def on_try_product(product_item: Dict[str, Any]) -> None:
+    def on_try_product(product_item: Dict[str, Any], button: Any) -> None:
         if not state["pipeline"] or not state["session_path"]:
             return
         
         with output_area:
-            print(f" Try in Room: Placing '{product_item.get('name')}' in layout...")
+            # Check if product is already in our placed list (match by name)
+            placed_names = [p.get("name") for p in state["placed_products"]]
+            
+            if product_item.get("name") in placed_names:
+                # Remove it
+                state["placed_products"] = [p for p in state["placed_products"] if p.get("name") != product_item.get("name")]
+                button.description = "🛋️ Place in Room"
+                button.button_style = "info"
+                print(f" Removed '{product_item.get('name')}' from layout placement list.")
+            else:
+                # Add it
+                state["placed_products"].append(product_item)
+                button.description = "❌ Remove from Room"
+                button.button_style = "danger"
+                print(f" Placed '{product_item.get('name')}' in layout placement list.")
+                
             try:
-                # Dynamically rerun reconstruction using only the selected product
+                # Dynamically rerun reconstruction using all selected products in state["placed_products"]
                 recon = state["pipeline"].reconstruction_agent.plan_reconstruction(
                     vision_output=state["out"]["vision"]["merged_scene"],
-                    commerce_output={"recommended_products": [product_item]},
+                    commerce_output={"recommended_products": state["placed_products"]},
                     session_path=state["session_path"],
                     spatial_output=state["out"]["spatial"]
                 )
@@ -162,6 +178,9 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                                 <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
                                     <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
                                     <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Reconstructed Layout Preview ({view_title})</div>
+                                    <div style="margin-top: 10px;">
+                                        <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;">📥 Download Reconstructed View {idx+1}</a>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -169,7 +188,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         comparison_html_list.append(comparison_html)
                 
                 state["image_box"].value = "\n".join(comparison_html_list)
-                print(f" Success! Placed {product_item.get('name')} in the preview layout.")
+                print(" Success! Updated the layout reconstruction image.")
             except Exception as e:
                 print(f" Product placement failed: {str(e)}")
 
@@ -246,12 +265,12 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     room_type="bedroom",
                     progress_callback=lambda step: print(f"  [Step] {step}")
                 )
-                
                 session_path = pathlib.Path(out["session_path"])
                 state["pipeline"] = pipeline
                 state["out"] = out
                 state["session_path"] = session_path
-
+                state["placed_products"] = list(out.get("selected_products", []))
+ 
                 # Fetch all processed viewpoint paths
                 reconstructed_views = sorted(list(session_path.glob("processed_reconstructed_*.png")))
                 if not reconstructed_views:
@@ -284,13 +303,15 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                                 <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
                                     <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
                                     <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Reconstructed Layout Preview ({view_title})</div>
+                                    <div style="margin-top: 10px;">
+                                        <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;">📥 Download Reconstructed View {idx+1}</a>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                         """
                         comparison_html_list.append(comparison_html)
                 
-                # Initialize HTML comparison widget containing all grids
                 state["image_box"] = widgets.HTML(value="\n".join(comparison_html_list))
 
                 # Render dynamic styled dashboard
@@ -395,15 +416,19 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 
                 recommended_list = out["commerce"].get("recommended_products", [])
                 
+                placed_names = [p.get("name") for p in state["placed_products"]]
+                
                 for item in recommended_list[:10]:
                     img_url = item.get("image") or "https://via.placeholder.com/150"
                     
-                    # Create card details layout
+                    # Create card details layout with clickable product title links opening in new pages
                     card_html = f"""
                     <div style="display: flex; align-items: center; background: #1a202c; border: 1px solid #2d3748; border-radius: 8px; padding: 12px; margin-bottom: 10px; width: 680px; color: #ffffff;">
                         <img src="{img_url}" style="width: 80px; height: 80px; border-radius: 6px; object-fit: cover; margin-right: 15px; border: 1px solid #2d3748;">
                         <div style="flex-grow: 1;">
-                            <div style="font-weight: bold; font-size: 16px; color: #38bdf8;">{item.get('name')}</div>
+                            <div style="font-weight: bold; font-size: 16px;">
+                                <a href="{item.get('link', '#')}" target="_blank" style="text-decoration: none; color: #38bdf8; font-weight: bold;">🔗 {item.get('name')}</a>
+                            </div>
                             <div style="color: #94a3b8; font-size: 13px; margin: 4px 0;">Brand: <b>{item.get('brand')}</b> | Style: {item.get('style')}</div>
                             <div style="color: #cbd5e1; font-size: 12px; margin-bottom: 6px;"><b>Proposed Zone:</b> {item.get('proposed_location', 'Placement in empty floor coordinates.')}</div>
                             <div>
@@ -414,14 +439,19 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     </div>
                     """
                     
+                    # Set button description and styling dynamically
+                    is_placed = item.get("name") in placed_names
+                    btn_desc = "❌ Remove from Room" if is_placed else "🛋️ Place in Room"
+                    btn_style = "danger" if is_placed else "info"
+                    
                     try_btn = widgets.Button(
-                        description="🛋️ Place in Room",
-                        button_style="info",
+                        description=btn_desc,
+                        button_style=btn_style,
                         layout=widgets.Layout(width="150px", height="35px", margin="auto 10px")
                     )
                     
-                    # Bind local callback
-                    try_btn.on_click(lambda b, p=item: on_try_product(p))
+                    # Bind local callback with button self-reference
+                    try_btn.on_click(lambda b, p=item: on_try_product(p, b))
                     
                     # Display card and button row
                     display(widgets.HBox([widgets.HTML(card_html), try_btn]))
