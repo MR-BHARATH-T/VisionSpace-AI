@@ -3,6 +3,7 @@ torchvision
 transformers
 accelerate
 diffusers
+rembg
 bitsandbytes>=0.46.1
 huggingface_hub
 sentencepiece

@@ -360,13 +360,20 @@ class CommerceAgent:
         if not matches:
             matches = list(self.mock_catalog)
 
-        # Enrich with reviews, rating, image
+        # Enrich with reviews, rating, image, link
         enriched = []
         for item in matches:
             enriched_item = dict(item)
             enriched_item["rating"] = item.get("rating", round(item.get("quality_score", 0.8) * 5.0, 1))
             enriched_item["reviews"] = item.get("reviews", 50)
             enriched_item["image"] = item.get("image", "https://via.placeholder.com/150")
+            
+            # Ensure fallback product detail search link is dynamically generated
+            if not enriched_item.get("link"):
+                import urllib.parse
+                search_q = urllib.parse.quote(f"{enriched_item.get('brand')} {enriched_item.get('name')}")
+                enriched_item["link"] = f"https://www.google.com/search?tbm=shop&q={search_q}"
+                
             enriched.append(enriched_item)
             
         return enriched

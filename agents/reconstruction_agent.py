@@ -15,8 +15,48 @@ from utils.file_utils import save_json
 logger = logging.getLogger("VisionSpaceAI.ReconstructionAgent")
 
 
+def apply_edge_feathering(img: Any, feather_radius: int = 15) -> Any:
+    """Applies soft edge feathering to a PIL image to blend it naturally into the room snapshot."""
+    from PIL import Image, ImageDraw
+    img = img.convert("RGBA")
+    width, height = img.size
+    
+    # Create mask channel
+    mask = Image.new("L", (width, height), 255)
+    draw_mask = ImageDraw.Draw(mask)
+    
+    # Draw a soft feathered gradient from edges
+    for i in range(feather_radius):
+        alpha = int(255 * (i / feather_radius))
+        # Draw nested hollow rectangles with increasing alpha transparency
+        draw_mask.rectangle(
+            [i, i, width - 1 - i, height - 1 - i],
+            fill=None,
+            outline=alpha
+        )
+        
+    # Multiply existing alpha channel with the feathering mask
+    alpha_channel = img.split()[3]
+    from PIL import ImageMath
+    blended_alpha = ImageMath.eval("convert(min(a, b), 'L')", a=alpha_channel, b=mask)
+    img.putalpha(blended_alpha)
+    return img
+
+
 def make_background_transparent(img: Any) -> Any:
     """Converts solid white or near-white background pixels of a product thumbnail to transparent."""
+    # 1. Attempt to use rembg if installed for professional AR background removal
+    try:
+        from rembg import remove
+        removed = remove(img)
+        if removed:
+            logger.info("Successfully removed showroom background using rembg library.")
+            # Also apply soft edge feathering to the result to make it look smooth
+            return apply_edge_feathering(removed, feather_radius=8)
+    except Exception as rembg_err:
+        logger.warning("rembg failed or not installed: %s. Falling back to color-key thresholding.", str(rembg_err))
+
+    # 2. Fallback: Color-key solid background thresholding
     img = img.convert("RGBA")
     datas = img.getdata()
     
@@ -31,7 +71,9 @@ def make_background_transparent(img: Any) -> Any:
             new_data.append(item)
             
     img.putdata(new_data)
-    return img
+    
+    # Apply soft edge feathering to the fallback result to blend borders smoothly
+    return apply_edge_feathering(img, feather_radius=12)
 
 
 class ReconstructionAgent:
