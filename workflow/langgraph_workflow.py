@@ -173,7 +173,8 @@ class ProductionPipelineV2:
         reconstruct_output = self.reconstruction_agent.plan_reconstruction(
             vision_output=merged_scene,
             commerce_output={"recommended_products": selected_products},
-            session_path=session_path
+            session_path=session_path,
+            spatial_output=spatial_output
         )
 
         # Build final aggregated response conformed to app zipping structure

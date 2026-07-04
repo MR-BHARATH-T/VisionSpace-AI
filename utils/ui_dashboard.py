@@ -126,7 +126,8 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 recon = state["pipeline"].reconstruction_agent.plan_reconstruction(
                     vision_output=state["out"]["vision"]["merged_scene"],
                     commerce_output={"recommended_products": [product_item]},
-                    session_path=state["session_path"]
+                    session_path=state["session_path"],
+                    spatial_output=state["out"]["spatial"]
                 )
                 
                 # Fetch all processed viewpoint paths

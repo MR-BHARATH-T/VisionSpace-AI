@@ -28,12 +28,20 @@ class ReconstructionAgent:
         vision_output: Dict[str, Any],
         commerce_output: Dict[str, Any],
         session_path: Optional[Any] = None,
+        spatial_output: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Runs the Phase 7 reconstruction analysis."""
         logger.info("Running Phase 7 Reconstruction Agent layout delta mapping...")
 
         detected = vision_output.get("detected_objects") or []
         recommended = commerce_output.get("recommended_products") or []
+
+        # Get spatial layout candidate regions from spatial_output or vision_output
+        candidates = []
+        if spatial_output:
+            candidates = spatial_output.get("placement_candidates") or []
+        if not candidates and "placement_candidates" in vision_output:
+            candidates = vision_output.get("placement_candidates") or []
 
         diff_summary = []
         
@@ -42,8 +50,16 @@ class ReconstructionAgent:
             diff_summary.append(f"Retained existing {item.get('name')} in current layout coordinates.")
 
         # 2. Identify newly inserted items
-        for item in recommended:
-            diff_summary.append(f"Inserted new {item.get('name')} ({item.get('brand')}) costing {item.get('price')} into usable floor space.")
+        for idx, item in enumerate(recommended):
+            # Resolve dynamic placement position details
+            pos_desc = "Placement in empty floor coordinates."
+            if candidates and idx < len(candidates):
+                cand = candidates[idx]
+                cx_val = cand.get("center", {}).get("x_cm", 0)
+                cy_val = cand.get("center", {}).get("y_cm", 0)
+                pos_desc = f"Space Location: X {cx_val}cm, Y {cy_val}cm"
+            item["proposed_location"] = pos_desc
+            diff_summary.append(f"Inserted new {item.get('name')} ({item.get('brand')}) costing {item.get('price')} into {pos_desc}.")
 
         diff_summary.append("Preserved ceiling height (280 cm) and window lighting alignment.")
 
@@ -110,9 +126,9 @@ class ReconstructionAgent:
                         
                         # A. Natural, realistic image-to-image layout reconstruction (GPU-accelerated)
                         import os
-                        run_editing = True
-                        if os.environ.get("SKIP_IMAGE_EDITING") == "True":
-                            run_editing = False
+                        run_editing = False
+                        if os.environ.get("USE_FLUX") == "True" or os.environ.get("USE_PIX2PIX") == "True" or os.environ.get("USE_IMAGE_EDITING") == "True":
+                            run_editing = True
 
                         if run_editing:
                             # 1. Option: FLUX.1-Kontext-dev if explicitly requested
@@ -213,13 +229,13 @@ class ReconstructionAgent:
                             
                             # Draw lead card coordinates
                             text_x = coords[0] + 15
-                            text_y = coords[1] - font_size * 5
+                            text_y = coords[1] - font_size * 6
                             if text_y < 10:
                                 text_y = 10
                             
-                            # Draw floating text card background panel
+                            # Draw floating text card background panel (5 lines height)
                             draw.rectangle(
-                                (text_x - 10, text_y - 10, text_x + int(width * 0.22), text_y + font_size * 4),
+                                (text_x - 10, text_y - 10, text_x + int(width * 0.22), text_y + font_size * 5),
                                 fill=(44, 62, 80, 230),
                                 outline=(255, 255, 255, 255),
                                 width=2
@@ -227,17 +243,19 @@ class ReconstructionAgent:
                             
                             # Draw leader line pointing to the new product bounding box center
                             center_x = (coords[0] + coords[2]) // 2
-                            draw.line([(text_x + int(width * 0.11), text_y + font_size * 4), (center_x, coords[1])], fill=(255, 255, 255, 255), width=2)
+                            draw.line([(text_x + int(width * 0.11), text_y + font_size * 5), (center_x, coords[1])], fill=(255, 255, 255, 255), width=2)
                             
                             # Labels
                             label_title = f"{item.get('brand')} - {item.get('name')}"
                             label_price = f"Price: Rs. {item.get('price')}"
                             label_scores = f"Rank: {item.get('final_score')}"
+                            label_pos = item.get("proposed_location", "Space Location: Empty floor zone")
                             
                             # Draw text lines
                             draw.text((text_x, text_y), label_title, fill=(255, 255, 255, 255), font=font)
                             draw.text((text_x, text_y + font_size + 2), label_price, fill=(46, 204, 113, 255), font=font)
                             draw.text((text_x, text_y + (font_size * 2) + 4), label_scores, fill=(241, 196, 15, 255), font=font)
+                            draw.text((text_x, text_y + (font_size * 3) + 6), label_pos, fill=(56, 189, 248, 255), font=font)
 
                         # Composite layers
                         composite = Image.alpha_composite(base_img, overlay).convert("RGB")
