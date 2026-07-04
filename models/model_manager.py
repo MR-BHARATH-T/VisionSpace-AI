@@ -526,6 +526,14 @@ class ModelManager:
                 gc.collect()
                 logger.info("Task '%s' unloaded successfully.", task)
 
+    def unload_all(self) -> None:
+        """Removes all loaded models and triggers VRAM cleanup."""
+        for task in list(MODEL_REGISTRY.keys()):
+            try:
+                self.unload_model(task)
+            except Exception:
+                pass
+
     # =========================================================================
     # Generation & Streaming API
     # =========================================================================

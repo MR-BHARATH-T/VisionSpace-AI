@@ -253,17 +253,42 @@ class CommerceAgent:
                         except Exception:
                             price = 0.0
 
-                        # Dynamic currency conversion: if USD, convert to INR
+                        # Dynamic currency conversion to INR
+                        converted_price = price
                         is_usd = False
-                        if "$" in price_str or "usd" in price_str.lower():
+                        is_eur = False
+                        is_gbp = False
+                        is_cad = False
+                        
+                        price_str_lower = price_str.lower()
+                        currency_field = item.get("currency", "").upper()
+                        
+                        if "$" in price_str or "usd" in price_str_lower or currency_field == "USD":
                             is_usd = True
-                        elif item.get("currency") == "USD":
-                            is_usd = True
+                        elif "€" in price_str or "eur" in price_str_lower or currency_field == "EUR":
+                            is_eur = True
+                        elif "£" in price_str or "gbp" in price_str_lower or currency_field == "GBP":
+                            is_gbp = True
+                        elif "c$" in price_str_lower or "cad" in price_str_lower or currency_field == "CAD":
+                            is_cad = True
                         elif price < 1500 and not any(sym in price_str for sym in ("₹", "Rs", "Rs.", "INR", "inr")):
+                            # Fallback default conversion if number is low and has no rupee symbol
                             is_usd = True
 
                         if is_usd:
-                            price = round(price * 83.0, 2)
+                            converted_price = round(price * 83.0, 2)
+                            logger.info("Converted USD price %s to INR: %s", price, converted_price)
+                        elif is_eur:
+                            converted_price = round(price * 90.0, 2)
+                            logger.info("Converted EUR price %s to INR: %s", price, converted_price)
+                        elif is_gbp:
+                            converted_price = round(price * 105.0, 2)
+                            logger.info("Converted GBP price %s to INR: %s", price, converted_price)
+                        elif is_cad:
+                            converted_price = round(price * 61.0, 2)
+                            logger.info("Converted CAD price %s to INR: %s", price, converted_price)
+
+                        price = converted_price
                             
                         # Detect brand from title or source
                         source = item.get("source", "")

@@ -405,7 +405,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         <div style="flex-grow: 1;">
                             <div style="font-weight: bold; font-size: 16px; color: #38bdf8;">{item.get('name')}</div>
                             <div style="color: #94a3b8; font-size: 13px; margin: 4px 0;">Brand: <b>{item.get('brand')}</b> | Style: {item.get('style')}</div>
-                            <div style="color: #cbd5e1; font-size: 12px; margin-bottom: 6px;"><b>Proposed Zone:</b> Placement in room empty floor coordinates bounds.</div>
+                            <div style="color: #cbd5e1; font-size: 12px; margin-bottom: 6px;"><b>Proposed Zone:</b> {item.get('proposed_location', 'Placement in empty floor coordinates.')}</div>
                             <div>
                                 <span style="font-weight: bold; color: #fbbf24;">Rs. {item.get('price')}</span>
                                 <span class="score-tag" style="margin-left: 10px;">Rank Score: {item.get('final_score')}</span>

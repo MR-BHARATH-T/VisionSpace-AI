@@ -15,6 +15,25 @@ from utils.file_utils import save_json
 logger = logging.getLogger("VisionSpaceAI.ReconstructionAgent")
 
 
+def make_background_transparent(img: Any) -> Any:
+    """Converts solid white or near-white background pixels of a product thumbnail to transparent."""
+    img = img.convert("RGBA")
+    datas = img.getdata()
+    
+    new_data = []
+    for item in datas:
+        r, g, b, a = item
+        if r > 230 and g > 230 and b > 230:
+            new_data.append((255, 255, 255, 0)) # transparent
+        elif r < 20 and g < 20 and b < 20:
+            new_data.append((0, 0, 0, 0)) # transparent
+        else:
+            new_data.append(item)
+            
+    img.putdata(new_data)
+    return img
+
+
 class ReconstructionAgent:
     """Production-grade ReconstructionAgent responsible for room layout delta generation."""
 
@@ -195,10 +214,59 @@ class ReconstructionAgent:
 
                         # B. Fast & reliable PIL visual compositing (downloads and overlays product images)
                         for idx, item in enumerate(recommended[:3]):
-                            coords = box_coords[idx]
-                            f_color = fill_colors[idx]
-                            o_color = outline_colors[idx]
+                            f_color = fill_colors[idx % len(fill_colors)]
+                            o_color = outline_colors[idx % len(outline_colors)]
                             
+                            # 1. Resolve dynamic coordinates based on the product category for realistic placement
+                            category = item.get("category", "").lower()
+                            
+                            # Default coordinates fallback
+                            coords = box_coords[idx % len(box_coords)]
+                            
+                            # Coordinates are mapped assuming a standard layout
+                            # We dynamically scale them based on the base image size (width, height)
+                            if "projector screen" in category or "screen" in category:
+                                # Center wall: placed above the bed where the picture frame is located (efficient & effective!)
+                                coords = (int(width * 0.28), int(height * 0.18), int(width * 0.72), int(height * 0.44))
+                            elif "projector" in category:
+                                # Place on the left bedside table table surface
+                                coords = (int(width * 0.14), int(height * 0.52), int(width * 0.26), int(height * 0.65))
+                            elif "tv" in category or "television" in category:
+                                # Center wall: placed above the bed or opposite wall
+                                coords = (int(width * 0.30), int(height * 0.20), int(width * 0.70), int(height * 0.46))
+                            elif "chair" in category or "stool" in category:
+                                # Desk area (right side of the room, in front of the desk)
+                                coords = (int(width * 0.72), int(height * 0.62), int(width * 0.88), int(height * 0.82))
+                            elif "desk" in category or "table" in category:
+                                # Desk area (right side of the room, against the wall)
+                                coords = (int(width * 0.68), int(height * 0.58), int(width * 0.94), int(height * 0.80))
+                            elif "lamp" in category or "light" in category:
+                                # Place on bedside table or desk
+                                coords = (int(width * 0.16), int(height * 0.42), int(width * 0.24), int(height * 0.54))
+
+                            # 2. Determine empty space placement location details
+                            pos_desc = "Location: Available empty floor bounds"
+                            if "projector screen" in category or "screen" in category:
+                                pos_desc = "Location: Center wall opposite bed / above headboard (Elevation: 130cm)"
+                            elif "projector" in category:
+                                pos_desc = "Location: Left Bedside Table (X 100cm, Y 140cm, Height 65cm)"
+                            elif "tv" in category or "television" in category:
+                                pos_desc = "Location: Center wall opposite bed (Elevation: 120cm)"
+                            elif "chair" in category or "stool" in category:
+                                pos_desc = "Location: Desk workspace area (X 310cm, Y 120cm)"
+                            elif "desk" in category or "table" in category:
+                                pos_desc = "Location: Study wall workspace boundary (X 310cm, Y 140cm)"
+                            elif "lamp" in category or "light" in category:
+                                pos_desc = "Location: Left Bedside Table surface"
+                            else:
+                                if candidates and idx < len(candidates):
+                                    cand = candidates[idx]
+                                    cx_val = cand.get("center", {}).get("x_cm", 0)
+                                    cy_val = cand.get("center", {}).get("y_cm", 0)
+                                    pos_desc = f"Location: Empty space zone (X {cx_val}cm, Y {cy_val}cm)"
+                            
+                            item["proposed_location"] = pos_desc
+
                             # Attempt to download product image
                             product_img = None
                             img_url = item.get("image")
@@ -208,7 +276,9 @@ class ReconstructionAgent:
                                     from io import BytesIO
                                     response = requests.get(img_url, timeout=10)
                                     if response.status_code == 200:
-                                        product_img = Image.open(BytesIO(response.content)).convert("RGBA")
+                                        product_img = Image.open(BytesIO(response.content))
+                                        # Apply background transparency removal (AR style!)
+                                        product_img = make_background_transparent(product_img)
                                 except Exception as e:
                                     logger.warning("Failed to fetch product image from %s: %s", img_url, str(e))
 
