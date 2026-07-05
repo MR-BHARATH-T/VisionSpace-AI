@@ -47,14 +47,16 @@ def make_background_transparent(img: Any) -> Any:
     """Converts solid white or near-white background pixels of a product thumbnail to transparent."""
     # 1. Attempt to use rembg if installed for professional AR background removal
     try:
+        # Pre-check onnxruntime to avoid rembg module-level sys.exit(1) execution
+        import onnxruntime
         from rembg import remove
         removed = remove(img)
         if removed:
             logger.info("Successfully removed showroom background using rembg library.")
             # Also apply soft edge feathering to the result to make it look smooth
             return apply_edge_feathering(removed, feather_radius=8)
-    except Exception as rembg_err:
-        logger.warning("rembg failed or not installed: %s. Falling back to color-key thresholding.", str(rembg_err))
+    except BaseException as rembg_err:
+        logger.warning("rembg failed, not installed, or exited: %s. Falling back to color-key thresholding.", str(rembg_err))
 
     # 2. Fallback: Color-key solid background thresholding
     img = img.convert("RGBA")

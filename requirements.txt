@@ -4,6 +4,7 @@ transformers
 accelerate
 diffusers
 rembg
+onnxruntime
 bitsandbytes>=0.46.1
 huggingface_hub
 sentencepiece
