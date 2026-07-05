@@ -45,49 +45,57 @@ class CommerceAgent:
         # Mock product catalog for fallback and local searches
         self.mock_catalog = [
             # IKEA (12 products)
-            {"name": "IKEA Micke Desk", "category": "desk", "brand": "IKEA", "price": 6500, "style": "modern", "width_cm": 105, "depth_cm": 50, "quality_score": 0.8},
-            {"name": "IKEA Malm Desk", "category": "desk", "brand": "IKEA", "price": 9999, "style": "modern", "width_cm": 140, "depth_cm": 65, "quality_score": 0.85},
-            {"name": "IKEA Flintan Office Chair", "category": "chair", "brand": "IKEA", "price": 5999, "style": "modern", "width_cm": 70, "depth_cm": 70, "quality_score": 0.75},
-            {"name": "IKEA Markus Ergonomic Chair", "category": "chair", "brand": "IKEA", "price": 14999, "style": "modern", "width_cm": 62, "depth_cm": 60, "quality_score": 0.9},
-            {"name": "IKEA Billy Bookshelf", "category": "bookshelf", "brand": "IKEA", "price": 4500, "style": "modern", "width_cm": 80, "depth_cm": 28, "quality_score": 0.8},
-            {"name": "IKEA Tertial Lamp", "category": "lighting", "brand": "IKEA", "price": 999, "style": "industrial", "width_cm": 15, "depth_cm": 15, "quality_score": 0.75},
-            {"name": "IKEA Kallax Storage Unit", "category": "bookshelf", "brand": "IKEA", "price": 3999, "style": "modern", "width_cm": 77, "depth_cm": 39, "quality_score": 0.8},
-            {"name": "IKEA Lack Side Table", "category": "table", "brand": "IKEA", "price": 899, "style": "modern", "width_cm": 55, "depth_cm": 55, "quality_score": 0.7},
-            {"name": "IKEA Poang Armchair", "category": "chair", "brand": "IKEA", "price": 6999, "style": "scandinavian", "width_cm": 68, "depth_cm": 82, "quality_score": 0.85},
-            {"name": "IKEA Linnmon Work Table", "category": "desk", "brand": "IKEA", "price": 2500, "style": "modern", "width_cm": 100, "depth_cm": 60, "quality_score": 0.75},
-            {"name": "IKEA Alex Drawer Unit", "category": "drawer", "brand": "IKEA", "price": 6500, "style": "modern", "width_cm": 36, "depth_cm": 58, "quality_score": 0.85},
-            {"name": "IKEA Renberget Swivel Chair", "category": "chair", "brand": "IKEA", "price": 4999, "style": "modern", "width_cm": 59, "depth_cm": 65, "quality_score": 0.75},
+            {"name": "IKEA Micke Desk", "category": "desk", "brand": "IKEA", "price": 6500, "style": "modern", "width_cm": 105, "depth_cm": 50, "quality_score": 0.8, "link": "https://www.ikea.com/in/en/p/micke-desk-black-brown-80354274/"},
+            {"name": "IKEA Malm Desk", "category": "desk", "brand": "IKEA", "price": 9999, "style": "modern", "width_cm": 140, "depth_cm": 65, "quality_score": 0.85, "link": "https://www.ikea.com/in/en/p/malm-desk-white-10359824/"},
+            {"name": "IKEA Flintan Office Chair", "category": "chair", "brand": "IKEA", "price": 5999, "style": "modern", "width_cm": 70, "depth_cm": 70, "quality_score": 0.75, "link": "https://www.ikea.com/in/en/p/flintan-office-chair-with-armrests-black-s39434057/"},
+            {"name": "IKEA Markus Ergonomic Chair", "category": "chair", "brand": "IKEA", "price": 14999, "style": "modern", "width_cm": 62, "depth_cm": 60, "quality_score": 0.9, "link": "https://www.ikea.com/in/en/p/markus-office-chair-vissle-dark-grey-50261151/"},
+            {"name": "IKEA Billy Bookshelf", "category": "bookshelf", "brand": "IKEA", "price": 4500, "style": "modern", "width_cm": 80, "depth_cm": 28, "quality_score": 0.8, "link": "https://www.ikea.com/in/en/p/billy-bookcase-white-80351561/"},
+            {"name": "IKEA Tertial Lamp", "category": "lighting", "brand": "IKEA", "price": 999, "style": "industrial", "width_cm": 15, "depth_cm": 15, "quality_score": 0.75, "link": "https://www.ikea.com/in/en/p/tertial-work-lamp-dark-grey-50355721/"},
+            {"name": "IKEA Kallax Storage Unit", "category": "bookshelf", "brand": "IKEA", "price": 3999, "style": "modern", "width_cm": 77, "depth_cm": 39, "quality_score": 0.8, "link": "https://www.ikea.com/in/en/p/kallax-shelving-unit-white-80351882/"},
+            {"name": "IKEA Lack Side Table", "category": "table", "brand": "IKEA", "price": 899, "style": "modern", "width_cm": 55, "depth_cm": 55, "quality_score": 0.7, "link": "https://www.ikea.com/in/en/p/lack-side-table-white-10302064/"},
+            {"name": "IKEA Poang Armchair", "category": "chair", "brand": "IKEA", "price": 6999, "style": "scandinavian", "width_cm": 68, "depth_cm": 82, "quality_score": 0.85, "link": "https://www.ikea.com/in/en/p/poaeng-armchair-glose-black-s99830501/"},
+            {"name": "IKEA Linnmon Work Table", "category": "desk", "brand": "IKEA", "price": 2500, "style": "modern", "width_cm": 100, "depth_cm": 60, "quality_score": 0.75, "link": "https://www.ikea.com/in/en/p/linnmon-table-top-white-60361189/"},
+            {"name": "IKEA Alex Drawer Unit", "category": "drawer", "brand": "IKEA", "price": 6500, "style": "modern", "width_cm": 36, "depth_cm": 58, "quality_score": 0.85, "link": "https://www.ikea.com/in/en/p/alex-drawer-unit-white-40473549/"},
+            {"name": "IKEA Renberget Swivel Chair", "category": "chair", "brand": "IKEA", "price": 4999, "style": "modern", "width_cm": 59, "depth_cm": 65, "quality_score": 0.75, "link": "https://www.ikea.com/in/en/p/renberget-swivel-chair-bomstad-black-20339414/"},
 
             # Urban Ladder (10 products)
-            {"name": "Urban Ladder Study Table", "category": "desk", "brand": "Urban Ladder", "price": 12500, "style": "scandinavian", "width_cm": 120, "depth_cm": 60, "quality_score": 0.9},
-            {"name": "Urban Ladder Engineered Wood Shelf", "category": "bookshelf", "brand": "Urban Ladder", "price": 8999, "style": "modern", "width_cm": 90, "depth_cm": 35, "quality_score": 0.85},
-            {"name": "Urban Ladder Crescent Study Chair", "category": "chair", "brand": "Urban Ladder", "price": 7999, "style": "contemporary", "width_cm": 60, "depth_cm": 60, "quality_score": 0.85},
-            {"name": "Urban Ladder Malabar Bookshelf", "category": "bookshelf", "brand": "Urban Ladder", "price": 14500, "style": "classic", "width_cm": 85, "depth_cm": 30, "quality_score": 0.9},
-            {"name": "Urban Ladder Oki Desk Organizer", "category": "organizer", "brand": "Urban Ladder", "price": 1200, "style": "minimalist", "width_cm": 30, "depth_cm": 20, "quality_score": 0.8},
-            {"name": "Urban Ladder Boston Study Table", "category": "desk", "brand": "Urban Ladder", "price": 18500, "style": "scandinavian", "width_cm": 115, "depth_cm": 60, "quality_score": 0.9},
-            {"name": "Urban Ladder Aeris Desk Chair", "category": "chair", "brand": "Urban Ladder", "price": 11500, "style": "modern", "width_cm": 65, "depth_cm": 65, "quality_score": 0.88},
-            {"name": "Urban Ladder Carson Side Table", "category": "table", "brand": "Urban Ladder", "price": 4500, "style": "contemporary", "width_cm": 45, "depth_cm": 45, "quality_score": 0.82},
-            {"name": "Urban Ladder Flora Table Lamp", "category": "lighting", "brand": "Urban Ladder", "price": 2500, "style": "modern", "width_cm": 22, "depth_cm": 22, "quality_score": 0.85},
-            {"name": "Urban Ladder Stanhope Desk", "category": "desk", "brand": "Urban Ladder", "price": 22000, "style": "scandinavian", "width_cm": 120, "depth_cm": 60, "quality_score": 0.92},
+            {"name": "Urban Ladder Study Table", "category": "desk", "brand": "Urban Ladder", "price": 12500, "style": "scandinavian", "width_cm": 120, "depth_cm": 60, "quality_score": 0.9, "link": "https://www.urbanladder.com/study-tables"},
+            {"name": "Urban Ladder Engineered Wood Shelf", "category": "bookshelf", "brand": "Urban Ladder", "price": 8999, "style": "modern", "width_cm": 90, "depth_cm": 35, "quality_score": 0.85, "link": "https://www.urbanladder.com/bookshelves"},
+            {"name": "Urban Ladder Crescent Study Chair", "category": "chair", "brand": "Urban Ladder", "price": 7999, "style": "contemporary", "width_cm": 60, "depth_cm": 60, "quality_score": 0.85, "link": "https://www.urbanladder.com/study-chairs"},
+            {"name": "Urban Ladder Malabar Bookshelf", "category": "bookshelf", "brand": "Urban Ladder", "price": 14500, "style": "classic", "width_cm": 85, "depth_cm": 30, "quality_score": 0.9, "link": "https://www.urbanladder.com/bookshelves"},
+            {"name": "Urban Ladder Oki Desk Organizer", "category": "organizer", "brand": "Urban Ladder", "price": 1200, "style": "minimalist", "width_cm": 30, "depth_cm": 20, "quality_score": 0.8, "link": "https://www.urbanladder.com/study-table-accessories"},
+            {"name": "Urban Ladder Boston Study Table", "category": "desk", "brand": "Urban Ladder", "price": 18500, "style": "scandinavian", "width_cm": 115, "depth_cm": 60, "quality_score": 0.9, "link": "https://www.urbanladder.com/study-tables"},
+            {"name": "Urban Ladder Aeris Desk Chair", "category": "chair", "brand": "Urban Ladder", "price": 11500, "style": "modern", "width_cm": 65, "depth_cm": 65, "quality_score": 0.88, "link": "https://www.urbanladder.com/study-chairs"},
+            {"name": "Urban Ladder Carson Side Table", "category": "table", "brand": "Urban Ladder", "price": 4500, "style": "contemporary", "width_cm": 45, "depth_cm": 45, "quality_score": 0.82, "link": "https://www.urbanladder.com/side-tables"},
+            {"name": "Urban Ladder Flora Table Lamp", "category": "lighting", "brand": "Urban Ladder", "price": 2500, "style": "modern", "width_cm": 22, "depth_cm": 22, "quality_score": 0.85, "link": "https://www.urbanladder.com/lamps"},
+            {"name": "Urban Ladder Stanhope Desk", "category": "desk", "brand": "Urban Ladder", "price": 22000, "style": "scandinavian", "width_cm": 120, "depth_cm": 60, "quality_score": 0.92, "link": "https://www.urbanladder.com/study-tables"},
 
             # Godrej Interio (10 products)
-            {"name": "Godrej Interio Caliber Desk", "category": "desk", "brand": "Godrej Interio", "price": 8500, "style": "contemporary", "width_cm": 110, "depth_cm": 55, "quality_score": 0.8},
-            {"name": "Godrej Interio Motion Chair", "category": "chair", "brand": "Godrej Interio", "price": 12000, "style": "contemporary", "width_cm": 65, "depth_cm": 65, "quality_score": 0.85},
-            {"name": "Godrej Interio Companion Cabinet", "category": "cabinet", "brand": "Godrej Interio", "price": 9500, "style": "classic", "width_cm": 90, "depth_cm": 45, "quality_score": 0.8},
-            {"name": "Godrej Interio Unwind Chair", "category": "chair", "brand": "Godrej Interio", "price": 4500, "style": "modern", "width_cm": 55, "depth_cm": 55, "quality_score": 0.78},
-            {"name": "Godrej Interio Script Desk", "category": "desk", "brand": "Godrej Interio", "price": 16500, "style": "contemporary", "width_cm": 120, "depth_cm": 60, "quality_score": 0.88},
-            {"name": "Godrej Interio Premier Table", "category": "desk", "brand": "Godrej Interio", "price": 10500, "style": "classic", "width_cm": 115, "depth_cm": 60, "quality_score": 0.82},
-            {"name": "Godrej Interio Slimline Wardrobe", "category": "wardrobe", "brand": "Godrej Interio", "price": 21000, "style": "classic", "width_cm": 90, "depth_cm": 50, "quality_score": 0.85},
-            {"name": "Godrej Interio Versatile Shelf", "category": "bookshelf", "brand": "Godrej Interio", "price": 7500, "style": "modern", "width_cm": 80, "depth_cm": 30, "quality_score": 0.8},
-            {"name": "Godrej Interio Accent Lamp", "category": "lighting", "brand": "Godrej Interio", "price": 3000, "style": "contemporary", "width_cm": 25, "depth_cm": 25, "quality_score": 0.82},
-            {"name": "Godrej Interio Work Desk Combo", "category": "desk", "brand": "Godrej Interio", "price": 19999, "style": "contemporary", "width_cm": 120, "depth_cm": 60, "quality_score": 0.88},
+            {"name": "Godrej Interio Caliber Desk", "category": "desk", "brand": "Godrej Interio", "price": 8500, "style": "contemporary", "width_cm": 110, "depth_cm": 55, "quality_score": 0.8, "link": "https://www.godrejinterio.com/furniture/study-table"},
+            {"name": "Godrej Interio Motion Chair", "category": "chair", "brand": "Godrej Interio", "price": 12000, "style": "contemporary", "width_cm": 65, "depth_cm": 65, "quality_score": 0.85, "link": "https://www.godrejinterio.com/furniture/office-chair"},
+            {"name": "Godrej Interio Companion Cabinet", "category": "cabinet", "brand": "Godrej Interio", "price": 9500, "style": "classic", "width_cm": 90, "depth_cm": 45, "quality_score": 0.8, "link": "https://www.godrejinterio.com/furniture/home-storage"},
+            {"name": "Godrej Interio Unwind Chair", "category": "chair", "brand": "Godrej Interio", "price": 4500, "style": "modern", "width_cm": 55, "depth_cm": 55, "quality_score": 0.78, "link": "https://www.godrejinterio.com/furniture/chairs"},
+            {"name": "Godrej Interio Script Desk", "category": "desk", "brand": "Godrej Interio", "price": 16500, "style": "contemporary", "width_cm": 120, "depth_cm": 60, "quality_score": 0.88, "link": "https://www.godrejinterio.com/furniture/study-table"},
+            {"name": "Godrej Interio Premier Table", "category": "desk", "brand": "Godrej Interio", "price": 10500, "style": "classic", "width_cm": 115, "depth_cm": 60, "quality_score": 0.82, "link": "https://www.godrejinterio.com/furniture/study-table"},
+            {"name": "Godrej Interio Slimline Wardrobe", "category": "wardrobe", "brand": "Godrej Interio", "price": 21000, "style": "classic", "width_cm": 90, "depth_cm": 50, "quality_score": 0.85, "link": "https://www.godrejinterio.com/furniture/wardrobe"},
+            {"name": "Godrej Interio Versatile Shelf", "category": "bookshelf", "brand": "Godrej Interio", "price": 7500, "style": "modern", "width_cm": 80, "depth_cm": 30, "quality_score": 0.8, "link": "https://www.godrejinterio.com/furniture/home-storage"},
+            {"name": "Godrej Interio Accent Lamp", "category": "lighting", "brand": "Godrej Interio", "price": 3000, "style": "contemporary", "width_cm": 25, "depth_cm": 25, "quality_score": 0.82, "link": "https://www.godrejinterio.com/"},
+            {"name": "Godrej Interio Work Desk Combo", "category": "desk", "brand": "Godrej Interio", "price": 19999, "style": "contemporary", "width_cm": 120, "depth_cm": 60, "quality_score": 0.88, "link": "https://www.godrejinterio.com/furniture/study-table"},
 
             # Projectors & Projector Screens (5 products)
             {"name": "Epson EpiqVision Flex Projector", "category": "projector", "brand": "Epson", "price": 27389, "style": "modern", "width_cm": 30, "depth_cm": 30, "quality_score": 0.9, "image": "https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=150&q=80", "link": "https://www.google.com/search?tbm=shop&q=Epson+EpiqVision+Flex+Projector"},
             {"name": "Vankyo Leisure Mini Projector", "category": "projector", "brand": "Vankyo", "price": 4979, "style": "modern", "width_cm": 20, "depth_cm": 15, "quality_score": 0.85, "image": "https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=150&q=80", "link": "https://www.google.com/search?tbm=shop&q=Vankyo+Leisure+Mini+Projector"},
             {"name": "Vankyo Staytrue 120 Projector Screen", "category": "projector screen", "brand": "Vankyo", "price": 10789, "style": "modern", "width_cm": 260, "depth_cm": 10, "quality_score": 0.88, "image": "https://images.unsplash.com/photo-1583741893569-07301292b3bc?auto=format&fit=crop&w=150&q=80", "link": "https://www.google.com/search?tbm=shop&q=Vankyo+Staytrue+120+Projector+Screen"},
-            {"name": "IKEA MITTzon Projector Frame", "category": "projector screen", "brand": "IKEA", "price": 26500, "style": "modern", "width_cm": 200, "depth_cm": 80, "quality_score": 0.86, "image": "https://images.unsplash.com/photo-1583741893569-07301292b3bc?auto=format&fit=crop&w=150&q=80", "link": "https://www.google.com/search?tbm=shop&q=IKEA+MITTzon+Projector+Frame"},
-            {"name": "Elite Screens Manual Projector Screen", "category": "projector screen", "brand": "Elite Screens", "price": 8999, "style": "classic", "width_cm": 240, "depth_cm": 12, "quality_score": 0.87, "image": "https://images.unsplash.com/photo-1583741893569-07301292b3bc?auto=format&fit=crop&w=150&q=80", "link": "https://www.google.com/search?tbm=shop&q=Elite+Screens+Manual+Projector+Screen"}
+            {"name": "IKEA MITTzon Projector Frame", "category": "projector screen", "brand": "IKEA", "price": 26500, "style": "modern", "width_cm": 200, "depth_cm": 80, "quality_score": 0.86, "image": "https://images.unsplash.com/photo-1583741893569-07301292b3bc?auto=format&fit=crop&w=150&q=80", "link": "https://www.ikea.com/"},
+            {"name": "Elite Screens Manual Projector Screen", "category": "projector screen", "brand": "Elite Screens", "price": 8999, "style": "classic", "width_cm": 240, "depth_cm": 12, "quality_score": 0.87, "image": "https://images.unsplash.com/photo-1583741893569-07301292b3bc?auto=format&fit=crop&w=150&q=80", "link": "https://www.google.com/search?tbm=shop&q=Elite+Screens+Manual+Projector+Screen"},
+            
+            # Additional Category Mappings & Brand Fallbacks (Beds, Green Soul)
+            {"name": "IKEA Neiden Bed Frame", "category": "bed", "brand": "IKEA", "price": 8999, "style": "modern", "width_cm": 200, "depth_cm": 140, "quality_score": 0.8, "link": "https://www.ikea.com/in/en/p/neiden-bed-frame-pine-80395248/"},
+            {"name": "IKEA Malm Bed Frame", "category": "bed", "brand": "IKEA", "price": 18999, "style": "modern", "width_cm": 210, "depth_cm": 160, "quality_score": 0.88, "link": "https://www.ikea.com/in/en/p/malm-bed-frame-high-w-2-storage-boxes-white-s79175979/"},
+            {"name": "Urban Ladder Single Bed", "category": "bed", "brand": "Urban Ladder", "price": 22000, "style": "contemporary", "width_cm": 200, "depth_cm": 100, "quality_score": 0.86, "link": "https://www.urbanladder.com/beds"},
+            {"name": "Godrej Interio Queen Bed", "category": "bed", "brand": "Godrej Interio", "price": 28000, "style": "classic", "width_cm": 210, "depth_cm": 150, "quality_score": 0.85, "link": "https://www.godrejinterio.com/furniture/beds"},
+            {"name": "Green Soul Ergonomic Chair", "category": "chair", "brand": "Green Soul", "price": 8999, "style": "contemporary", "width_cm": 65, "depth_cm": 65, "quality_score": 0.9, "link": "https://www.greensoul.online/"},
+            {"name": "Green Soul Study Desk", "category": "desk", "brand": "Green Soul", "price": 7500, "style": "modern", "width_cm": 120, "depth_cm": 60, "quality_score": 0.82, "link": "https://www.greensoul.online/"}
         ]
         logger.info("CommerceAgent initialized (Provider: %s)", provider)
 
@@ -255,7 +263,7 @@ class CommerceAgent:
                 url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
                 
                 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=8) as response:
+                with urllib.request.urlopen(req, timeout=25) as response:
                     data = json.loads(response.read().decode('utf-8'))
                     shopping_results = data.get("shopping_results", [])
                     
@@ -341,7 +349,7 @@ class CommerceAgent:
                             "rating": rating,
                             "reviews": reviews_count,
                             "image": image_url,
-                            "link": extract_direct_link(item.get("link", "")) or f"https://www.google.com/search?tbm=shop&q={urllib.parse.quote(f'{detected_brand} {title}'.strip())}"
+                            "link": extract_direct_link(item.get("link", "")) or item.get("link", "") or f"https://www.google.com/search?tbm=shop&q={urllib.parse.quote(f'{detected_brand} {title}'.strip())}"
                         })
             except Exception as e:
                 logger.error("SerpAPI query failed for '%s': %s", query, str(e))

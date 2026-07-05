@@ -350,7 +350,7 @@ class ReconstructionAgent:
                                 
                                 # Paste product image directly onto the base image
                                 base_img.paste(product_img_resized, (coords[0], coords[1]), product_img_resized)
-                                inpaint_targets.append((coords, item))
+                                inpaint_targets.append((coords, item, product_img))
                             else:
                                 # Fallback: draw a very subtle clean overlay outline only
                                 pass
@@ -363,14 +363,14 @@ class ReconstructionAgent:
                             try:
                                 # Build prompt describing the products to place
                                 prompt_parts = []
-                                for _, it in inpaint_targets:
+                                for _, it, _ in inpaint_targets:
                                     prompt_parts.append(f"a {it.get('style', 'modern')} {it.get('brand', '')} {it.get('name', 'furniture')}")
                                 inpaint_prompt = "photorealistic room interior containing " + ", ".join(prompt_parts) + ", matching shadows and studio lighting, high resolution"
                                 
                                 # Build mask image (L mode, black)
                                 mask_img = Image.new("L", base_img.size, 0)
                                 mask_draw = ImageDraw.Draw(mask_img)
-                                for c, _ in inpaint_targets:
+                                for c, _, _ in inpaint_targets:
                                     pad = 12
                                     mask_draw.rectangle(
                                         (c[0] - pad, c[1] - pad, c[2] + pad, c[3] + pad),
@@ -397,7 +397,7 @@ class ReconstructionAgent:
                                     data = {
                                         "prompt": inpaint_prompt,
                                         "num_inference_steps": 25,
-                                        "strength": 0.7
+                                        "strength": 0.45
                                     }
                                     response = requests.post(
                                         "https://api.deepinfra.com/v1/inference/stabilityai/stable-diffusion-2-inpainting",
@@ -439,7 +439,7 @@ class ReconstructionAgent:
                                         image=init_rgb,
                                         mask_image=mask_l,
                                         num_inference_steps=20,
-                                        strength=0.7,
+                                        strength=0.45,
                                         guidance_scale=7.5
                                     ).images[0]
                                     
@@ -447,6 +447,15 @@ class ReconstructionAgent:
                                     logger.info("Successfully completed local Hugging Face GPU inpainting!")
                             except Exception as inpaint_err:
                                 logger.warning("Inpainting failed: %s. Using high-fidelity feathered overlays.", str(inpaint_err))
+                                
+                            # Re-paste the high-fidelity transparent product cutouts on top of the inpainted result
+                            # to guarantee 100% sharpness and preserve original product details perfectly!
+                            for c, _, p_img in inpaint_targets:
+                                if p_img:
+                                    box_w = c[2] - c[0]
+                                    box_h = c[3] - c[1]
+                                    p_img_resized = p_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
+                                    base_img.paste(p_img_resized, (c[0], c[1]), p_img_resized)
 
                         # D. Convert base_img to RGB and save cleanly (completely realistic photo output)
                         composite = base_img.convert("RGB")
