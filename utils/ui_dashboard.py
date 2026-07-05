@@ -243,7 +243,8 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     # Fallback check
                     print("ℹ No widget uploads detected. Searching fallback room view assets...")
                     uploads_dir.mkdir(parents=True, exist_ok=True)
-                    fallback_paths = ["assets/front-view.png", "assets/left-view.png", "assets/right-view.png"]
+                    # fallback_paths = ["assets/front-view.png", "assets/left-view.png", "assets/right-view.png"]
+                    fallback_paths = ["assets/front-view.png"]
                     for p in fallback_paths:
                         path = pathlib.Path(p)
                         if path.exists():
@@ -433,7 +434,23 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 placed_names = [p.get("name") for p in state["placed_products"]]
                 
                 for item in recommended_list[:10]:
-                    img_url = item.get("image") or "https://via.placeholder.com/150"
+                    img_url = item.get("image") or ""
+                    if not img_url or "via.placeholder.com" in img_url:
+                        cat_lower = item.get("category", "").lower()
+                        if "desk" in cat_lower or "table" in cat_lower:
+                            img_url = "https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?auto=format&fit=crop&w=150&q=80"
+                        elif "chair" in cat_lower or "stool" in cat_lower:
+                            img_url = "https://images.unsplash.com/photo-1505797149-43b0069ec26b?auto=format&fit=crop&w=150&q=80"
+                        elif "bookshelf" in cat_lower or "shelf" in cat_lower:
+                            img_url = "https://images.unsplash.com/photo-1594980596870-8cb524ebf6bc?auto=format&fit=crop&w=150&q=80"
+                        elif "bed" in cat_lower:
+                            img_url = "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=150&q=80"
+                        elif "lighting" in cat_lower or "lamp" in cat_lower:
+                            img_url = "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=150&q=80"
+                        elif "cabinet" in cat_lower or "wardrobe" in cat_lower:
+                            img_url = "https://images.unsplash.com/photo-1595428774223-ef52624120d2?auto=format&fit=crop&w=150&q=80"
+                        else:
+                            img_url = "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=150&q=80"
                     
                     # Create card details layout with clickable product title links opening in new pages
                     card_html = f"""

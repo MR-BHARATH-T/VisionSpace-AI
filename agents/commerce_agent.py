@@ -382,7 +382,24 @@ class CommerceAgent:
             enriched_item = dict(item)
             enriched_item["rating"] = item.get("rating", round(item.get("quality_score", 0.8) * 5.0, 1))
             enriched_item["reviews"] = item.get("reviews", 50)
-            enriched_item["image"] = item.get("image", "https://via.placeholder.com/150")
+            # Resolve a beautiful, high-fidelity Unsplash product image based on the item's category
+            cat_lower = item.get("category", "").lower()
+            if "desk" in cat_lower or "table" in cat_lower:
+                img_url = "https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?auto=format&fit=crop&w=150&q=80"
+            elif "chair" in cat_lower or "stool" in cat_lower:
+                img_url = "https://images.unsplash.com/photo-1505797149-43b0069ec26b?auto=format&fit=crop&w=150&q=80"
+            elif "bookshelf" in cat_lower or "shelf" in cat_lower:
+                img_url = "https://images.unsplash.com/photo-1594980596870-8cb524ebf6bc?auto=format&fit=crop&w=150&q=80"
+            elif "bed" in cat_lower:
+                img_url = "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=150&q=80"
+            elif "lighting" in cat_lower or "lamp" in cat_lower:
+                img_url = "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=150&q=80"
+            elif "cabinet" in cat_lower or "wardrobe" in cat_lower:
+                img_url = "https://images.unsplash.com/photo-1595428774223-ef52624120d2?auto=format&fit=crop&w=150&q=80"
+            else:
+                img_url = "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=150&q=80"
+                
+            enriched_item["image"] = item.get("image") or img_url
             
             # Ensure fallback product detail search link is dynamically generated
             if not enriched_item.get("link"):

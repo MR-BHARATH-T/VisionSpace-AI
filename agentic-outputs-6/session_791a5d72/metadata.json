@@ -1,0 +1,16 @@
+{
+    "session_id": "session_791a5d72",
+    "session_path": "outputs/session_791a5d72",
+    "timestamp": "2026-07-05T19:07:11.382553+00:00",
+    "model_name": "Qwen/Qwen3-VL-8B-Instruct",
+    "prompt_version": "production-pipeline-v2",
+    "image_count": 1,
+    "gpu_device": "N/A",
+    "performance_metrics": {
+        "load_time_s": 0.0751,
+        "preprocess_time_s": 1.1776,
+        "inference_time_s": 210.679,
+        "merge_time_s": 0.0,
+        "total_time_s": 211.9336
+    }
+}

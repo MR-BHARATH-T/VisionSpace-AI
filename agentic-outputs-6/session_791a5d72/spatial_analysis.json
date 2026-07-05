@@ -1,0 +1,12 @@
+{
+    "room_dimensions": {
+        "length": 5.0,
+        "width": 4.5,
+        "height": 3.0
+    },
+    "empty_regions": [],
+    "usable_area": 18.0,
+    "walkable_area": 15.8,
+    "occupancy_grid": {},
+    "walkability_score": 88
+}
