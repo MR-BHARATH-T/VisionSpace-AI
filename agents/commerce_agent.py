@@ -18,6 +18,22 @@ from utils.file_utils import save_json
 
 logger = logging.getLogger("VisionSpaceAI.CommerceAgent")
 
+def extract_direct_link(link: str) -> str:
+    """Extracts direct merchant link (IKEA, Amazon, Flipkart, etc.) from Google redirect URLs."""
+    if not link:
+        return ""
+    if "google.com/url" in link or "google.adservices.com" in link:
+        import urllib.parse
+        try:
+            parsed = urllib.parse.urlparse(link)
+            params = urllib.parse.parse_qs(parsed.query)
+            for key in ["adurl", "q", "url"]:
+                if key in params and params[key]:
+                    return params[key][0]
+        except Exception:
+            pass
+    return link
+
 
 class CommerceAgent:
     """Production-grade CommerceAgent responsible for item curation matching V2 schemas."""
@@ -325,7 +341,7 @@ class CommerceAgent:
                             "rating": rating,
                             "reviews": reviews_count,
                             "image": image_url,
-                            "link": item.get("link", "")
+                            "link": extract_direct_link(item.get("link", ""))
                         })
             except Exception as e:
                 logger.error("SerpAPI query failed for '%s': %s", query, str(e))
