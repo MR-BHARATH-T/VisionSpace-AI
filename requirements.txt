@@ -11,6 +11,8 @@ sentencepiece
 safetensors
 opencv-python
 pillow
+numpy>=2.0.0,<2.1.0
+scipy>=1.13.0
 langgraph
 langchain
 gradio
