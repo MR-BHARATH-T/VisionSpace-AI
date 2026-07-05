@@ -1,0 +1,10 @@
+{
+    "reconstruction_model": "FLUX Kontext",
+    "reasoning": "Preserves room layout identity and geometric boundaries better than SDXL.",
+    "prompts": [
+        "Add a modern IKEA study table to the room floor space, preserving exact room perspective and ambient lighting.",
+        "Add a modern IKEA study table to the room floor space, preserving exact room perspective and ambient lighting."
+    ],
+    "base_image": "original_1.png",
+    "output_preview_image": "processed_reconstructed.png"
+}

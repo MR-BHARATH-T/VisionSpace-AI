@@ -35,10 +35,9 @@ def apply_edge_feathering(img: Any, feather_radius: int = 15) -> Any:
             outline=alpha
         )
         
-    # Multiply existing alpha channel with the feathering mask
     alpha_channel = img.split()[3]
-    from PIL import ImageMath
-    blended_alpha = ImageMath.eval("convert(min(a, b), 'L')", a=alpha_channel, b=mask)
+    from PIL import ImageChops
+    blended_alpha = ImageChops.darker(alpha_channel, mask)
     img.putalpha(blended_alpha)
     return img
 

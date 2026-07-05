@@ -1,0 +1,52 @@
+{
+    "room_type": "living_room",
+    "objects": [],
+    "doors": [],
+    "windows": [
+        {
+            "type": "sliding_door",
+            "estimated_dimensions": {
+                "width_cm": 280,
+                "depth_cm": 20,
+                "height_cm": 200
+            },
+            "room_position": {
+                "x_cm": 260,
+                "y_cm": 100,
+                "z_cm": 700
+            }
+        }
+    ],
+    "walls": [
+        {
+            "orientation": "north",
+            "color": "brown",
+            "material": "marble"
+        },
+        {
+            "orientation": "south",
+            "color": "brown",
+            "material": "wood_paneling"
+        },
+        {
+            "orientation": "east",
+            "color": "beige",
+            "material": "textured_wallpaper"
+        },
+        {
+            "orientation": "west",
+            "color": "brown",
+            "material": "wood_paneling"
+        }
+    ],
+    "floor": {
+        "material": "polished_marble_tile",
+        "color": "light_brown"
+    },
+    "ceiling": {
+        "height_cm": 300,
+        "color": "white",
+        "material": "plaster"
+    },
+    "confidence_score": 0.92
+}
