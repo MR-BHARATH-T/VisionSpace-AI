@@ -43,7 +43,7 @@ def apply_edge_feathering(img: Any, feather_radius: int = 15) -> Any:
 
 
 def make_background_transparent(img: Any) -> Any:
-    """Converts solid white or near-white background pixels of a product thumbnail to transparent."""
+    """Converts solid or near-solid backgrounds of product thumbnails to transparent."""
     # 1. Attempt to use rembg if installed for professional AR background removal
     try:
         # Pre-check onnxruntime to avoid rembg module-level sys.exit(1) execution
@@ -55,19 +55,48 @@ def make_background_transparent(img: Any) -> Any:
             # Also apply soft edge feathering to the result to make it look smooth
             return apply_edge_feathering(removed, feather_radius=8)
     except BaseException as rembg_err:
-        logger.warning("rembg failed, not installed, or exited: %s. Falling back to color-key thresholding.", str(rembg_err))
+        logger.warning("rembg failed, not installed, or exited: %s. Falling back to corner-sample keying.", str(rembg_err))
 
-    # 2. Fallback: Color-key solid background thresholding
+    # 2. Fallback: Corner-sample chroma keying (works on gray/off-white studio backdrops)
     img = img.convert("RGBA")
-    datas = img.getdata()
+    width, height = img.size
+    pixels = img.load()
+    
+    # Sample the four corners
+    corners = [
+        pixels[0, 0],
+        pixels[width - 1, 0],
+        pixels[0, height - 1],
+        pixels[width - 1, height - 1]
+    ]
+    
+    # Calculate average corner color (RGB)
+    avg_r = sum(c[0] for c in corners) // 4
+    avg_g = sum(c[1] for c in corners) // 4
+    avg_b = sum(c[2] for c in corners) // 4
+    
+    # Standard deviation threshold check to verify it's a solid backdrop
+    import math
+    dists = [math.sqrt((c[0]-avg_r)**2 + (c[1]-avg_g)**2 + (c[2]-avg_b)**2) for c in corners]
+    is_solid_backdrop = all(d < 15 for d in dists) # corners are highly similar
     
     new_data = []
+    datas = img.getdata()
+    
+    # Define match threshold
+    threshold = 32
+    
     for item in datas:
         r, g, b, a = item
-        if r > 230 and g > 230 and b > 230:
-            new_data.append((255, 255, 255, 0)) # transparent
-        elif r < 20 and g < 20 and b < 20:
-            new_data.append((0, 0, 0, 0)) # transparent
+        
+        # Check distance to average corner color
+        dist = math.sqrt((r - avg_r)**2 + (g - avg_g)**2 + (b - avg_b)**2)
+        
+        # Always key out near-white or near-black
+        if (r > 225 and g > 225 and b > 225) or (r < 25 and g < 25 and b < 25):
+            new_data.append((r, g, b, 0))
+        elif is_solid_backdrop and dist < threshold:
+            new_data.append((r, g, b, 0))
         else:
             new_data.append(item)
             
@@ -83,6 +112,8 @@ class ReconstructionAgent:
     def __init__(self, provider: str = "huggingface") -> None:
         """Initializes the ReconstructionAgent."""
         self.provider_name = provider
+        self.inpaint_pipe = None
+        self.product_image_cache = {}
         logger.info("ReconstructionAgent initialized")
 
     def plan_reconstruction(
@@ -296,16 +327,20 @@ class ReconstructionAgent:
                             product_img = None
                             img_url = item.get("image")
                             if img_url:
-                                try:
-                                    import requests
-                                    from io import BytesIO
-                                    response = requests.get(img_url, timeout=10)
-                                    if response.status_code == 200:
-                                        product_img = Image.open(BytesIO(response.content))
-                                        # Apply background transparency removal (AR style!)
-                                        product_img = make_background_transparent(product_img)
-                                except Exception as e:
-                                    logger.warning("Failed to fetch product image from %s: %s", img_url, str(e))
+                                if img_url in self.product_image_cache:
+                                    product_img = self.product_image_cache[img_url]
+                                else:
+                                    try:
+                                        import requests
+                                        from io import BytesIO
+                                        response = requests.get(img_url, timeout=10)
+                                        if response.status_code == 200:
+                                            raw_img = Image.open(BytesIO(response.content))
+                                            # Apply background transparency removal (AR style!)
+                                            product_img = make_background_transparent(raw_img)
+                                            self.product_image_cache[img_url] = product_img
+                                    except Exception as e:
+                                        logger.warning("Failed to fetch product image from %s: %s", img_url, str(e))
 
                             if product_img:
                                 # Resize product image to match target bounding box coordinates
@@ -385,12 +420,16 @@ class ReconstructionAgent:
                                     import torch
                                     from diffusers import StableDiffusionInpaintPipeline
                                     
-                                    inpaint_pipe = StableDiffusionInpaintPipeline.from_pretrained(
-                                        "runwayml/stable-diffusion-inpainting",
-                                        torch_dtype=torch.float16,
-                                        safety_checker=None
-                                    )
-                                    inpaint_pipe.to("cuda")
+                                    if not hasattr(self, "inpaint_pipe") or self.inpaint_pipe is None:
+                                        logger.info("Loading inpaint model weights for the first time...")
+                                        self.inpaint_pipe = StableDiffusionInpaintPipeline.from_pretrained(
+                                            "runwayml/stable-diffusion-inpainting",
+                                            torch_dtype=torch.float16,
+                                            safety_checker=None
+                                        )
+                                        self.inpaint_pipe.to("cuda")
+                                    
+                                    inpaint_pipe = self.inpaint_pipe
                                     
                                     init_rgb = base_img.convert("RGB")
                                     mask_l = mask_img.convert("L")

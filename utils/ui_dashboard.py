@@ -200,14 +200,14 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
             # Extract uploaded images
             uploaded_files = uploader_widget.value
             images = []
-            
-            # Clean and recreate uploads dir
             uploads_dir = pathlib.Path("uploads")
-            if uploads_dir.exists():
-                shutil.rmtree(uploads_dir)
-            uploads_dir.mkdir(parents=True, exist_ok=True)
-
+            
             if uploaded_files:
+                # Clean and recreate uploads dir ONLY when new files are uploaded
+                if uploads_dir.exists():
+                    shutil.rmtree(uploads_dir)
+                uploads_dir.mkdir(parents=True, exist_ok=True)
+                
                 if isinstance(uploaded_files, dict):
                     for file_name, file_info in uploaded_files.items():
                         content = file_info['content']
@@ -218,25 +218,39 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                             f.write(content)
                 else:
                     for file_info in uploaded_files:
-                        file_name = file_info['name']
+                        file_name = file_info.get('name', 'uploaded_image.png')
                         content = file_info['content']
                         img = Image.open(io.BytesIO(content))
                         images.append(img)
                         # Save to uploads dir
                         with open(uploads_dir / file_name, "wb") as f:
                             f.write(content)
-                print(f" Loaded {len(images)} uploaded images.")
+                print(f" Loaded {len(images)} uploaded images from widget.")
             else:
-                # Fallback check
-                print("ℹ No widget uploads detected. Searching fallback room view assets...")
-                fallback_paths = ["assets/front-view.png", "assets/left-view.png", "assets/right-view.png"]
-                for p in fallback_paths:
-                    path = pathlib.Path(p)
-                    if path.exists():
-                        images.append(Image.open(path))
-                        # Save to uploads
-                        shutil.copy(path, uploads_dir / path.name)
-                        
+                # Check if there are already images in uploads/ from a previous run
+                existing_uploads = []
+                if uploads_dir.exists():
+                    existing_uploads = sorted([
+                        p for p in uploads_dir.iterdir()
+                        if p.suffix.lower() in [".png", ".jpg", ".jpeg"]
+                    ])
+                
+                if existing_uploads:
+                    for p in existing_uploads:
+                        images.append(Image.open(p))
+                    print(f" Loaded {len(images)} previously uploaded images from uploads/ directory.")
+                else:
+                    # Fallback check
+                    print("ℹ No widget uploads detected. Searching fallback room view assets...")
+                    uploads_dir.mkdir(parents=True, exist_ok=True)
+                    fallback_paths = ["assets/front-view.png", "assets/left-view.png", "assets/right-view.png"]
+                    for p in fallback_paths:
+                        path = pathlib.Path(p)
+                        if path.exists():
+                            images.append(Image.open(path))
+                            # Save to uploads
+                            shutil.copy(path, uploads_dir / path.name)
+                            
             if not images:
                 print(" Error: No room images found! Please upload files first.")
                 return

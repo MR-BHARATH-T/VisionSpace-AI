@@ -341,7 +341,7 @@ class CommerceAgent:
                             "rating": rating,
                             "reviews": reviews_count,
                             "image": image_url,
-                            "link": extract_direct_link(item.get("link", ""))
+                            "link": extract_direct_link(item.get("link", "")) or f"https://www.google.com/search?tbm=shop&q={urllib.parse.quote(f'{detected_brand} {title}'.strip())}"
                         })
             except Exception as e:
                 logger.error("SerpAPI query failed for '%s': %s", query, str(e))

@@ -1,0 +1,10 @@
+{
+    "session_id": "session_3e687784",
+    "logs": [
+        "[2026-07-05T18:00:28.022697] Session started.",
+        "[2026-07-05T18:00:28.022704] Loaded 3 inputs, normalized to 3 unique images.",
+        "[2026-07-05T18:00:28.022707] Completed unified batched pre-processing.",
+        "[2026-07-05T18:00:28.022709] Finished unified VLM inference pass.",
+        "[2026-07-05T18:00:28.022711] Session files successfully saved."
+    ]
+}
