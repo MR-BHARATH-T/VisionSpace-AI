@@ -232,21 +232,37 @@ class ReconstructionAgent:
                             # 1. Resolve realistic, category-specific coordinate zones to preserve scale, perspective, and prevent distortions.
                             category = item.get("category", "").lower()
                             
+                            # Detect co-presence of items to shift layout zones dynamically and avoid collisions
+                            has_bed = any("bed" in r_item.get("category", "").lower() for r_item in recommended)
+                            has_bookshelf = any(any(k in r_item.get("category", "").lower() for k in ["bookshelf", "shelf", "wardrobe"]) for r_item in recommended)
+                            
                             # Standard default coordinates
                             coords = (int(width * 0.35), int(height * 0.45), int(width * 0.65), int(height * 0.75))
                             pos_desc = "Location: Wall shelf display alignment"
                             
                             if "bed" in category:
-                                coords = (int(width * 0.18), int(height * 0.48), int(width * 0.58), int(height * 0.80))
+                                if has_bookshelf:
+                                    # Shift bed slightly right to make room for bookshelf on the left back wall
+                                    coords = (int(width * 0.38), int(height * 0.50), int(width * 0.72), int(height * 0.82))
+                                else:
+                                    coords = (int(width * 0.25), int(height * 0.50), int(width * 0.62), int(height * 0.82))
                                 pos_desc = "Location: Central floor bed layout zone"
                             elif "desk" in category or "table" in category:
-                                coords = (int(width * 0.58), int(height * 0.52), int(width * 0.88), int(height * 0.82))
+                                if has_bed:
+                                    # Shift desk further right/forward to avoid overlapping with the bed footprint
+                                    coords = (int(width * 0.68), int(height * 0.54), int(width * 0.90), int(height * 0.82))
+                                else:
+                                    coords = (int(width * 0.58), int(height * 0.52), int(width * 0.84), int(height * 0.80))
                                 pos_desc = "Location: Workspace desk layout zone"
                             elif "chair" in category or "seating" in category:
-                                coords = (int(width * 0.64), int(height * 0.56), int(width * 0.80), int(height * 0.84))
+                                if has_bed:
+                                    coords = (int(width * 0.72), int(height * 0.60), int(width * 0.86), int(height * 0.86))
+                                else:
+                                    coords = (int(width * 0.64), int(height * 0.58), int(width * 0.78), int(height * 0.84))
                                 pos_desc = "Location: Swivel office chair zone"
                             elif "bookshelf" in category or "shelf" in category or "wardrobe" in category or "cabinet" in category:
-                                coords = (int(width * 0.05), int(height * 0.30), int(width * 0.22), int(height * 0.78))
+                                # Place flat against the left side of the back wall (clears the entryway door on the left wall!)
+                                coords = (int(width * 0.15), int(height * 0.34), int(width * 0.32), int(height * 0.70))
                                 pos_desc = "Location: Tall bookshelf corner zone"
                             elif any(k in category for k in ["screen", "tv", "television"]):
                                 coords = (int(width * 0.28), int(height * 0.16), int(width * 0.72), int(height * 0.42))
@@ -386,34 +402,18 @@ class ReconstructionAgent:
                                     "- minimum window clearance: 30 cm"
                                 )
                                 
-                                # Build contour-aligned mask image (L mode, black)
-                                # This masks ONLY the outer borders and floor shadow areas of the products,
-                                # ensuring the original high-resolution, sharp visual in the center is preserved,
-                                # while the borders and contact shadows are natively generated and blended by the AI model!
+                                # Build fully filled mask image (L mode, black)
+                                # This masks the entire product bounding box (plus 10px boundary padding and 25px bottom shadow margin)
+                                # to force the diffusion model to fully re-render, shade, and align the object
+                                # to the room's 3D perspective, light direction, and reflections.
                                 mask_img = Image.new("L", base_img.size, 0)
                                 mask_draw = ImageDraw.Draw(mask_img)
                                 for c, _, _ in inpaint_targets:
                                     x1, y1, x2, y2 = c
-                                    border_thickness = 10
-                                    
-                                    # 1. Mask the outer border frame (edge blending)
+                                    pad = 10
+                                    shadow_height = 25
                                     mask_draw.rectangle(
-                                        (x1 - border_thickness, y1 - border_thickness, x2 + border_thickness, y2 + border_thickness),
-                                        fill=255
-                                    )
-                                    
-                                    # Hollow out the center to preserve the high-resolution product details (only if box is large enough)
-                                    if (x2 - x1) > 2.5 * border_thickness and (y2 - y1) > 2.5 * border_thickness:
-                                        mask_draw.rectangle(
-                                            (x1 + border_thickness, y1 + border_thickness, x2 - border_thickness, y2 - border_thickness),
-                                            fill=0
-                                        )
-                                        
-                                    # 2. Mask the bottom contact shadow region on the floor (shadow generation)
-                                    # This allows the model to cast realistic floor shadows under the furniture!
-                                    shadow_height = 20
-                                    mask_draw.rectangle(
-                                        (x1 - border_thickness, y2 - border_thickness, x2 + border_thickness, y2 + shadow_height),
+                                        (x1 - pad, y1 - pad, x2 + pad, y2 + shadow_height),
                                         fill=255
                                     )
                                     
@@ -446,7 +446,7 @@ class ReconstructionAgent:
                                         "image": init_b64,
                                         "mask": mask_b64,
                                         "num_inference_steps": 28,
-                                        "strength": 0.55
+                                        "strength": 0.58
                                     }
                                     
                                     # Try dev first, fallback to schnell
@@ -500,7 +500,7 @@ class ReconstructionAgent:
                                         image=init_rgb,
                                         mask_image=mask_l,
                                         num_inference_steps=20,
-                                        strength=0.55,
+                                        strength=0.58,
                                         guidance_scale=7.5
                                     ).images[0]
                                     
