@@ -116,6 +116,26 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         </div>
         """
 
+    state["budget_widget"] = widgets.HTML()
+
+    def update_budget_display() -> None:
+        if not state["out"]:
+            return
+        max_budget = float(state["out"]['budget'].get('budget_limit', 40000.0))
+        placed_items = state["placed_products"]
+        total_placed_cost = sum(float(item.get("price", 0)) for item in placed_items)
+        reserves_remaining = max_budget - total_placed_cost
+        
+        budget_html = f"""
+        <div class="info-card" style="width: 320px; margin-bottom: 0;">
+            <h4 style="margin-top: 0; color: #38bdf8; border-bottom: 1px solid #2d3748; padding-bottom: 5px;"> Budget Breakdown</h4>
+            <p style="margin: 6px 0; font-size: 13px;"><b>Total Selected Cost:</b> Rs. {total_placed_cost:.2f}</p>
+            <p style="margin: 6px 0; font-size: 13px;"><b>Limit Setting:</b> Rs. {max_budget:.2f}</p>
+            <p style="margin: 6px 0; font-size: 13px;"><b>Reserves Remaining:</b> <span style="color: {'#10b981' if reserves_remaining >= 0 else '#ef4444'}; font-weight: bold;">Rs. {reserves_remaining:.2f}</span></p>
+        </div>
+        """
+        state["budget_widget"].value = budget_html
+
     def on_try_product(product_item: Dict[str, Any], button: Any) -> None:
         if not state["pipeline"] or not state["session_path"]:
             return
@@ -188,6 +208,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         comparison_html_list.append(comparison_html)
                 
                 state["image_box"].value = "\n".join(comparison_html_list)
+                update_budget_display()
                 print(" Success! Updated the layout reconstruction image.")
             except Exception as e:
                 print(f" Product placement failed: {str(e)}")
@@ -329,7 +350,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 
                 state["image_box"] = widgets.HTML(value="\n".join(comparison_html_list))
 
-                # Render dynamic styled dashboard
+                # Render dynamic styled dashboard header and spatial audit info
                 dashboard_details = f"""
                 <style>
                     .dashboard-container {{
@@ -346,12 +367,6 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         border-bottom: 2px solid #2d3748;
                         padding-bottom: 10px;
                     }}
-                    .details-grid {{
-                        display: grid;
-                        grid-template-columns: 1fr 1fr;
-                        gap: 20px;
-                        margin-bottom: 20px;
-                    }}
                     .info-card {{
                         background: #1a202c;
                         border-radius: 8px;
@@ -364,66 +379,87 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         border-bottom: 1px solid #2d3748;
                         padding-bottom: 5px;
                     }}
-                    .score-tag {{
-                        background: #1e293b;
-                        padding: 2px 6px;
-                        border-radius: 4px;
-                        font-size: 12px;
-                        color: #fbbf24;
-                    }}
                 </style>
                 <div class="dashboard-container">
                     <div class="dashboard-header">
                         <h2> VisionSpace AI Layout Reconstruction Dashboard</h2>
                         <p style="color: #94a3b8;">Interactive View Comparison and Product Curation Summary</p>
                     </div>
-                    
-                    <div class="details-grid">
-                        <div class="info-card">
-                            <h4> Spatial Audit & Design Alignment</h4>
-                            <p><b>Walkability Index:</b> {out['spatial'].get('walkability_score')}/100</p>
-                            <p><b>Style Theme Identified:</b> {out['design'].get('design_theme', 'modern minimal')}</p>
-                            <p><b>Usable Floor Area:</b> {out['spatial'].get('usable_area', 0)} sqm</p>
-                        </div>
-                        
-                        <div class="info-card">
-                            <h4> Budget Breakdown</h4>
-                            <p><b>Total Selected Cost:</b> Rs. {out['budget'].get('total')}</p>
-                            <p><b>Limit Setting:</b> Rs. {out['budget'].get('budget_limit')}</p>
-                            <p><b>Reserves Remaining:</b> Rs. {out['budget'].get('remaining_budget')}</p>
-                        </div>
-                    </div>
-
-                    <div class="info-card" style="margin-top: 15px; margin-bottom: 15px; border-color: #38bdf8;">
-                        <h4> Agent Execution Logs & Summaries</h4>
-                        <details style="margin-bottom: 8px; cursor: pointer;">
-                            <summary style="font-weight: bold; color: #38bdf8;"> Phase 1: Unified Vision Agent Pass</summary>
-                            <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
-                                Loaded room snaps and executed unified Qwen-VL vision pass. Identified room architecture, doors, windows, and existing furniture positions with coordinates.
-                            </p>
-                        </details>
-                        <details style="margin-bottom: 8px; cursor: pointer;">
-                            <summary style="font-weight: bold; color: #38bdf8;"> Phase 2 & 3: Spatial clearance & Style Alignment Agent Pass</summary>
-                            <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
-                                Validated layout clearances using spatial clearance logic. Evaluated walkability constraints, generated structural collision paths, and aligned with aesthetic style metrics.
-                            </p>
-                        </details>
-                        <details style="margin-bottom: 8px; cursor: pointer;">
-                            <summary style="font-weight: bold; color: #38bdf8;"> Phase 4 & 5: Curation & Budget Curation Agent Pass</summary>
-                            <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
-                                Queried SerpAPI/Mock Catalog to suggest items fitting user specifications. Filtered items to match split budget parameters.
-                            </p>
-                        </details>
-                        <details style="margin-bottom: 8px; cursor: pointer;">
-                            <summary style="font-weight: bold; color: #38bdf8;"> Phase 6 & 7: Reconstruction & Output Delta Agent Pass</summary>
-                            <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
-                                Completed pixel reconstruction overlays. Pasted selected product visuals directly onto the empty zones. Compiled all JSON files and created a ZIP archive.
-                            </p>
-                        </details>
-                    </div>
+                </div>
+                """
+                
+                spatial_html = f"""
+                <style>
+                    .info-card {{
+                        background: #1a202c;
+                        border-radius: 8px;
+                        padding: 15px;
+                        border: 1px solid #2d3748;
+                    }}
+                    .info-card h4 {{
+                        margin-top: 0;
+                        color: #38bdf8;
+                        border-bottom: 1px solid #2d3748;
+                        padding-bottom: 5px;
+                    }}
+                </style>
+                <div class="info-card" style="width: 320px; margin-bottom: 0;">
+                    <h4> Spatial Audit & Design Alignment</h4>
+                    <p style="margin: 6px 0; font-size: 13px;"><b>Walkability Index:</b> {out['spatial'].get('walkability_score')}/100</p>
+                    <p style="margin: 6px 0; font-size: 13px;"><b>Style Theme Identified:</b> {out['design'].get('design_theme', 'modern minimal')}</p>
+                    <p style="margin: 6px 0; font-size: 13px;"><b>Usable Floor Area:</b> {out['spatial'].get('usable_area', 0)} sqm</p>
+                </div>
+                """
+                
+                logs_html = f"""
+                <style>
+                    .info-card {{
+                        background: #1a202c;
+                        border-radius: 8px;
+                        padding: 15px;
+                        border: 1px solid #2d3748;
+                    }}
+                    .info-card h4 {{
+                        margin-top: 0;
+                        color: #38bdf8;
+                        border-bottom: 1px solid #2d3748;
+                        padding-bottom: 5px;
+                    }}
+                </style>
+                <div class="info-card" style="margin-top: 15px; margin-bottom: 15px; border-color: #38bdf8;">
+                    <h4> Agent Execution Logs & Summaries</h4>
+                    <details style="margin-bottom: 8px; cursor: pointer;">
+                        <summary style="font-weight: bold; color: #38bdf8;"> Phase 1: Unified Vision Agent Pass</summary>
+                        <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
+                            Loaded room snaps and executed unified Qwen-VL vision pass. Identified room architecture, doors, windows, and existing furniture positions with coordinates.
+                        </p>
+                    </details>
+                    <details style="margin-bottom: 8px; cursor: pointer;">
+                        <summary style="font-weight: bold; color: #38bdf8;"> Phase 2 & 3: Spatial clearance & Style Alignment Agent Pass</summary>
+                        <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
+                            Validated layout clearances using spatial clearance logic. Evaluated walkability constraints, generated structural collision paths, and aligned with aesthetic style metrics.
+                        </p>
+                    </details>
+                    <details style="margin-bottom: 8px; cursor: pointer;">
+                        <summary style="font-weight: bold; color: #38bdf8;"> Phase 4 & 5: Curation & Budget Curation Agent Pass</summary>
+                        <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
+                            Queried SerpAPI/Mock Catalog to suggest items fitting user specifications. Filtered items to match split budget parameters.
+                        </p>
+                    </details>
+                    <details style="margin-bottom: 8px; cursor: pointer;">
+                        <summary style="font-weight: bold; color: #38bdf8;"> Phase 6 & 7: Reconstruction & Output Delta Agent Pass</summary>
+                        <p style="color: #94a3b8; font-size: 13px; padding-left: 10px; margin-top: 4px;">
+                            Completed generative scene editing. Pasted selected product visuals directly onto the empty zones. Compiled all JSON files and created a ZIP archive.
+                        </p>
+                    </details>
                 </div>
                 """
                 display(HTML(dashboard_details))
+                
+                # Initialize dynamic budget display and render spatial alongside it
+                update_budget_display()
+                display(widgets.HBox([widgets.HTML(spatial_html), state["budget_widget"]], layout=widgets.Layout(gap="20px", margin="10px 0")))
+                display(HTML(logs_html))
                 display(state["image_box"])
 
                 # Render dynamic catalog cards with "Try in Room" callback buttons
@@ -469,9 +505,10 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                             </div>
                             <div style="color: #94a3b8; font-size: 13px; margin: 4px 0;">Brand: <b>{item.get('brand')}</b> | Style: {item.get('style')}</div>
                             <div style="color: #cbd5e1; font-size: 12px; margin-bottom: 6px;"><b>Proposed Zone:</b> {item.get('proposed_location', 'Placement in empty floor coordinates.')}</div>
-                            <div>
+                            <div style="display: flex; gap: 10px; align-items: center;">
                                 <span style="font-weight: bold; color: #fbbf24;">Rs. {item.get('price')}</span>
                                 <span class="score-tag" style="margin-left: 10px;">Rank Score: {item.get('final_score')}</span>
+                                <button onclick="window.open('{p_url}', '_blank', 'noopener,noreferrer')" style="margin-left: auto; height: 28px; padding: 0 12px; background-color: #22c55e; color: #ffffff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: sans-serif; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);">🌐 View Details</button>
                             </div>
                         </div>
                     </div>
@@ -491,26 +528,11 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     # Bind local callback with button self-reference
                     try_btn.on_click(lambda b, p=item: on_try_product(p, b))
                     
-                    # View Product Details Button (bypasses Kaggle sandbox by running native cell Javascript window.open)
-                    view_btn = widgets.Button(
-                        description=" View Details",
-                        button_style="success",
-                        icon="external-link",
-                        layout=widgets.Layout(width="160px", height="32px", margin="4px")
-                    )
-                    
-                    # Bind Javascript window.open callback
-                    def make_view_callback(target_url):
-                        return lambda b: display(Javascript(f'window.open("{target_url}", "_blank");'))
-                        
-                    from IPython.display import Javascript
-                    view_btn.on_click(make_view_callback(p_url))
-                    
-                    # Display card and stacked buttons
+                    # Display card and place button side-by-side
                     display(widgets.HBox([
                         widgets.HTML(card_html),
-                        widgets.VBox([try_btn, view_btn], layout=widgets.Layout(justify_content="center", margin="0 0 0 10px"))
-                    ]))
+                        try_btn
+                    ], layout=widgets.Layout(align_items="center")))
 
                 # Zip output files
                 print("\n Zipping output files...")

@@ -357,10 +357,17 @@ class ReconstructionAgent:
                             item["proposed_location"] = pos_desc
 
                         # C. Run AI Inpainting Reconstruction Pass (FLUX/SDXL Cloud or HF local)
-                        # This generates/reconstructs the pasted product shapes inside the room realistically!
+                        # C. Run AI Inpainting Reconstruction Pass (FLUX/SDXL Cloud or HF local)
+                        # This regenerates/reconstructs the pasted product shapes inside the room realistically!
                         if inpaint_targets:
                             try:
-                                # Build dynamic prompt mapping Spec 6 & 7 requirements
+                                # 1. Build concise prompt to fit CLIP 77-token limit (prevents truncation and erasures)
+                                prompt_parts = []
+                                for _, it, _ in inpaint_targets:
+                                    prompt_parts.append(f"a {it.get('brand', '')} {it.get('title', 'furniture')}")
+                                clip_inpaint_prompt = "photorealistic room interior containing " + ", ".join(prompt_parts) + ", matching shadows and lighting, high resolution"
+                                
+                                # 2. Save full prompt report description for JSON layout files
                                 products_prompt_parts = []
                                 for p_idx, (_, it, _) in enumerate(inpaint_targets):
                                     pos_d = it.get("proposed_location", "Placement in empty floor coordinates.")
@@ -370,7 +377,6 @@ class ReconstructionAgent:
                                         f"   - {pos_d}"
                                     )
                                 products_list_str = "\n\n".join(products_prompt_parts)
-                                
                                 inpaint_prompt = (
                                     "Generate a photorealistic 4K interior reconstruction.\n\n"
                                     "Preserve the room geometry, camera position, wall textures, floor textures, lighting, shadows, and perspective exactly as they currently exist.\n\n"
@@ -393,8 +399,7 @@ class ReconstructionAgent:
                                     "- minimum desk clearance: 75 cm\n"
                                     "- minimum chair pullout clearance: 60 cm\n"
                                     "- minimum door clearance: 90 cm\n"
-                                    "- minimum window clearance: 30 cm\n"
-                                    "- return ONLY the modified room image with no text banners"
+                                    "- minimum window clearance: 30 cm"
                                 )
                                 
                                 # Build mask image (L mode, black)
@@ -413,9 +418,9 @@ class ReconstructionAgent:
                                     import io
                                     import base64
                                     
-                                    # For native generation, send clean_base_img to model instead of base_img containing flat cutouts
+                                    # Pass base_img (pre-pasted) to guide shape, color, and outline alignment natively
                                     init_buf = io.BytesIO()
-                                    clean_base_img.convert("RGB").save(init_buf, format="JPEG")
+                                    base_img.convert("RGB").save(init_buf, format="JPEG")
                                     
                                     mask_buf = io.BytesIO()
                                     mask_img.save(mask_buf, format="PNG")
@@ -432,11 +437,11 @@ class ReconstructionAgent:
                                     # DeepInfra supports FLUX.1-dev or FLUX.1-schnell for direct generation
                                     # We target black-forest-labs/FLUX.1-dev as recommended by the user (Option 1)
                                     data = {
-                                        "prompt": inpaint_prompt,
+                                        "prompt": clip_inpaint_prompt,
                                         "image": init_b64,
                                         "mask": mask_b64,
                                         "num_inference_steps": 28,
-                                        "strength": 0.45
+                                        "strength": 0.55
                                     }
                                     
                                     # Try dev first, fallback to schnell
@@ -481,24 +486,24 @@ class ReconstructionAgent:
                                     
                                     inpaint_pipe = self.inpaint_pipe
                                     
-                                    # For native generation, send clean_base_img to model instead of base_img containing flat cutouts
-                                    init_rgb = clean_base_img.convert("RGB")
+                                    # Pass base_img (pre-pasted) to guide shape, color, and outline alignment natively
+                                    init_rgb = base_img.convert("RGB")
                                     mask_l = mask_img.convert("L")
                                     
                                     inpainted_img = inpaint_pipe(
-                                        prompt=inpaint_prompt,
+                                        prompt=clip_inpaint_prompt,
                                         image=init_rgb,
                                         mask_image=mask_l,
                                         num_inference_steps=20,
-                                        strength=0.45,
+                                        strength=0.55,
                                         guidance_scale=7.5
                                     ).images[0]
                                     
                                     base_img = inpainted_img.convert("RGBA")
                                     logger.info("Successfully completed local Hugging Face GPU inpainting!")
                             except Exception as inpaint_err:
-                                logger.warning("Inpainting failed: %s. Falling back directly to clean room snapshot canvas.", str(inpaint_err))
-                                base_img = clean_base_img.copy()
+                                logger.warning("Inpainting failed: %s. Falling back to high-fidelity feathered overlays.", str(inpaint_err))
+                                # base_img already contains the pre-composited feathered overlays from Step B!
 
                         # D. Convert base_img to RGB and save cleanly (completely realistic photo output)
                         composite = base_img.convert("RGB")

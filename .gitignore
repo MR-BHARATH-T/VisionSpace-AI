@@ -47,3 +47,6 @@ Thumbs.db
 
 # Project Code Compilation Summary
 all_project_code.txt
+
+# Agentic Outputs Dumps
+agentic-outputs-*
