@@ -373,34 +373,29 @@ class ReconstructionAgent:
                                 products_list_str = "\n\n".join(products_prompt_parts)
                                 
                                 inpaint_prompt = (
-                                    "Preserve the room exactly as it currently exists.\n\n"
+                                    "Generate a photorealistic 4K interior reconstruction.\n\n"
+                                    "Preserve the room geometry, camera position, wall textures, floor textures, lighting, shadows, and perspective exactly as they currently exist.\n\n"
                                     "Do not modify:\n"
                                     "- walls\n"
                                     "- flooring\n"
                                     "- ceiling\n"
                                     "- windows\n"
-                                    "- doors\n"
-                                    "- lighting\n"
-                                    "- perspective\n"
-                                    "- camera position\n"
-                                    "- existing furniture\n\n"
+                                    "- doors\n\n"
                                     "Insert the following products only:\n\n"
                                     f"{products_list_str}\n\n"
+                                    "Place them naturally into available space matching existing lighting, perspective, scale, shadows, and reflections.\n\n"
                                     "Requirements:\n"
-                                    "- preserve perspective\n"
-                                    "- preserve shadows\n"
-                                    "- preserve reflections\n"
-                                    "- preserve lighting temperature\n"
-                                    "- preserve scale\n"
-                                    "- preserve object proportions\n"
-                                    "- preserve floor texture\n\n"
-                                    "Validate:\n"
-                                    "- no collisions\n"
-                                    "- minimum walking width 80cm\n"
-                                    "- door clearance maintained\n\n"
-                                    "Generate a highly realistic interior photograph. "
-                                    "The result should be visually indistinguishable from a real photograph.\n"
-                                    "Return only the modified room image."
+                                    "- photorealism score: 9.5/10\n"
+                                    "- object realism score: 9.5/10\n"
+                                    "- perspective accuracy: 9.8/10\n"
+                                    "- lighting and shadow consistency: 9.8/10\n"
+                                    "- room architecture preservation: 99%\n"
+                                    "- minimum walkway width clearance: 90 cm\n"
+                                    "- minimum desk clearance: 75 cm\n"
+                                    "- minimum chair pullout clearance: 60 cm\n"
+                                    "- minimum door clearance: 90 cm\n"
+                                    "- minimum window clearance: 30 cm\n"
+                                    "- return ONLY the modified room image with no text banners"
                                 )
                                 
                                 # Build mask image (L mode, black)
@@ -435,12 +430,12 @@ class ReconstructionAgent:
                                     }
                                     
                                     # DeepInfra supports FLUX.1-dev or FLUX.1-schnell for direct generation
-                                    # We target black-forest-labs/FLUX.1-dev as recommended by the user
+                                    # We target black-forest-labs/FLUX.1-dev as recommended by the user (Option 1)
                                     data = {
                                         "prompt": inpaint_prompt,
                                         "image": init_b64,
                                         "mask": mask_b64,
-                                        "num_inference_steps": 25,
+                                        "num_inference_steps": 28,
                                         "strength": 0.45
                                     }
                                     
@@ -503,14 +498,9 @@ class ReconstructionAgent:
                             except Exception as inpaint_err:
                                 logger.warning("Inpainting failed: %s. Using high-fidelity feathered overlays.", str(inpaint_err))
                                 
-                            # Re-paste the high-fidelity transparent product cutouts on top of the inpainted result
-                            # to guarantee 100% sharpness and preserve original product details perfectly!
-                            for c, _, p_img in inpaint_targets:
-                                if p_img:
-                                    box_w = c[2] - c[0]
-                                    box_h = c[3] - c[1]
-                                    p_img_resized = p_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
-                                    base_img.paste(p_img_resized, (c[0], c[1]), p_img_resized)
+                            # Native Scene Edits: Do not re-paste flat product cutouts on top of the inpainted output.
+                            # This allows the FLUX generated elements (with native shadows, lighting, and textures) to shine.
+                            pass
 
                         # D. Convert base_img to RGB and save cleanly (completely realistic photo output)
                         composite = base_img.convert("RGB")
