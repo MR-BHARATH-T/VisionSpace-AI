@@ -434,7 +434,9 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 placed_names = [p.get("name") for p in state["placed_products"]]
                 
                 for item in recommended_list[:10]:
-                    img_url = item.get("image") or ""
+                    # Image priority matching Phase 2 specifications
+                    img_url = item.get("thumbnail_url") or item.get("high_resolution_image") or item.get("image") or item.get("image_url") or item.get("thumbnail") or ""
+                    
                     if not img_url or "via.placeholder.com" in img_url:
                         cat_lower = item.get("category", "").lower()
                         if "desk" in cat_lower or "table" in cat_lower:
@@ -451,6 +453,11 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                             img_url = "https://images.unsplash.com/photo-1595428774223-ef52624120d2?auto=format&fit=crop&w=150&q=80"
                         else:
                             img_url = "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=150&q=80"
+                            
+                    # Product link/URL validation to prevent Kaggle proxy relative URLs (Phase 3 & 4)
+                    p_url = item.get("product_url") or item.get("link") or ""
+                    if not (p_url.startswith("http://") or p_url.startswith("https://")):
+                        p_url = "#"
                     
                     # Create card details layout with clickable product title links opening in new pages
                     card_html = f"""
@@ -458,7 +465,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         <img src="{img_url}" style="width: 80px; height: 80px; border-radius: 6px; object-fit: cover; margin-right: 15px; border: 1px solid #2d3748;">
                         <div style="flex-grow: 1;">
                             <div style="font-weight: bold; font-size: 16px;">
-                                <a href="{item.get('link', '#')}" target="_blank" style="text-decoration: none; color: #38bdf8; font-weight: bold;"> {item.get('name')}</a>
+                                <a href="{p_url}" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: #38bdf8; font-weight: bold;"> {item.get('title') or item.get('name')}</a>
                             </div>
                             <div style="color: #94a3b8; font-size: 13px; margin: 4px 0;">Brand: <b>{item.get('brand')}</b> | Style: {item.get('style')}</div>
                             <div style="color: #cbd5e1; font-size: 12px; margin-bottom: 6px;"><b>Proposed Zone:</b> {item.get('proposed_location', 'Placement in empty floor coordinates.')}</div>
