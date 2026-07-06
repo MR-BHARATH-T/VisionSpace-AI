@@ -347,8 +347,12 @@ class ReconstructionAgent:
                                         logger.warning("Failed to fetch product image from %s: %s", img_url, str(e))
 
                             if product_img:
-                                # Section 10 Rules: Do not paste product image onto base_img canvas.
-                                # Instead, populate target coordinate boundaries directly for generative masking.
+                                # Guided Inpainting: Pre-paste the transparent product visual onto base_img
+                                # to act as color/shape reference for the diffusion model.
+                                box_w = coords[2] - coords[0]
+                                box_h = coords[3] - coords[1]
+                                product_img_resized = product_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
+                                base_img.paste(product_img_resized, (coords[0], coords[1]), product_img_resized)
                                 inpaint_targets.append((coords, item, product_img))
                             else:
                                 # Setup target region coordinate layout mapping even if fallback download fails

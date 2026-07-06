@@ -342,8 +342,11 @@ class CommerceAgent:
                                 pass
                                 
                         # Build conformed product schema defined in Section 1
-                        product_id = item.get("product_id") or f"serp_{random.randint(100, 999)}" if 'random' in globals() else f"serp_{hash(title)%1000}"
-                        orig_link = item.get("link", "")
+                        product_id = item.get("product_id") or f"serp_{hash(title)%1000}"
+                        orig_link = item.get("product_link") or item.get("link") or item.get("serpapi_product_api") or ""
+                        if not orig_link or not (orig_link.startswith("http://") or orig_link.startswith("https://")):
+                            query_q = f"{detected_brand} {title}".strip()
+                            orig_link = f"https://www.google.com/search?tbm=shop&q={urllib.parse.quote(query_q)}"
                         
                         results.append({
                             # Dynamic conformed Section 1 schema fields
