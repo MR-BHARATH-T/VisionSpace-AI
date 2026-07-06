@@ -220,6 +220,10 @@ class ReconstructionAgent:
                         # A. Collect coordinate boxes and product descriptions for realistic inpainting mask
                         inpaint_targets = []
 
+                        # For native scene edits matching Phase 5 & 6, keep a clean copy of the room image
+                        # to feed directly into the diffusion inpainting engine.
+                        clean_base_img = base_img.copy()
+
                         # B. Fast & reliable PIL visual compositing (downloads and overlays product images)
                         for idx, item in enumerate(recommended):
                             f_color = fill_colors[idx % len(fill_colors)]
@@ -414,8 +418,9 @@ class ReconstructionAgent:
                                     import io
                                     import base64
                                     
+                                    # For native generation, send clean_base_img to model instead of base_img containing flat cutouts
                                     init_buf = io.BytesIO()
-                                    base_img.convert("RGB").save(init_buf, format="JPEG")
+                                    clean_base_img.convert("RGB").save(init_buf, format="JPEG")
                                     
                                     mask_buf = io.BytesIO()
                                     mask_img.save(mask_buf, format="PNG")
@@ -481,7 +486,8 @@ class ReconstructionAgent:
                                     
                                     inpaint_pipe = self.inpaint_pipe
                                     
-                                    init_rgb = base_img.convert("RGB")
+                                    # For native generation, send clean_base_img to model instead of base_img containing flat cutouts
+                                    init_rgb = clean_base_img.convert("RGB")
                                     mask_l = mask_img.convert("L")
                                     
                                     inpainted_img = inpaint_pipe(
