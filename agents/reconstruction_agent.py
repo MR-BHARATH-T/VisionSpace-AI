@@ -334,28 +334,46 @@ class ReconstructionAgent:
                                 if img_url in self.product_image_cache:
                                     product_img = self.product_image_cache[img_url]
                                 else:
-                                    try:
-                                        import requests
-                                        from io import BytesIO
-                                        response = requests.get(img_url, timeout=10)
-                                        if response.status_code == 200:
-                                            raw_img = Image.open(BytesIO(response.content))
-                                            # Apply background transparency removal (AR style!)
-                                            product_img = make_background_transparent(raw_img)
-                                            self.product_image_cache[img_url] = product_img
-                                    except Exception as e:
-                                        logger.warning("Failed to fetch product image from %s: %s", img_url, str(e))
+                                     try:
+                                         import requests
+                                         from io import BytesIO
+                                         # Use standard user-agent header to avoid 403 Forbidden blocks on merchant sites (Spec requirement!)
+                                         headers = {
+                                             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                                         }
+                                         response = requests.get(img_url, headers=headers, timeout=12)
+                                         if response.status_code == 200:
+                                             raw_img = Image.open(BytesIO(response.content))
+                                             # Apply background transparency removal (AR style!)
+                                             product_img = make_background_transparent(raw_img)
+                                             self.product_image_cache[img_url] = product_img
+                                     except Exception as e:
+                                         logger.warning("Failed to fetch product image from %s: %s", img_url, str(e))
+
+                            # Calculate target bounding box dimensions
+                            box_w = coords[2] - coords[0]
+                            box_h = coords[3] - coords[1]
 
                             if product_img:
                                 # Guided Inpainting: Pre-paste the transparent product visual onto base_img
                                 # to act as color/shape reference for the diffusion model.
-                                box_w = coords[2] - coords[0]
-                                box_h = coords[3] - coords[1]
                                 product_img_resized = product_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
                                 base_img.paste(product_img_resized, (coords[0], coords[1]), product_img_resized)
                                 inpaint_targets.append((coords, item, product_img))
                             else:
-                                # Setup target region coordinate layout mapping even if fallback download fails
+                                # Guided Inpainting fallback: Paste a clean category-themed color block
+                                # to provide the diffusion model with structural shape and presence anchors.
+                                fallback_color = (220, 220, 220, 255) # Light grey/white (electronics/lighting/screens)
+                                cat_lower = item.get("category", "").lower()
+                                if "desk" in cat_lower or "table" in cat_lower or "bookshelf" in cat_lower or "shelf" in cat_lower:
+                                    fallback_color = (190, 150, 110, 255) # Wood brown
+                                elif "chair" in cat_lower or "seating" in cat_lower:
+                                    fallback_color = (100, 100, 100, 255) # Dark charcoal grey
+                                elif "bed" in cat_lower:
+                                    fallback_color = (120, 150, 180, 255) # Soft bedsheet blue
+                                    
+                                fallback_img = Image.new("RGBA", (box_w, box_h), fallback_color)
+                                base_img.paste(fallback_img, (coords[0], coords[1]))
                                 inpaint_targets.append((coords, item, None))
                                 
                             item["proposed_location"] = pos_desc
