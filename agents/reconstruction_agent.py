@@ -347,22 +347,17 @@ class ReconstructionAgent:
                                         logger.warning("Failed to fetch product image from %s: %s", img_url, str(e))
 
                             if product_img:
-                                # Resize product image to match target bounding box coordinates
-                                box_w = coords[2] - coords[0]
-                                box_h = coords[3] - coords[1]
-                                product_img_resized = product_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
-                                
-                                # Paste product image directly onto the base image
-                                base_img.paste(product_img_resized, (coords[0], coords[1]), product_img_resized)
+                                # Section 10 Rules: Do not paste product image onto base_img canvas.
+                                # Instead, populate target coordinate boundaries directly for generative masking.
                                 inpaint_targets.append((coords, item, product_img))
                             else:
-                                # Fallback: draw a very subtle clean overlay outline only
-                                pass
+                                # Setup target region coordinate layout mapping even if fallback download fails
+                                inpaint_targets.append((coords, item, None))
                                 
                             item["proposed_location"] = pos_desc
 
                         # C. Run AI Inpainting Reconstruction Pass (FLUX/SDXL Cloud or HF local)
-                        # This regenerates/reconstructs the pasted product shapes inside the room realistically!
+                        # This generates/reconstructs the pasted product shapes inside the room realistically!
                         if inpaint_targets:
                             try:
                                 # Build dynamic prompt mapping Spec 6 & 7 requirements
@@ -502,11 +497,8 @@ class ReconstructionAgent:
                                     base_img = inpainted_img.convert("RGBA")
                                     logger.info("Successfully completed local Hugging Face GPU inpainting!")
                             except Exception as inpaint_err:
-                                logger.warning("Inpainting failed: %s. Using high-fidelity feathered overlays.", str(inpaint_err))
-                                
-                            # Native Scene Edits: Do not re-paste flat product cutouts on top of the inpainted output.
-                            # This allows the FLUX generated elements (with native shadows, lighting, and textures) to shine.
-                            pass
+                                logger.warning("Inpainting failed: %s. Falling back directly to clean room snapshot canvas.", str(inpaint_err))
+                                base_img = clean_base_img.copy()
 
                         # D. Convert base_img to RGB and save cleanly (completely realistic photo output)
                         composite = base_img.convert("RGB")
