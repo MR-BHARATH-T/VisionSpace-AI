@@ -177,6 +177,10 @@ class CommerceAgent:
             )
             item = dict(c)
             item.update(scores)
+            # Add conformed schema score aliases matching Section 1
+            item["fit_score"] = scores.get("fit_score", 0.8)
+            item["design_score"] = scores.get("design_score", 0.8)
+            item["rank_score"] = scores.get("final_score", 0.8)
             scored.append(item)
 
         # 4. Rank products
@@ -328,7 +332,7 @@ class CommerceAgent:
                         image_url = item.get("thumbnail", "")
                         
                         # Parse dimensions from title
-                        w_cm, d_cm = 120.0, 60.0
+                        w_cm, d_cm, h_cm = 120.0, 60.0, 75.0
                         match = re.search(r'(\d+)\s*(?:x|by)\s*(\d+)', title.lower())
                         if match:
                             try:
@@ -337,19 +341,43 @@ class CommerceAgent:
                             except Exception:
                                 pass
                                 
+                        # Build conformed product schema defined in Section 1
+                        product_id = item.get("product_id") or f"serp_{random.randint(100, 999)}" if 'random' in globals() else f"serp_{hash(title)%1000}"
+                        orig_link = item.get("link", "")
+                        
                         results.append({
-                            "name": title,
-                            "category": cat,
+                            # Dynamic conformed Section 1 schema fields
+                            "product_id": product_id,
+                            "title": title,
                             "brand": detected_brand,
                             "price": price,
-                            "style": "modern",  # default
+                            "currency": "INR",
+                            "rating": rating,
+                            "reviews": reviews_count,
+                            "dimensions": {
+                                "width_cm": w_cm,
+                                "depth_cm": d_cm,
+                                "height_cm": h_cm
+                            },
+                            "thumbnail_url": image_url,
+                            "high_resolution_image": image_url,
+                            "product_url": orig_link,
+                            "seller": detected_brand,
+                            "source": "serpapi",
+                            "marketplace": detected_brand,
+                            "availability": True,
+                            "shipping_cost": 599,
+                            "installation_cost": 0,
+                            
+                            # Backwards-compatibility legacy properties
+                            "name": title,
+                            "category": cat,
+                            "style": "modern",
                             "width_cm": w_cm,
                             "depth_cm": d_cm,
                             "quality_score": round(quality_score, 2),
-                            "rating": rating,
-                            "reviews": reviews_count,
                             "image": image_url,
-                            "link": extract_direct_link(item.get("link", "")) or item.get("link", "") or f"https://www.google.com/search?tbm=shop&q={urllib.parse.quote(f'{detected_brand} {title}'.strip())}"
+                            "link": orig_link
                         })
             except Exception as e:
                 logger.error("SerpAPI query failed for '%s': %s", query, str(e))
@@ -384,12 +412,12 @@ class CommerceAgent:
         if not matches:
             matches = list(self.mock_catalog)
 
-        # Enrich with reviews, rating, image, link
+        # Enrich with reviews, rating, image, link conformed to Section 1 schema
         enriched = []
-        for item in matches:
-            enriched_item = dict(item)
-            enriched_item["rating"] = item.get("rating", round(item.get("quality_score", 0.8) * 5.0, 1))
-            enriched_item["reviews"] = item.get("reviews", 50)
+        for idx, item in enumerate(matches):
+            rating = item.get("rating", round(item.get("quality_score", 0.8) * 5.0, 1))
+            reviews = item.get("reviews", 50)
+            
             # Resolve a beautiful, high-fidelity Unsplash product image based on the item's category
             cat_lower = item.get("category", "").lower()
             if "desk" in cat_lower or "table" in cat_lower:
@@ -407,15 +435,54 @@ class CommerceAgent:
             else:
                 img_url = "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=150&q=80"
                 
-            enriched_item["image"] = item.get("image") or img_url
+            thumbnail_url = item.get("image") or img_url
+            high_res = thumbnail_url.replace("w=150", "w=800") if "unsplash.com" in thumbnail_url else thumbnail_url
             
-            # Ensure fallback product detail search link is dynamically generated
-            if not enriched_item.get("link"):
+            p_url = item.get("link")
+            if not p_url:
                 import urllib.parse
-                search_q = urllib.parse.quote(f"{enriched_item.get('brand')} {enriched_item.get('name')}")
-                enriched_item["link"] = f"https://www.google.com/search?tbm=shop&q={search_q}"
+                search_q = urllib.parse.quote(f"{item.get('brand')} {item.get('name')}")
+                p_url = f"https://www.google.com/search?tbm=shop&q={search_q}"
                 
-            enriched.append(enriched_item)
+            w_cm = float(item.get("width_cm", 120))
+            d_cm = float(item.get("depth_cm", 60))
+            h_cm = float(item.get("height_cm", 75))
+            
+            conformed_product = {
+                # Dynamic conformed Section 1 schema fields
+                "product_id": f"mock_{idx + 1:03d}",
+                "title": item.get("name"),
+                "brand": item.get("brand"),
+                "price": float(item.get("price", 0)),
+                "currency": "INR",
+                "rating": float(rating),
+                "reviews": int(reviews),
+                "dimensions": {
+                    "width_cm": w_cm,
+                    "depth_cm": d_cm,
+                    "height_cm": h_cm
+                },
+                "thumbnail_url": thumbnail_url,
+                "high_resolution_image": high_res,
+                "product_url": p_url,
+                "seller": item.get("brand"),
+                "source": "mock_catalog",
+                "marketplace": item.get("brand"),
+                "availability": True,
+                "shipping_cost": 0,
+                "installation_cost": 0,
+                
+                # Backwards-compatibility legacy properties
+                "name": item.get("name"),
+                "category": item.get("category"),
+                "style": item.get("style", "modern"),
+                "width_cm": w_cm,
+                "depth_cm": d_cm,
+                "quality_score": float(item.get("quality_score", 0.8)),
+                "image": thumbnail_url,
+                "link": p_url
+            }
+            enriched.append(conformed_product)
             
         return enriched
 
