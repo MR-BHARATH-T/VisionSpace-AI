@@ -485,14 +485,32 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     try_btn = widgets.Button(
                         description=btn_desc,
                         button_style=btn_style,
-                        layout=widgets.Layout(width="150px", height="35px", margin="auto 10px")
+                        layout=widgets.Layout(width="160px", height="32px", margin="4px")
                     )
                     
                     # Bind local callback with button self-reference
                     try_btn.on_click(lambda b, p=item: on_try_product(p, b))
                     
-                    # Display card and button row
-                    display(widgets.HBox([widgets.HTML(card_html), try_btn]))
+                    # View Product Details Button (bypasses Kaggle sandbox by running native cell Javascript window.open)
+                    view_btn = widgets.Button(
+                        description=" View Details",
+                        button_style="success",
+                        icon="external-link",
+                        layout=widgets.Layout(width="160px", height="32px", margin="4px")
+                    )
+                    
+                    # Bind Javascript window.open callback
+                    def make_view_callback(target_url):
+                        return lambda b: display(Javascript(f'window.open("{target_url}", "_blank");'))
+                        
+                    from IPython.display import Javascript
+                    view_btn.on_click(make_view_callback(p_url))
+                    
+                    # Display card and stacked buttons
+                    display(widgets.HBox([
+                        widgets.HTML(card_html),
+                        widgets.VBox([try_btn, view_btn], layout=widgets.Layout(justify_content="center", margin="0 0 0 10px"))
+                    ]))
 
                 # Zip output files
                 print("\n Zipping output files...")
