@@ -229,101 +229,34 @@ class ReconstructionAgent:
                             f_color = fill_colors[idx % len(fill_colors)]
                             o_color = outline_colors[idx % len(outline_colors)]
                             
-                            # 1. Resolve dynamic, non-overlapping coordinate grids to prevent overlaps
+                            # 1. Resolve realistic, category-specific coordinate zones to preserve scale, perspective, and prevent distortions.
                             category = item.get("category", "").lower()
-                            # Separate floor items vs wall/surface items to allocate clean, non-overlapping slots
-                            floor_items = []
-                            wall_surface_items = []
-                            for r_idx, r_item in enumerate(recommended):
-                                cat_name = r_item.get("category", "").lower()
-                                if any(k in cat_name for k in ["screen", "tv", "television", "projector", "lamp", "light"]):
-                                    wall_surface_items.append((r_idx, r_item))
-                                else:
-                                    floor_items.append((r_idx, r_item))
                             
-                            is_floor_item = True
-                            target_floor_idx = 0
-                            for f_i, (orig_i, f_item) in enumerate(floor_items):
-                                if orig_i == idx:
-                                    target_floor_idx = f_i
-                                    break
-                            else:
-                                is_floor_item = False
-                                
-                            if is_floor_item:
-                                num_floor = max(1, len(floor_items))
-                                floor_width_ratio = 0.82
-                                start_x_ratio = 0.09
-                                col_width = (width * floor_width_ratio) / num_floor
-                                
-                                col_start = int(width * start_x_ratio + col_width * target_floor_idx)
-                                col_end = int(width * start_x_ratio + col_width * (target_floor_idx + 1))
-                                
-                                # Visual padding to keep items separated
-                                pad_x = int(col_width * 0.08)
-                                x0 = col_start + pad_x
-                                x1 = col_end - pad_x
-                                
-                                # Set Y0 (top) coordinate based on category proportions for realistic heights
-                                if any(k in category for k in ["bookshelf", "wardrobe", "cabinet", "shelf"]):
-                                    y0 = int(height * 0.38) # Tall bookcase stands high
-                                    pos_desc = f"Location: Dedicated floor bookshelf zone {target_floor_idx + 1}"
-                                elif any(k in category for k in ["desk", "table"]):
-                                    y0 = int(height * 0.54) # Workspace height
-                                    pos_desc = f"Location: Workspace table area slot {target_floor_idx + 1}"
-                                elif any(k in category for k in ["chair", "stool"]):
-                                    y0 = int(height * 0.58) # Swivel chair height
-                                    pos_desc = f"Location: Work chair slot {target_floor_idx + 1}"
-                                else:
-                                    y0 = int(height * 0.62) # Low bed frame/sofa height
-                                    pos_desc = f"Location: Floor alignment bounds slot {target_floor_idx + 1}"
-                                    
-                                y1 = int(height * 0.85) # Floor line base
-                                coords = (x0, y0, x1, y1)
-                            else:
-                                # Wall/Surface items (screens, lamps, projectors)
-                                screen_idx = 0
-                                proj_idx = 0
-                                lamp_idx = 0
-                                
-                                for orig_i, f_item in wall_surface_items:
-                                    if orig_i == idx:
-                                        break
-                                    f_cat = f_item.get("category", "").lower()
-                                    if "screen" in f_cat or "tv" in f_cat or "television" in f_cat:
-                                        screen_idx += 1
-                                    elif "projector" in f_cat:
-                                        proj_idx += 1
-                                    elif "lamp" in f_cat or "light" in f_cat:
-                                        lamp_idx += 1
-                                        
-                                if "screen" in category or "tv" in category or "television" in category:
-                                    # Shift slightly if multiple screens exist
-                                    shift_x = screen_idx * int(width * 0.05)
-                                    x0 = int(width * 0.28) + shift_x
-                                    x1 = int(width * 0.72) + shift_x
-                                    y0 = int(height * 0.16)
-                                    y1 = int(height * 0.42)
-                                    coords = (x0, y0, x1, y1)
-                                    pos_desc = f"Location: Main wall mounting surface (Offset: {screen_idx})"
-                                elif "projector" in category:
-                                    # Toggle left/right bedside tables
-                                    if proj_idx % 2 == 0:
-                                        coords = (int(width * 0.12), int(height * 0.50), int(width * 0.24), int(height * 0.62))
-                                        pos_desc = "Location: Left Bedside Table projector surface"
-                                    else:
-                                        coords = (int(width * 0.76), int(height * 0.50), int(width * 0.88), int(height * 0.62))
-                                        pos_desc = "Location: Right Bedside Table projector surface"
-                                elif "lamp" in category or "light" in category:
-                                    if lamp_idx % 2 == 0:
-                                        coords = (int(width * 0.78), int(height * 0.40), int(width * 0.86), int(height * 0.52))
-                                        pos_desc = "Location: Right Bedside Table lamp surface"
-                                    else:
-                                        coords = (int(width * 0.14), int(height * 0.40), int(width * 0.22), int(height * 0.52))
-                                        pos_desc = "Location: Left Bedside Table lamp surface"
-                                else:
-                                    coords = (int(width * 0.35), int(height * 0.45), int(width * 0.65), int(height * 0.75))
-                                    pos_desc = "Location: Wall shelf display alignment"
+                            # Standard default coordinates
+                            coords = (int(width * 0.35), int(height * 0.45), int(width * 0.65), int(height * 0.75))
+                            pos_desc = "Location: Wall shelf display alignment"
+                            
+                            if "bed" in category:
+                                coords = (int(width * 0.18), int(height * 0.48), int(width * 0.58), int(height * 0.80))
+                                pos_desc = "Location: Central floor bed layout zone"
+                            elif "desk" in category or "table" in category:
+                                coords = (int(width * 0.58), int(height * 0.52), int(width * 0.88), int(height * 0.82))
+                                pos_desc = "Location: Workspace desk layout zone"
+                            elif "chair" in category or "seating" in category:
+                                coords = (int(width * 0.64), int(height * 0.56), int(width * 0.80), int(height * 0.84))
+                                pos_desc = "Location: Swivel office chair zone"
+                            elif "bookshelf" in category or "shelf" in category or "wardrobe" in category or "cabinet" in category:
+                                coords = (int(width * 0.05), int(height * 0.30), int(width * 0.22), int(height * 0.78))
+                                pos_desc = "Location: Tall bookshelf corner zone"
+                            elif any(k in category for k in ["screen", "tv", "television"]):
+                                coords = (int(width * 0.28), int(height * 0.16), int(width * 0.72), int(height * 0.42))
+                                pos_desc = "Location: Main wall mounting screen surface"
+                            elif "projector" in category:
+                                coords = (int(width * 0.12), int(height * 0.48), int(width * 0.24), int(height * 0.60))
+                                pos_desc = "Location: Left bedside table surface"
+                            elif "lamp" in category or "light" in category:
+                                coords = (int(width * 0.78), int(height * 0.42), int(width * 0.86), int(height * 0.54))
+                                pos_desc = "Location: Right bedside table lamp surface"
                                     
                             item["proposed_location"] = pos_desc
 
@@ -409,7 +342,13 @@ class ReconstructionAgent:
                                 # 1. Build concise prompt to fit CLIP 77-token limit (prevents truncation and erasures)
                                 prompt_parts = []
                                 for _, it, _ in inpaint_targets:
-                                    prompt_parts.append(f"a {it.get('brand', '')} {it.get('title', 'furniture')}")
+                                    brand = it.get('brand', '')
+                                    title = it.get('title', 'furniture')
+                                    if brand and title.lower().startswith(brand.lower()):
+                                        desc = title
+                                    else:
+                                        desc = f"{brand} {title}".strip()
+                                    prompt_parts.append(f"a {desc}")
                                 clip_inpaint_prompt = "photorealistic room interior containing " + ", ".join(prompt_parts) + ", matching shadows and lighting, high resolution"
                                 
                                 # 2. Save full prompt report description for JSON layout files
