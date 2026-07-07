@@ -130,6 +130,16 @@ class CommerceAgent:
         max_budget = float(budget_range.get("maximum") or 50000.0)
         pref_style = user_preferences.get("preferred_style") or "modern"
 
+        # Robust category matching helper function to handle variations like "queen-size bed" vs "bed"
+        def is_category_match(item_cat: str, req_cat: str) -> bool:
+            c1 = str(item_cat).lower()
+            c2 = str(req_cat).lower()
+            words = ["bed", "desk", "chair", "table", "bookshelf", "shelf", "fan", "ac", "conditioner", "projector", "screen", "lamp", "light"]
+            for w in words:
+                if w in c1 and w in c2:
+                    return True
+            return c1 == c2 or c2 in c1 or c1 in c2
+
         # Look up matching candidates in our catalog
         candidates = self.search_products(req_products, preferred_brands=preferred_brands)
 
@@ -157,9 +167,9 @@ class CommerceAgent:
             normalized_key = cat.lower().replace(" ", "_")
             cat_found = False
             for c in candidates_under_item_limit:
-                if (c.get("category", "").lower() == cat.lower() or 
-                    normalized_key in c.get("name", "").lower() or 
-                    cat.lower() in c.get("name", "").lower()):
+                if (is_category_match(c.get("category", ""), cat) or 
+                    is_category_match(c.get("name", ""), cat) or 
+                    is_category_match(c.get("title", ""), cat)):
                     cat_found = True
                     break
             if not cat_found:
@@ -204,9 +214,9 @@ class CommerceAgent:
             normalized_key = cat.lower().replace(" ", "_")
             cat_list = []
             for item in ranked:
-                if (item.get("category", "").lower() == cat.lower() or 
-                    normalized_key in item.get("name", "").lower() or 
-                    cat.lower() in item.get("name", "").lower()):
+                if (is_category_match(item.get("category", ""), cat) or 
+                    is_category_match(item.get("name", ""), cat) or 
+                    is_category_match(item.get("title", ""), cat)):
                     cat_list.append(item)
             category_grouped[normalized_key] = cat_list[:5] # Keep top 5 per category
 
@@ -431,7 +441,23 @@ class CommerceAgent:
             matches = []
             for cat in categories:
                 normalized_cat = cat.lower()
-                cat_matches = [c for c in self.mock_catalog if normalized_cat in c.get("category", "").lower() or normalized_cat in c.get("name", "").lower()]
+                words = ["bed", "desk", "chair", "table", "bookshelf", "shelf", "fan", "ac", "conditioner", "projector", "screen", "lamp", "light"]
+                match_words = [w for w in words if w in normalized_cat]
+                
+                cat_matches = []
+                for c in self.mock_catalog:
+                    item_cat = c.get("category", "").lower()
+                    item_name = c.get("name", "").lower()
+                    matched = False
+                    if match_words:
+                        for w in match_words:
+                            if w in item_cat or w in item_name:
+                                matched = True
+                                break
+                    if not matched and (normalized_cat in item_cat or normalized_cat in item_name or item_cat in normalized_cat):
+                        matched = True
+                    if matched:
+                        cat_matches.append(c)
                 matches.extend(cat_matches)
         
         if not matches:
@@ -533,7 +559,7 @@ class CommerceAgent:
             elif "screen" in cat_lower or "tv" in cat_lower:
                 limit_w = 300.0
                 limit_d = 100.0
-            elif "projector" in cat_lower or "ac" in cat_lower or "conditioner" in cat_lower or "lighting" in cat_lower:
+            elif "projector" in cat_lower or "ac" in cat_lower or "conditioner" in cat_lower or "lighting" in cat_lower or "fan" in cat_lower:
                 limit_w = 200.0
                 limit_d = 200.0
                 
