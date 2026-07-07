@@ -435,9 +435,9 @@ class ReconstructionAgent:
                                  fallback_url = "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=300&q=80" # Default
                                  cat_lower = item.get("category", "").lower()
                                  if "desk" in cat_lower or "table" in cat_lower:
-                                     fallback_url = "https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?auto=format&fit=crop&w=300&q=80"
+                                     fallback_url = "https://images.unsplash.com/photo-1581428982868-e410dd047a90?q=80&w=300&auto=format&fit=crop"
                                  elif "chair" in cat_lower or "seating" in cat_lower:
-                                     fallback_url = "https://images.unsplash.com/photo-1505797149-43b0069ec26b?auto=format&fit=crop&w=300&q=80"
+                                     fallback_url = "https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?q=80&w=300&auto=format&fit=crop"
                                  elif "bookshelf" in cat_lower or "shelf" in cat_lower:
                                      fallback_url = "https://images.unsplash.com/photo-1594980596870-8cb524ebf6bc?auto=format&fit=crop&w=300&q=80"
                                  elif "bed" in cat_lower:
@@ -651,6 +651,22 @@ class ReconstructionAgent:
                                     logger.info("Successfully completed local Hugging Face GPU inpainting!")
                             except Exception as inpaint_err:
                                 logger.warning("Inpainting failed: %s. Falling back to high-fidelity feathered overlays.", str(inpaint_err))
+                            
+                            # Post-Inpaint Compositing: Overlay the clean transparent product image back on top
+                            # of the inpainted scene to guarantee 100% sharpness and visibility of details and logos,
+                            # while retaining the realistic shadows and lighting blended by inpainting.
+                            try:
+                                for c, _, p_img in inpaint_targets:
+                                    if p_img:
+                                        p_w = c[2] - c[0]
+                                        p_h = c[3] - c[1]
+                                        p_resized = p_img.resize((p_w, p_h), Image.Resampling.LANCZOS)
+                                        # Paste back using transparency alpha channel
+                                        base_img.paste(p_resized, (c[0], c[1]), p_resized)
+                                logger.info("Successfully completed post-inpaint compositing to guarantee product visibility.")
+                            except Exception as blend_err:
+                                logger.warning("Post-inpaint blending failed: %s", str(blend_err))
+                                
                         composite = base_img.convert("RGB")
                         
                         # Save the specific view output
