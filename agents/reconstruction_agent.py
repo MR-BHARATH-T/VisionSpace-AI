@@ -206,13 +206,67 @@ class ReconstructionAgent:
                             except Exception:
                                 font = ImageFont.load_default()
                         
-                        # Define 3 non-overlapping placement coordinates zones (left, center, right)
-                        box_coords = [
-                            (int(width * 0.08), int(height * 0.58), int(width * 0.35), int(height * 0.85)),
-                            (int(width * 0.38), int(height * 0.58), int(width * 0.62), int(height * 0.85)),
-                            (int(width * 0.65), int(height * 0.58), int(width * 0.92), int(height * 0.85))
-                        ]
+                        # Build list of occupied 2D pixel coordinate boxes from existing detected objects, doors, and windows
+                        occupied_boxes = []
                         
+                        room_dim = spatial_output.get("room_dimensions", {}) if spatial_output else {}
+                        room_w = float(room_dim.get("width") or 4.0) * 100.0
+                        room_d = float(room_dim.get("length") or 5.0) * 100.0
+
+                        def map_3d_to_2d(x_cm, y_cm, z_cm):
+                            # Normalize 3D coordinates relative to room boundaries
+                            norm_x = max(0.0, min(1.0, x_cm / room_w))
+                            norm_y = max(0.0, min(1.0, y_cm / room_d))
+                            # Simple perspective projection mapping to 2D image coordinates
+                            cx = 0.5
+                            cy = 0.35  # Horizon line in standard viewpoint
+                            scale = 0.4 + 0.6 * norm_y
+                            x_2d = cx + (norm_x - 0.5) * scale
+                            y_2d = cy + (norm_y - 0.2) * 0.65 * scale
+                            return max(0.02, min(0.98, x_2d)), max(0.02, min(0.98, y_2d))
+
+                        existing_objects = vision_output.get("objects", []) if vision_output else []
+                        for obj in existing_objects:
+                            pos = obj.get("room_position") or obj.get("position")
+                            dims = obj.get("estimated_dimensions") or {}
+                            if pos:
+                                x_cm = float(pos.get("x_cm") or 200.0)
+                                y_cm = float(pos.get("y_cm") or 250.0)
+                                z_cm = float(pos.get("z_cm") or 0.0)
+                                w_cm = float(dims.get("width_cm") or 80.0)
+                                d_cm = float(dims.get("depth_cm") or 80.0)
+                                h_cm = float(dims.get("height_cm") or 80.0)
+                                
+                                x1_2d, y1_2d = map_3d_to_2d(x_cm - w_cm/2, y_cm - d_cm/2, z_cm)
+                                x2_2d, y2_2d = map_3d_to_2d(x_cm + w_cm/2, y_cm + d_cm/2, z_cm + h_cm)
+                                
+                                bx1 = int(min(x1_2d, x2_2d) * width)
+                                by1 = int(min(y1_2d, y2_2d) * height)
+                                bx2 = int(max(x1_2d, x2_2d) * width)
+                                by2 = int(max(y1_2d, y2_2d) * height)
+                                occupied_boxes.append((bx1, by1, bx2, by2))
+                                
+                        # Also avoid blocking doors and windows
+                        doors = vision_output.get("doors", []) if vision_output else []
+                        for door in doors:
+                            pos = door.get("room_position")
+                            dims = door.get("estimated_dimensions") or {}
+                            if pos:
+                                x_cm = float(pos.get("x_cm") or 50.0)
+                                y_cm = float(pos.get("y_cm") or 350.0)
+                                w_cm = float(dims.get("width_cm") or 90.0)
+                                d_cm = float(dims.get("depth_cm") or 10.0)
+                                h_cm = float(dims.get("height_cm") or 200.0)
+                                
+                                x1_2d, y1_2d = map_3d_to_2d(x_cm - w_cm/2, y_cm - d_cm/2, 0.0)
+                                x2_2d, y2_2d = map_3d_to_2d(x_cm + w_cm/2, y_cm + d_cm/2, h_cm)
+                                
+                                bx1 = int(min(x1_2d, x2_2d) * width)
+                                by1 = int(min(y1_2d, y2_2d) * height)
+                                bx2 = int(max(x1_2d, x2_2d) * width)
+                                by2 = int(max(y1_2d, y2_2d) * height)
+                                occupied_boxes.append((bx1, by1, bx2, by2))
+
                         # Color palettes for overlays
                         fill_colors = [(46, 204, 113, 90), (245, 176, 65, 90), (52, 152, 219, 90)]
                         outline_colors = [(39, 174, 96, 255), (230, 126, 34, 255), (41, 128, 185, 255)]
@@ -232,61 +286,96 @@ class ReconstructionAgent:
                             # 1. Resolve realistic, category-specific coordinate zones to preserve scale, perspective, and prevent distortions.
                             category = item.get("category", "").lower()
                             
-                            # Detect co-presence of items to shift layout zones dynamically and avoid collisions
-                            has_bed = any("bed" in r_item.get("category", "").lower() for r_item in recommended)
-                            has_bookshelf = any(any(k in r_item.get("category", "").lower() for k in ["bookshelf", "shelf", "wardrobe"]) for r_item in recommended)
-                            
-                            # Standard default coordinates
-                            coords = (int(width * 0.35), int(height * 0.45), int(width * 0.65), int(height * 0.75))
-                            pos_desc = "Location: Wall shelf display alignment"
-                            
+                            # Base coordinate parameters for layout categories
                             if "bed" in category:
-                                if has_bookshelf:
-                                    # Shift bed slightly right to make room for bookshelf on the left back wall
-                                    coords = (int(width * 0.38), int(height * 0.50), int(width * 0.72), int(height * 0.82))
-                                else:
-                                    coords = (int(width * 0.25), int(height * 0.50), int(width * 0.62), int(height * 0.82))
-                                pos_desc = "Location: Central floor bed layout zone"
+                                cx, cy = 0.50, 0.65
+                                w_p, h_p = 0.32, 0.28
                             elif "desk" in category or "table" in category:
-                                if has_bed:
-                                    # Shift desk further right/forward to avoid overlapping with the bed footprint
-                                    coords = (int(width * 0.68), int(height * 0.54), int(width * 0.90), int(height * 0.82))
-                                else:
-                                    coords = (int(width * 0.58), int(height * 0.52), int(width * 0.84), int(height * 0.80))
-                                pos_desc = "Location: Workspace desk layout zone"
+                                cx, cy = 0.70, 0.65
+                                w_p, h_p = 0.24, 0.24
                             elif "chair" in category or "seating" in category:
-                                if has_bed:
-                                    coords = (int(width * 0.72), int(height * 0.60), int(width * 0.86), int(height * 0.86))
-                                else:
-                                    coords = (int(width * 0.64), int(height * 0.58), int(width * 0.78), int(height * 0.84))
-                                pos_desc = "Location: Swivel office chair zone"
+                                cx, cy = 0.72, 0.72
+                                w_p, h_p = 0.16, 0.20
                             elif "bookshelf" in category or "shelf" in category or "wardrobe" in category or "cabinet" in category:
-                                # Place flat against the left side of the back wall (clears the entryway door on the left wall!)
-                                coords = (int(width * 0.15), int(height * 0.34), int(width * 0.32), int(height * 0.70))
-                                pos_desc = "Location: Tall bookshelf corner zone"
-                            elif any(k in category for k in ["screen", "tv", "television"]):
-                                coords = (int(width * 0.28), int(height * 0.16), int(width * 0.72), int(height * 0.42))
-                                pos_desc = "Location: Main wall mounting screen surface"
-                            elif "projector" in category:
-                                coords = (int(width * 0.12), int(height * 0.48), int(width * 0.24), int(height * 0.60))
-                                pos_desc = "Location: Left bedside table surface"
+                                cx, cy = 0.22, 0.52
+                                w_p, h_p = 0.18, 0.32
                             elif "ac" in category or "conditioner" in category:
                                 title_l = item.get("title", "").lower()
                                 if "split" in title_l or "heat pump" in title_l or "wall" in title_l:
-                                    # Split AC - mount high on the back wall near ceiling
-                                    coords = (int(width * 0.40), int(height * 0.05), int(width * 0.60), int(height * 0.16))
-                                    pos_desc = "Location: High-wall mounting split AC zone"
+                                    cx, cy = 0.50, 0.10
+                                    w_p, h_p = 0.20, 0.11
                                 elif "window" in title_l:
-                                    # Window AC - mount directly inside the center window frame opening
-                                    coords = (int(width * 0.44), int(height * 0.22), int(width * 0.56), int(height * 0.38))
-                                    pos_desc = "Location: Center window frame installation zone"
+                                    cx, cy = 0.50, 0.30
+                                    w_p, h_p = 0.12, 0.16
                                 else:
-                                    # Portable/Floor AC - place in the left corner near window
-                                    coords = (int(width * 0.32), int(height * 0.42), int(width * 0.42), int(height * 0.68))
-                                    pos_desc = "Location: Left floor corner ventilation zone"
+                                    cx, cy = 0.37, 0.55
+                                    w_p, h_p = 0.10, 0.26
                             elif "lamp" in category or "light" in category:
-                                coords = (int(width * 0.78), int(height * 0.42), int(width * 0.86), int(height * 0.54))
-                                pos_desc = "Location: Right bedside table lamp surface"
+                                cx, cy = 0.82, 0.48
+                                w_p, h_p = 0.08, 0.12
+                            elif any(k in category for k in ["screen", "tv", "television"]):
+                                cx, cy = 0.50, 0.28
+                                w_p, h_p = 0.26, 0.20
+                            elif "projector" in category:
+                                cx, cy = 0.18, 0.54
+                                w_p, h_p = 0.12, 0.12
+                            else:
+                                cx, cy = 0.50, 0.60
+                                w_p, h_p = 0.15, 0.20
+
+                            # Run a collision-free shift search over a search grid to avoid overlapping existing objects/placements
+                            placed = False
+                            best_cx, best_cy = cx, cy
+                            
+                            # Shift search offsets: center first, then scan surrounding grids
+                            shifts = [
+                                (0, 0),
+                                (0.08, 0), (-0.08, 0),
+                                (0, 0.08), (0, -0.08),
+                                (0.08, 0.08), (-0.08, 0.08),
+                                (0.16, 0), (-0.16, 0),
+                                (0, 0.16), (0, -0.16),
+                                (0.16, 0.16), (-0.16, 0.16)
+                            ]
+                            
+                            for shift_x, shift_y in shifts:
+                                test_cx = cx + shift_x
+                                test_cy = cy + shift_y
+                                
+                                # Clamp to ensure the object stays fully within the image viewport
+                                test_cx = max(0.04 + w_p/2, min(0.96 - w_p/2, test_cx))
+                                test_cy = max(0.04 + h_p/2, min(0.96 - h_p/2, test_cy))
+                                
+                                tx1 = int((test_cx - w_p/2) * width)
+                                ty1 = int((test_cy - h_p/2) * height)
+                                tx2 = int((test_cx + w_p/2) * width)
+                                ty2 = int((test_cy + h_p/2) * height)
+                                
+                                # Check for overlap with existing occupied boxes
+                                overlaps = False
+                                for ox1, oy1, ox2, oy2 in occupied_boxes:
+                                    # Overlap check with a small safety boundary margin
+                                    if tx1 - 8 < ox2 and tx2 + 8 > ox1 and ty1 - 8 < oy2 and ty2 + 8 > oy1:
+                                        overlaps = True
+                                        break
+                                
+                                if not overlaps:
+                                    best_cx, best_cy = test_cx, test_cy
+                                    placed = True
+                                    break
+                                    
+                            coords = (
+                                int((best_cx - w_p/2) * width),
+                                int((best_cy - h_p/2) * height),
+                                int((best_cx + w_p/2) * width),
+                                int((best_cy + h_p/2) * height)
+                            )
+                            
+                            # Add placed coords to occupied_boxes list to prevent overlap with subsequent placements
+                            occupied_boxes.append(coords)
+                            
+                            # Format descriptive location labels dynamically
+                            pos_desc = f"Placement at dynamic layout coordinates: [{coords[0]}, {coords[1]}, {coords[2]}, {coords[3]}]"
                                     
                             item["proposed_location"] = pos_desc
 
