@@ -261,7 +261,7 @@ class CommerceAgent:
             try:
                 from kaggle_secrets import UserSecretsClient
                 api_key = UserSecretsClient().get_secret("SERP_API_KEY") or UserSecretsClient().get_secret("SERPAPI_API_KEY")
-            except Exception:
+            except BaseException:
                 pass
 
         if not api_key:
