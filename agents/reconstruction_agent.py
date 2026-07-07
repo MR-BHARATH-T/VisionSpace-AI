@@ -270,6 +270,20 @@ class ReconstructionAgent:
                             elif "projector" in category:
                                 coords = (int(width * 0.12), int(height * 0.48), int(width * 0.24), int(height * 0.60))
                                 pos_desc = "Location: Left bedside table surface"
+                            elif "ac" in category or "conditioner" in category:
+                                title_l = item.get("title", "").lower()
+                                if "split" in title_l or "heat pump" in title_l or "wall" in title_l:
+                                    # Split AC - mount high on the back wall near ceiling
+                                    coords = (int(width * 0.40), int(height * 0.05), int(width * 0.60), int(height * 0.16))
+                                    pos_desc = "Location: High-wall mounting split AC zone"
+                                elif "window" in title_l:
+                                    # Window AC - mount directly inside the center window frame opening
+                                    coords = (int(width * 0.44), int(height * 0.22), int(width * 0.56), int(height * 0.38))
+                                    pos_desc = "Location: Center window frame installation zone"
+                                else:
+                                    # Portable/Floor AC - place in the left corner near window
+                                    coords = (int(width * 0.32), int(height * 0.42), int(width * 0.42), int(height * 0.68))
+                                    pos_desc = "Location: Left floor corner ventilation zone"
                             elif "lamp" in category or "light" in category:
                                 coords = (int(width * 0.78), int(height * 0.42), int(width * 0.86), int(height * 0.54))
                                 pos_desc = "Location: Right bedside table lamp surface"
