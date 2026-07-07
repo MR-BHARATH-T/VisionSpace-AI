@@ -319,6 +319,10 @@ class ReconstructionAgent:
                             elif "projector" in category:
                                 cx, cy = 0.18, 0.54
                                 w_p, h_p = 0.12, 0.12
+                            elif "fan" in category or "chandelier" in category or "pendant" in category:
+                                # Ceiling items - mount centered high on the ceiling
+                                cx, cy = 0.50, 0.10
+                                w_p, h_p = 0.24, 0.14
                             else:
                                 cx, cy = 0.50, 0.60
                                 w_p, h_p = 0.15, 0.20
@@ -345,6 +349,10 @@ class ReconstructionAgent:
                                 # Clamp to ensure the object stays fully within the image viewport
                                 test_cx = max(0.04 + w_p/2, min(0.96 - w_p/2, test_cx))
                                 test_cy = max(0.04 + h_p/2, min(0.96 - h_p/2, test_cy))
+                                
+                                # For ceiling and high-wall mounted items, freeze the height coordinate to prevent them from dropping to the floor
+                                if "fan" in category or "chandelier" in category or "pendant" in category or (("ac" in category or "conditioner" in category) and ("split" in title_l or "heat" in title_l or "wall" in title_l)):
+                                    test_cy = cy
                                 
                                 tx1 = int((test_cx - w_p/2) * width)
                                 ty1 = int((test_cy - h_p/2) * height)
@@ -427,6 +435,12 @@ class ReconstructionAgent:
                                      fallback_url = "https://images.unsplash.com/photo-1594980596870-8cb524ebf6bc?auto=format&fit=crop&w=300&q=80"
                                  elif "bed" in cat_lower:
                                      fallback_url = "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=300&q=80"
+                                 elif "fan" in cat_lower:
+                                     fallback_url = "https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?auto=format&fit=crop&w=300&q=80"
+                                 elif "ac" in cat_lower or "conditioner" in cat_lower:
+                                     fallback_url = "https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=300&q=80"
+                                 elif "projector" in cat_lower:
+                                     fallback_url = "https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=300&q=80"
                                      
                                  try:
                                      import requests

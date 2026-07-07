@@ -102,7 +102,12 @@ class CommerceAgent:
             {"name": "Daikin 1.5 Ton 5 Star Inverter AC", "category": "air conditioner", "brand": "Daikin", "price": 45490, "style": "modern", "width_cm": 90, "depth_cm": 22, "quality_score": 0.92, "link": "https://www.google.com/search?tbm=shop&q=Daikin+1.5+Ton+5+Star+Inverter+AC"},
             {"name": "LG 1.5 Ton 5 Star Dual Inverter AC", "category": "air conditioner", "brand": "LG", "price": 46500, "style": "modern", "width_cm": 90, "depth_cm": 22, "quality_score": 0.9, "link": "https://www.google.com/search?tbm=shop&q=LG+1.5+Ton+5+Star+Dual+Inverter+AC"},
             {"name": "Samsung 1 Ton 3 Star Inverter AC", "category": "air conditioner", "brand": "Samsung", "price": 28990, "style": "modern", "width_cm": 80, "depth_cm": 20, "quality_score": 0.82, "link": "https://www.google.com/search?tbm=shop&q=Samsung+1+Ton+3+Star+Inverter+AC"},
-            {"name": "Lloyd 1.5 Ton 3 Star Split AC", "category": "air conditioner", "brand": "Lloyd", "price": 32990, "style": "modern", "width_cm": 90, "depth_cm": 22, "quality_score": 0.83, "link": "https://www.google.com/search?tbm=shop&q=Lloyd+1.5+Ton+3+Star+Split+AC"}
+            {"name": "Lloyd 1.5 Ton 3 Star Split AC", "category": "air conditioner", "brand": "Lloyd", "price": 32990, "style": "modern", "width_cm": 90, "depth_cm": 22, "quality_score": 0.83, "link": "https://www.google.com/search?tbm=shop&q=Lloyd+1.5+Ton+3+Star+Split+AC"},
+            
+            # Ceiling Fans (3 products for fallback)
+            {"name": "Ceiling Fan Hugger 52 in. LED Indoor Brushed Nickel Ceiling Fan", "category": "ceiling fan", "brand": "Generic", "price": 4977.51, "style": "modern", "width_cm": 130, "depth_cm": 130, "quality_score": 0.88, "link": "https://www.google.com/search?tbm=shop&q=Ceiling+Fan+Hugger+52+in.+LED+Indoor+Brushed+Nickel+Ceiling+Fan"},
+            {"name": "Hugger 52 in. LED Indoor Black Ceiling Fan", "category": "ceiling fan", "brand": "Generic", "price": 4977.51, "style": "modern", "width_cm": 130, "depth_cm": 130, "quality_score": 0.87, "link": "https://www.google.com/search?tbm=shop&q=Hugger+52+in.+LED+Indoor+Black+Ceiling+Fan"},
+            {"name": "Visual Comfort Fan Ikon 44\" Ceiling Fan", "category": "ceiling fan", "brand": "Generic", "price": 26493.60, "style": "modern", "width_cm": 110, "depth_cm": 110, "quality_score": 0.9, "link": "https://www.google.com/search?tbm=shop&q=Visual+Comfort+Fan+Ikon+44%22+Ceiling+Fan"}
         ]
         logger.info("CommerceAgent initialized (Provider: %s)", provider)
 
