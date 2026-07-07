@@ -248,157 +248,167 @@ class CommerceAgent:
 
         import urllib.request
         import urllib.parse
+        import urllib.error
         
-        brands = preferred_brands or [""]
         results = []
         
-        # Build search queries (e.g. "IKEA desk", "Urban Ladder chair")
-        queries = []
-        for cat in categories or ["desk"]:
-            for brand in brands:
-                q = f"{brand} {cat}".strip()
-                if q:
-                    queries.append((cat, q))
-                    
-        for cat, query in queries[:5]:  # Limit query batching to avoid rate limits
+        # Helper function to parse a single SerpAPI shopping item into conformed schema
+        def parse_item(item, cat, detected_brand):
+            title = item.get("title", "")
+            price_str = item.get("price", "0")
+            # Extract price digits
+            price_cleaned = re.sub(r'[^\d.]', '', price_str)
             try:
-                logger.info("Executing dynamic Google Shopping query on SerpAPI: '%s'", query)
-                query_encoded = urllib.parse.quote(query)
-                url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
+                price = float(price_cleaned) if price_cleaned else 0.0
+            except Exception:
+                price = 0.0
+
+            # Dynamic currency conversion to INR
+            converted_price = price
+            is_usd = False
+            is_eur = False
+            is_gbp = False
+            is_cad = False
+            
+            price_str_lower = price_str.lower()
+            currency_field = item.get("currency", "").upper()
+            
+            if "$" in price_str or "usd" in price_str_lower or currency_field == "USD":
+                is_usd = True
+            elif "€" in price_str or "eur" in price_str_lower or currency_field == "EUR":
+                is_eur = True
+            elif "£" in price_str or "gbp" in price_str_lower or currency_field == "GBP":
+                is_gbp = True
+            elif "c$" in price_str_lower or "cad" in price_str_lower or currency_field == "CAD":
+                is_cad = True
                 
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=25) as response:
-                    data = json.loads(response.read().decode('utf-8'))
-                    shopping_results = data.get("shopping_results", [])
+            if is_usd:
+                converted_price = round(price * 83.0, 2)
+            elif is_eur:
+                converted_price = round(price * 90.0, 2)
+            elif is_gbp:
+                converted_price = round(price * 105.0, 2)
+            elif is_cad:
+                converted_price = round(price * 61.0, 2)
+
+            price = converted_price
+            if price <= 0:
+                price = 4500.0
+                
+            rating = float(item.get("rating", 4.0))
+            quality_score = rating / 5.0 if rating > 0 else 0.8
+            reviews_count = int(item.get("reviews", 50))
+            image_url = item.get("thumbnail", "")
+            
+            # Parse dimensions from title
+            w_cm, d_cm, h_cm = 120.0, 60.0, 75.0
+            match = re.search(r'(\d+)\s*(?:x|by)\s*(\d+)', title.lower())
+            if match:
+                try:
+                    w_cm = float(match.group(1))
+                    d_cm = float(match.group(2))
+                except Exception:
+                    pass
                     
-                    for item in shopping_results:
-                        title = item.get("title", "")
-                        price_str = item.get("price", "0")
-                        # Extract price digits
-                        price_cleaned = re.sub(r'[^\d.]', '', price_str)
-                        try:
-                            price = float(price_cleaned) if price_cleaned else 0.0
-                        except Exception:
-                            price = 0.0
-
-                        # Dynamic currency conversion to INR
-                        converted_price = price
-                        is_usd = False
-                        is_eur = False
-                        is_gbp = False
-                        is_cad = False
-                        
-                        price_str_lower = price_str.lower()
-                        currency_field = item.get("currency", "").upper()
-                        
-                        if "$" in price_str or "usd" in price_str_lower or currency_field == "USD":
-                            is_usd = True
-                        elif "€" in price_str or "eur" in price_str_lower or currency_field == "EUR":
-                            is_eur = True
-                        elif "£" in price_str or "gbp" in price_str_lower or currency_field == "GBP":
-                            is_gbp = True
-                        elif "c$" in price_str_lower or "cad" in price_str_lower or currency_field == "CAD":
-                            is_cad = True
-                        elif price < 1500 and not any(sym in price_str for sym in ("₹", "Rs", "Rs.", "INR", "inr")):
-                            # Fallback default conversion if number is low and has no rupee symbol
-                            is_usd = True
-
-                        if is_usd:
-                            converted_price = round(price * 83.0, 2)
-                            logger.info("Converted USD price %s to INR: %s", price, converted_price)
-                        elif is_eur:
-                            converted_price = round(price * 90.0, 2)
-                            logger.info("Converted EUR price %s to INR: %s", price, converted_price)
-                        elif is_gbp:
-                            converted_price = round(price * 105.0, 2)
-                            logger.info("Converted GBP price %s to INR: %s", price, converted_price)
-                        elif is_cad:
-                            converted_price = round(price * 61.0, 2)
-                            logger.info("Converted CAD price %s to INR: %s", price, converted_price)
-
-                        price = converted_price
-                            
-                        # Detect brand from title or source
-                        source = item.get("source", "")
-                        detected_brand = source
-                        for b in (preferred_brands or ["IKEA", "Urban Ladder", "Godrej Interio"]):
-                            if b.lower() in title.lower():
-                                detected_brand = b
-                                break
-                                
-                        rating = float(item.get("rating", 4.0))
-                        quality_score = rating / 5.0 if rating > 0 else 0.8
-                        reviews_count = int(item.get("reviews", 50))
-                        image_url = item.get("thumbnail", "")
-                        
-                        # Parse dimensions from title
-                        w_cm, d_cm, h_cm = 120.0, 60.0, 75.0
-                        match = re.search(r'(\d+)\s*(?:x|by)\s*(\d+)', title.lower())
-                        if match:
-                            try:
-                                w_cm = float(match.group(1))
-                                d_cm = float(match.group(2))
-                            except Exception:
-                                pass
-                                
-                        # Build conformed product schema defined in Section 1
-                        product_id = item.get("product_id") or f"serp_{hash(title)%1000}"
-                        orig_link = item.get("product_link") or item.get("link") or item.get("serpapi_product_api") or ""
-                        if not orig_link or not (orig_link.startswith("http://") or orig_link.startswith("https://")):
-                            query_q = f"{detected_brand} {title}".strip()
-                            orig_link = f"https://www.google.com/search?tbm=shop&q={urllib.parse.quote(query_q)}"
-                        
-                        results.append({
-                            # Dynamic conformed Section 1 schema fields
-                            "product_id": product_id,
-                            "title": title,
-                            "brand": detected_brand,
-                            "price": price,
-                            "currency": "INR",
-                            "rating": rating,
-                            "reviews": reviews_count,
-                            "dimensions": {
-                                "width_cm": w_cm,
-                                "depth_cm": d_cm,
-                                "height_cm": h_cm
-                            },
-                            "thumbnail_url": image_url,
-                            "high_resolution_image": image_url,
-                            "product_url": orig_link,
-                            "seller": detected_brand,
-                            "source": "serpapi",
-                            "marketplace": detected_brand,
-                            "availability": True,
-                            "shipping_cost": 599,
-                            "installation_cost": 0,
-                            
-                            # Backwards-compatibility legacy properties
-                            "name": title,
-                            "category": cat,
-                            "style": "modern",
-                            "width_cm": w_cm,
-                            "depth_cm": d_cm,
-                            "quality_score": round(quality_score, 2),
-                            "image": image_url,
-                            "link": orig_link
-                        })
-            except Exception as e:
-                logger.error("SerpAPI query failed for '%s': %s", query, str(e))
+            # Build conformed product schema defined in Section 1
+            product_id = item.get("product_id") or f"serp_{hash(title)%1000}"
+            orig_link = item.get("product_link") or item.get("link") or item.get("serpapi_product_api") or ""
+            if not orig_link or not (orig_link.startswith("http://") or orig_link.startswith("https://")):
+                query_q = f"{detected_brand} {title}".strip()
+                orig_link = f"https://www.google.com/search?tbm=shop&q={urllib.parse.quote(query_q)}"
+            
+            return {
+                # Dynamic conformed Section 1 schema fields
+                "product_id": product_id,
+                "title": title,
+                "brand": detected_brand,
+                "price": price,
+                "currency": "INR",
+                "rating": rating,
+                "reviews": reviews_count,
+                "dimensions": {
+                    "width_cm": w_cm,
+                    "depth_cm": d_cm,
+                    "height_cm": h_cm
+                },
+                "thumbnail_url": image_url,
+                "high_resolution_image": image_url,
+                "product_url": orig_link,
+                "seller": detected_brand,
+                "source": "serpapi",
+                "marketplace": detected_brand,
+                "availability": True,
+                "shipping_cost": 599,
+                "installation_cost": 0,
                 
-        # Category fallback: check if any category has 0 results and populate from mock
-        for cat in categories or []:
-            has_match = False
-            normalized_cat = cat.lower()
-            for r in results:
-                if (r.get("category", "").lower() == normalized_cat or 
-                    normalized_cat in r.get("name", "").lower() or 
-                    normalized_cat.replace(" ", "_") in r.get("name", "").lower()):
-                    has_match = True
-                    break
-            if not has_match:
-                logger.info("Category '%s' yielded 0 live results. Injecting local mock catalog fallback.", cat)
-                results.extend(self._search_mock_catalog([cat]))
+                # Backwards-compatibility legacy properties
+                "name": title,
+                "category": cat,
+                "style": "modern",
+                "width_cm": w_cm,
+                "depth_cm": d_cm,
+                "quality_score": round(quality_score, 2),
+                "image": image_url,
+                "link": orig_link
+            }
 
+        # Process each category independently to ensure we never truncate entire categories!
+        for cat in categories or ["desk"]:
+            cat_results = []
+            
+            # Step A: Try searching with preferred brands first
+            if preferred_brands:
+                for brand in preferred_brands[:2]: # Limit to top 2 brands to avoid query limit hits
+                    query = f"{brand} {cat}".strip()
+                    try:
+                        logger.info("Executing branded SerpAPI query: '%s'", query)
+                        query_encoded = urllib.parse.quote(query)
+                        url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
+                        
+                        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                        with urllib.request.urlopen(req, timeout=12) as response:
+                            data = json.loads(response.read().decode('utf-8'))
+                            shopping_results = data.get("shopping_results", [])
+                            
+                            for item in shopping_results:
+                                parsed = parse_item(item, cat, brand)
+                                if parsed:
+                                    cat_results.append(parsed)
+                    except Exception as e:
+                        logger.warning("Branded query failed for '%s': %s", query, str(e))
+                        
+            # Step B: Generic search fallback
+            # If branded search returned 0 items, or if no preferred brands are set:
+            # We run a generic category search to ensure we ALWAYS return products of ANY brand!
+            if not cat_results:
+                query = cat
+                try:
+                    logger.info("Executing generic fallback SerpAPI query: '%s'", query)
+                    query_encoded = urllib.parse.quote(query)
+                    url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
+                    
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=12) as response:
+                        data = json.loads(response.read().decode('utf-8'))
+                        shopping_results = data.get("shopping_results", [])
+                        
+                        for item in shopping_results:
+                            source = item.get("source", "")
+                            detected_brand = item.get("brand") or source or "Generic"
+                            parsed = parse_item(item, cat, detected_brand)
+                            if parsed:
+                                cat_results.append(parsed)
+                except Exception as e:
+                    logger.warning("Generic query failed for '%s': %s", query, str(e))
+                    
+            # Step C: Category fallback check if live results are still empty
+            if not cat_results:
+                logger.info("SerpAPI failed completely for category '%s'. Fetching fallbacks from local mock catalog...", cat)
+                mock_items = self._search_mock_catalog([cat])
+                cat_results.extend(mock_items)
+                
+            results.extend(cat_results)
+            
         return results
 
     def _search_mock_catalog(self, categories: List[str]) -> List[Dict[str, Any]]:
