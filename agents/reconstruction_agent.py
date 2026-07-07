@@ -371,8 +371,14 @@ class ReconstructionAgent:
                                 products_prompt_parts = []
                                 for p_idx, (_, it, _) in enumerate(inpaint_targets):
                                     pos_d = it.get("proposed_location", "Placement in empty floor coordinates.")
+                                    brand = it.get('brand', '')
+                                    title = it.get('title', 'furniture')
+                                    if brand and title.lower().startswith(brand.lower()):
+                                        desc = title
+                                    else:
+                                        desc = f"{brand} {title}".strip()
                                     products_prompt_parts.append(
-                                        f"{p_idx + 1}. {it.get('brand', '')} {it.get('title', 'furniture')}\n"
+                                        f"{p_idx + 1}. {desc}\n"
                                         f"   Position:\n"
                                         f"   - {pos_d}"
                                     )
