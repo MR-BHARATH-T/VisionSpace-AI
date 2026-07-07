@@ -52,8 +52,12 @@ def make_background_transparent(img: Any) -> Any:
         removed = remove(img)
         if removed:
             logger.info("Successfully removed showroom background using rembg library.")
-            # Also apply soft edge feathering to the result to make it look smooth
-            return apply_edge_feathering(removed, feather_radius=8)
+            feathered = apply_edge_feathering(removed, feather_radius=8)
+            # Autocrop transparent margins to make the product fill the canvas
+            bbox = feathered.getbbox()
+            if bbox:
+                feathered = feathered.crop(bbox)
+            return feathered
     except BaseException as rembg_err:
         logger.warning("rembg failed, not installed, or exited: %s. Falling back to corner-sample keying.", str(rembg_err))
 
@@ -101,9 +105,12 @@ def make_background_transparent(img: Any) -> Any:
             new_data.append(item)
             
     img.putdata(new_data)
-    
-    # Apply soft edge feathering to the fallback result to blend borders smoothly
-    return apply_edge_feathering(img, feather_radius=12)
+    feathered = apply_edge_feathering(img, feather_radius=12)
+    # Autocrop transparent margins to make the product fill the canvas
+    bbox = feathered.getbbox()
+    if bbox:
+        feathered = feathered.crop(bbox)
+    return feathered
 
 
 class ReconstructionAgent:
@@ -540,8 +547,21 @@ class ReconstructionAgent:
                                         fill=255
                                     )
                                     
+                                # Determine dynamic inpainting strength to balance scene realism and product visibility.
+                                # Appliances/decor/hard-surface items use lower strength to prevent detail washing/erasing.
+                                # Soft furniture/large floor items use higher strength to blend borders and cast floor shadows.
+                                target_strength = 0.52 # Default
+                                any_hard_surface = False
+                                for _, it, _ in inpaint_targets:
+                                    cat_l = it.get("category", "").lower()
+                                    if any(k in cat_l for k in ["ac", "conditioner", "fan", "projector", "lamp", "light", "screen", "tv"]):
+                                        any_hard_surface = True
+                                        break
+                                if any_hard_surface:
+                                    target_strength = 0.42
+                                    
                                 if self.provider_name == "deepinfra" and os.environ.get("DEEPINFRA_API_KEY"):
-                                    logger.info("Running realistic cloud inpainting using DeepInfra FLUX API...")
+                                    logger.info("Running realistic cloud inpainting using DeepInfra FLUX API (strength: %s)...", target_strength)
                                     import requests
                                     import io
                                     import base64
@@ -569,7 +589,7 @@ class ReconstructionAgent:
                                         "image": init_b64,
                                         "mask": mask_b64,
                                         "num_inference_steps": 28,
-                                        "strength": 0.58
+                                        "strength": target_strength
                                     }
                                     
                                     # Try dev first, fallback to schnell
@@ -599,7 +619,7 @@ class ReconstructionAgent:
                                             logger.info("Successfully completed DeepInfra FLUX cloud generation!")
                                 else:
                                     # Hugging Face local GPU inpainting
-                                    logger.info("Running realistic local inpainting using StableDiffusionInpaintPipeline...")
+                                    logger.info("Running realistic local inpainting using StableDiffusionInpaintPipeline (strength: %s)...", target_strength)
                                     import torch
                                     from diffusers import StableDiffusionInpaintPipeline
                                     
@@ -623,7 +643,7 @@ class ReconstructionAgent:
                                         image=init_rgb,
                                         mask_image=mask_l,
                                         num_inference_steps=20,
-                                        strength=0.58,
+                                        strength=target_strength,
                                         guidance_scale=7.5
                                     ).images[0]
                                     
@@ -631,9 +651,6 @@ class ReconstructionAgent:
                                     logger.info("Successfully completed local Hugging Face GPU inpainting!")
                             except Exception as inpaint_err:
                                 logger.warning("Inpainting failed: %s. Falling back to high-fidelity feathered overlays.", str(inpaint_err))
-                                # base_img already contains the pre-composited feathered overlays from Step B!
-
-                        # D. Convert base_img to RGB and save cleanly (completely realistic photo output)
                         composite = base_img.convert("RGB")
                         
                         # Save the specific view output
