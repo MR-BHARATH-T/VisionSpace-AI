@@ -95,7 +95,14 @@ class CommerceAgent:
             {"name": "Urban Ladder Single Bed", "category": "bed", "brand": "Urban Ladder", "price": 22000, "style": "contemporary", "width_cm": 200, "depth_cm": 100, "quality_score": 0.86, "link": "https://www.urbanladder.com/beds"},
             {"name": "Godrej Interio Queen Bed", "category": "bed", "brand": "Godrej Interio", "price": 28000, "style": "classic", "width_cm": 210, "depth_cm": 150, "quality_score": 0.85, "link": "https://www.godrejinterio.com/furniture/beds"},
             {"name": "Green Soul Ergonomic Chair", "category": "chair", "brand": "Green Soul", "price": 8999, "style": "contemporary", "width_cm": 65, "depth_cm": 65, "quality_score": 0.9, "link": "https://www.greensoul.online/"},
-            {"name": "Green Soul Study Desk", "category": "desk", "brand": "Green Soul", "price": 7500, "style": "modern", "width_cm": 120, "depth_cm": 60, "quality_score": 0.82, "link": "https://www.greensoul.online/"}
+            {"name": "Green Soul Study Desk", "category": "desk", "brand": "Green Soul", "price": 7500, "style": "modern", "width_cm": 120, "depth_cm": 60, "quality_score": 0.82, "link": "https://www.greensoul.online/"},
+            
+            # Air Conditioners (5 products for fallback)
+            {"name": "Voltas 1.5 Ton 3 Star Split AC", "category": "air conditioner", "brand": "Voltas", "price": 32990, "style": "modern", "width_cm": 90, "depth_cm": 22, "quality_score": 0.85, "link": "https://www.google.com/search?tbm=shop&q=Voltas+1.5+Ton+3+Star+Split+AC"},
+            {"name": "Daikin 1.5 Ton 5 Star Inverter AC", "category": "air conditioner", "brand": "Daikin", "price": 45490, "style": "modern", "width_cm": 90, "depth_cm": 22, "quality_score": 0.92, "link": "https://www.google.com/search?tbm=shop&q=Daikin+1.5+Ton+5+Star+Inverter+AC"},
+            {"name": "LG 1.5 Ton 5 Star Dual Inverter AC", "category": "air conditioner", "brand": "LG", "price": 46500, "style": "modern", "width_cm": 90, "depth_cm": 22, "quality_score": 0.9, "link": "https://www.google.com/search?tbm=shop&q=LG+1.5+Ton+5+Star+Dual+Inverter+AC"},
+            {"name": "Samsung 1 Ton 3 Star Inverter AC", "category": "air conditioner", "brand": "Samsung", "price": 28990, "style": "modern", "width_cm": 80, "depth_cm": 20, "quality_score": 0.82, "link": "https://www.google.com/search?tbm=shop&q=Samsung+1+Ton+3+Star+Inverter+AC"},
+            {"name": "Lloyd 1.5 Ton 3 Star Split AC", "category": "air conditioner", "brand": "Lloyd", "price": 32990, "style": "modern", "width_cm": 90, "depth_cm": 22, "quality_score": 0.83, "link": "https://www.google.com/search?tbm=shop&q=Lloyd+1.5+Ton+3+Star+Split+AC"}
         ]
         logger.info("CommerceAgent initialized (Provider: %s)", provider)
 
@@ -441,6 +448,10 @@ class CommerceAgent:
                 img_url = "https://images.unsplash.com/photo-1594980596870-8cb524ebf6bc?auto=format&fit=crop&w=150&q=80"
             elif "bed" in cat_lower:
                 img_url = "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=150&q=80"
+            elif "ac" in cat_lower or "conditioner" in cat_lower:
+                img_url = "https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=150&q=80"
+            elif "projector" in cat_lower:
+                img_url = "https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=150&q=80"
             elif "lighting" in cat_lower or "lamp" in cat_lower:
                 img_url = "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=150&q=80"
             elif "cabinet" in cat_lower or "wardrobe" in cat_lower:
@@ -505,7 +516,23 @@ class CommerceAgent:
         for p in products:
             w = float(p.get("width_cm", 0))
             d = float(p.get("depth_cm", 0))
-            if w <= max_w and d <= max_d:
+            cat_lower = p.get("category", "").lower()
+            
+            # Set category-specific dimension boundaries to prevent false filtering of large items (Beds/Screens)
+            limit_w = max_w
+            limit_d = max_d
+            
+            if "bed" in cat_lower:
+                limit_w = 250.0
+                limit_d = 220.0
+            elif "screen" in cat_lower or "tv" in cat_lower:
+                limit_w = 300.0
+                limit_d = 100.0
+            elif "projector" in cat_lower or "ac" in cat_lower or "conditioner" in cat_lower or "lighting" in cat_lower:
+                limit_w = 200.0
+                limit_d = 200.0
+                
+            if w <= limit_w and d <= limit_d:
                 filtered.append(p)
         return filtered
 
