@@ -153,16 +153,8 @@ def main():
         except Exception:
             pass
         
-        # Zip outputs for ease of downloading
-        print("\n📦 Zipping output files...")
-        outputs_dir = pathlib.Path("outputs")
-        zip_output_path = pathlib.Path("../outputs")  # outside workspace directory /kaggle/working/
-        
-        if outputs_dir.exists():
-            shutil.make_archive(str(zip_output_path), 'zip', str(outputs_dir))
-            print("Zipping complete! Created outputs.zip successfully.")
-        else:
-            print("Error: The outputs directory does not exist.")
+        # Removed hardcoded zipping
+        pass
             
     except Exception as e:
         print(f"\n❌ Pipeline Execution Failed: {str(e)}")
