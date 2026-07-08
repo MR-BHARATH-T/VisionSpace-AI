@@ -126,12 +126,28 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         total_placed_cost = sum(float(item.get("price", 0)) for item in placed_items)
         reserves_remaining = max_budget - total_placed_cost
         
+        warning_msg = ""
+        if reserves_remaining < 0:
+            warning_msg = f'<div style="color: #ef4444; font-size: 11px; margin-top: 8px; font-weight: bold;">⚠️ Warning: Selected layout exceeds budget limit by Rs. {abs(reserves_remaining):.2f}!</div>'
+            
+        # Check if any recommended category options exceed the user budget
+        too_expensive_cats = []
+        rec_products = state["out"].get("commerce", {}).get("recommended_products", [])
+        for item in rec_products:
+            if float(item.get("price", 0)) > max_budget:
+                cat = item.get("category", "")
+                if cat and cat not in too_expensive_cats:
+                    too_expensive_cats.append(cat)
+        if too_expensive_cats:
+            warning_msg += f'<div style="color: #f59e0b; font-size: 11px; margin-top: 5px;">⚠️ Note: Budget limits exclude affordable matches for: {", ".join(too_expensive_cats)}. Displaying premium fallbacks.</div>'
+        
         budget_html = f"""
         <div class="info-card" style="width: 320px; margin-bottom: 0;">
             <h4 style="margin-top: 0; color: #38bdf8; border-bottom: 1px solid #2d3748; padding-bottom: 5px;"> Budget Breakdown</h4>
             <p style="margin: 6px 0; font-size: 13px;"><b>Total Selected Cost:</b> Rs. {total_placed_cost:.2f}</p>
             <p style="margin: 6px 0; font-size: 13px;"><b>Limit Setting:</b> Rs. {max_budget:.2f}</p>
             <p style="margin: 6px 0; font-size: 13px;"><b>Reserves Remaining:</b> <span style="color: {'#10b981' if reserves_remaining >= 0 else '#ef4444'}; font-weight: bold;">Rs. {reserves_remaining:.2f}</span></p>
+            {warning_msg}
         </div>
         """
         state["budget_widget"].value = budget_html

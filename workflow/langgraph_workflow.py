@@ -117,14 +117,9 @@ class ProductionPipelineV2:
             session_path=str(session_path)
         )
 
-        # Simulate user selecting specific items (e.g. select the top ranked item for each category)
+        # By default, do not pre-place any products on the first run.
+        # This keeps the initial layout reconstruction clean and empty until the user selects products.
         selected_products = []
-        req_products = user_preferences.get("required_products") or []
-        for cat in req_products:
-            normalized_key = cat.lower().replace(" ", "_")
-            cat_list = commerce_output.get(normalized_key) or []
-            if cat_list:
-                selected_products.append(cat_list[0])
 
         if progress_callback:
             progress_callback(f"Simulating user selection: Chosen {len(selected_products)} products.")

@@ -219,17 +219,22 @@ class ReconstructionAgent:
                         room_dim = spatial_output.get("room_dimensions", {}) if spatial_output else {}
                         room_w = float(room_dim.get("width") or 4.0) * 100.0
                         room_d = float(room_dim.get("length") or 5.0) * 100.0
+                        room_h = float(room_dim.get("height") or 2.7) * 100.0
 
                         def map_3d_to_2d(x_cm, y_cm, z_cm):
-                            # Normalize 3D coordinates relative to room boundaries
-                            norm_x = max(0.0, min(1.0, x_cm / room_w))
-                            norm_y = max(0.0, min(1.0, y_cm / room_d))
-                            # Simple perspective projection mapping to 2D image coordinates
+                            # x_cm is width: range is [-room_w/2, room_w/2] relative to center
+                            norm_x = max(0.0, min(1.0, (x_cm + room_w / 2) / room_w))
+                            # z_cm is depth (distance from camera)
+                            norm_y = max(0.0, min(1.0, z_cm / room_d))
+                            
                             cx = 0.5
                             cy = 0.35  # Horizon line in standard viewpoint
                             scale = 0.4 + 0.6 * norm_y
                             x_2d = cx + (norm_x - 0.5) * scale
-                            y_2d = cy + (norm_y - 0.2) * 0.65 * scale
+                            
+                            # y_cm is vertical height (negative = up/ceiling, positive = down/floor)
+                            norm_z = max(0.0, min(1.0, (y_cm + room_h / 2) / room_h))
+                            y_2d = cy + (norm_z - 0.5) * 0.65 * scale
                             return max(0.02, min(0.98, x_2d)), max(0.02, min(0.98, y_2d))
 
                         existing_objects = vision_output.get("objects", []) if vision_output else []
@@ -237,15 +242,21 @@ class ReconstructionAgent:
                             pos = obj.get("room_position") or obj.get("position")
                             dims = obj.get("estimated_dimensions") or {}
                             if pos:
-                                x_cm = float(pos.get("x_cm") or 200.0)
-                                y_cm = float(pos.get("y_cm") or 250.0)
-                                z_cm = float(pos.get("z_cm") or 0.0)
-                                w_cm = float(dims.get("width_cm") or 80.0)
-                                d_cm = float(dims.get("depth_cm") or 80.0)
-                                h_cm = float(dims.get("height_cm") or 80.0)
+                                x_cm = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                                y_cm = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                                z_cm = float(pos.get("z_cm") or pos.get("z") or 0.0)
                                 
-                                x1_2d, y1_2d = map_3d_to_2d(x_cm - w_cm/2, y_cm - d_cm/2, z_cm)
-                                x2_2d, y2_2d = map_3d_to_2d(x_cm + w_cm/2, y_cm + d_cm/2, z_cm + h_cm)
+                                # Scale meters to centimeters dynamically
+                                if abs(x_cm) < 15.0: x_cm *= 100.0
+                                if abs(y_cm) < 15.0: y_cm *= 100.0
+                                if abs(z_cm) < 15.0: z_cm *= 100.0
+                                
+                                w_cm = float(dims.get("width_cm") or dims.get("width") or 80.0)
+                                d_cm = float(dims.get("depth_cm") or dims.get("depth") or 80.0)
+                                h_cm = float(dims.get("height_cm") or dims.get("height") or 80.0)
+                                
+                                x1_2d, y1_2d = map_3d_to_2d(x_cm - w_cm/2, y_cm - h_cm/2, z_cm - d_cm/2)
+                                x2_2d, y2_2d = map_3d_to_2d(x_cm + w_cm/2, y_cm + h_cm/2, z_cm + d_cm/2)
                                 
                                 bx1 = int(min(x1_2d, x2_2d) * width)
                                 by1 = int(min(y1_2d, y2_2d) * height)
@@ -259,14 +270,44 @@ class ReconstructionAgent:
                             pos = door.get("room_position")
                             dims = door.get("estimated_dimensions") or {}
                             if pos:
-                                x_cm = float(pos.get("x_cm") or 50.0)
-                                y_cm = float(pos.get("y_cm") or 350.0)
-                                w_cm = float(dims.get("width_cm") or 90.0)
-                                d_cm = float(dims.get("depth_cm") or 10.0)
-                                h_cm = float(dims.get("height_cm") or 200.0)
+                                x_cm = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                                y_cm = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                                z_cm = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                                if abs(x_cm) < 15.0: x_cm *= 100.0
+                                if abs(y_cm) < 15.0: y_cm *= 100.0
+                                if abs(z_cm) < 15.0: z_cm *= 100.0
                                 
-                                x1_2d, y1_2d = map_3d_to_2d(x_cm - w_cm/2, y_cm - d_cm/2, 0.0)
-                                x2_2d, y2_2d = map_3d_to_2d(x_cm + w_cm/2, y_cm + d_cm/2, h_cm)
+                                w_cm = float(dims.get("width_cm") or dims.get("width") or 90.0)
+                                d_cm = float(dims.get("depth_cm") or dims.get("depth") or 10.0)
+                                h_cm = float(dims.get("height_cm") or dims.get("height") or 200.0)
+                                
+                                x1_2d, y1_2d = map_3d_to_2d(x_cm - w_cm/2, y_cm - h_cm/2, z_cm - d_cm/2)
+                                x2_2d, y2_2d = map_3d_to_2d(x_cm + w_cm/2, y_cm + h_cm/2, z_cm + d_cm/2)
+                                
+                                bx1 = int(min(x1_2d, x2_2d) * width)
+                                by1 = int(min(y1_2d, y2_2d) * height)
+                                bx2 = int(max(x1_2d, x2_2d) * width)
+                                by2 = int(max(y1_2d, y2_2d) * height)
+                                occupied_boxes.append((bx1, by1, bx2, by2))
+
+                        windows = vision_output.get("windows", []) if vision_output else []
+                        for win in windows:
+                            pos = win.get("room_position")
+                            dims = win.get("estimated_dimensions") or {}
+                            if pos:
+                                x_cm = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                                y_cm = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                                z_cm = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                                if abs(x_cm) < 15.0: x_cm *= 100.0
+                                if abs(y_cm) < 15.0: y_cm *= 100.0
+                                if abs(z_cm) < 15.0: z_cm *= 100.0
+                                
+                                w_cm = float(dims.get("width_cm") or dims.get("width") or 120.0)
+                                d_cm = float(dims.get("depth_cm") or dims.get("depth") or 10.0)
+                                h_cm = float(dims.get("height_cm") or dims.get("height") or 120.0)
+                                
+                                x1_2d, y1_2d = map_3d_to_2d(x_cm - w_cm/2, y_cm - h_cm/2, z_cm - d_cm/2)
+                                x2_2d, y2_2d = map_3d_to_2d(x_cm + w_cm/2, y_cm + h_cm/2, z_cm + d_cm/2)
                                 
                                 bx1 = int(min(x1_2d, x2_2d) * width)
                                 by1 = int(min(y1_2d, y2_2d) * height)
