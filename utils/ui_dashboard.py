@@ -83,6 +83,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         "out": None,
         "session_path": None,
         "image_box": None,
+        "error_banner": None,
         "placed_products": []
     }
 
@@ -117,6 +118,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         """
 
     state["budget_widget"] = widgets.HTML()
+    state["error_banner"] = widgets.HTML()
 
     def update_budget_display() -> None:
         if not state["out"]:
@@ -223,6 +225,17 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         """
                         comparison_html_list.append(comparison_html)
                 
+                # Check for placement errors
+                placement_errors = recon.get("placement_errors", [])
+                if placement_errors:
+                    error_html = "".join([
+                        f'<div style="background-color: #fef2f2; border-left: 4px solid #ef4444; color: #b91c1c; padding: 10px; margin-top: 15px; margin-bottom: 5px; border-radius: 4px; font-weight: bold; font-size: 13px; font-family: sans-serif;">⚠️ Placement Warning: {err}</div>'
+                        for err in placement_errors
+                    ])
+                    state["error_banner"].value = error_html
+                else:
+                    state["error_banner"].value = ""
+
                 state["image_box"].value = "\n".join(comparison_html_list)
                 update_budget_display()
                 print(" Success! Updated the layout reconstruction image.")
@@ -475,7 +488,19 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 # Initialize dynamic budget display and render spatial alongside it
                 update_budget_display()
                 display(widgets.HBox([widgets.HTML(spatial_html), state["budget_widget"]], layout=widgets.Layout(gap="20px", margin="10px 0")))
+                # Check for placement errors on initial run
+                placement_errors = out.get("reconstruction", {}).get("placement_errors", [])
+                if placement_errors:
+                    error_html = "".join([
+                        f'<div style="background-color: #fef2f2; border-left: 4px solid #ef4444; color: #b91c1c; padding: 10px; margin-top: 15px; margin-bottom: 5px; border-radius: 4px; font-weight: bold; font-size: 13px; font-family: sans-serif;">⚠️ Placement Warning: {err}</div>'
+                        for err in placement_errors
+                    ])
+                    state["error_banner"].value = error_html
+                else:
+                    state["error_banner"].value = ""
+
                 display(HTML(logs_html))
+                display(state["error_banner"])
                 display(state["image_box"])
 
                 # Render dynamic catalog cards with "Try in Room" callback buttons

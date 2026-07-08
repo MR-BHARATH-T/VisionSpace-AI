@@ -135,6 +135,7 @@ class ReconstructionAgent:
 
         detected = vision_output.get("detected_objects") or []
         recommended = commerce_output.get("recommended_products") or []
+        placement_errors = []
 
         # Get spatial layout candidate regions from spatial_output or vision_output
         candidates = []
@@ -427,8 +428,9 @@ class ReconstructionAgent:
                                 int((best_cy + h_p/2) * height)
                             )
                             
-                            # Add placed coords to occupied_boxes list to prevent overlap with subsequent placements
-                            occupied_boxes.append(coords)
+                            if placed:
+                                # Add placed coords to occupied_boxes list to prevent overlap with subsequent placements
+                                occupied_boxes.append(coords)
                             
                             # Format descriptive location labels dynamically
                             pos_desc = f"Placement at dynamic layout coordinates: [{coords[0]}, {coords[1]}, {coords[2]}, {coords[3]}]"
@@ -503,15 +505,20 @@ class ReconstructionAgent:
                                  except Exception as e:
                                      logger.warning("Failed to fetch fallback image from Unsplash: %s", str(e))
 
-                            if product_img:
+                            if placed and product_img:
                                  # Guided Inpainting: Pre-paste the transparent product visual onto base_img
                                  # to act as color/shape reference for the diffusion model.
                                  product_img_resized = product_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
                                  base_img.paste(product_img_resized, (coords[0], coords[1]), product_img_resized)
                                  inpaint_targets.append((coords, item, product_img))
-                            else:
+                            elif placed:
                                  # Fallback if both primary and secondary failed: draw a subtle outline but keep mask
                                  inpaint_targets.append((coords, item, None))
+                            else:
+                                 # Record placement error if it doesn't fit
+                                 err_msg = f"Product '{item.get('name', 'Item')}' cannot be placed inside the room as its size exceeds the available empty space."
+                                 placement_errors.append(err_msg)
+                                 logger.warning(err_msg)
                                  
                             item["proposed_location"] = pos_desc
 
@@ -744,6 +751,7 @@ class ReconstructionAgent:
             "collision_score": 0.0,
             "walkability_score": float(spatial_output.get("walkability_score", 88.0)) if spatial_output else 88.0,
             "realism_score": 0.95,
+            "placement_errors": placement_errors,
             
             # Backwards-compatibility legacy properties
             "before_image": before_image,
