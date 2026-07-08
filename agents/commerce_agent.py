@@ -382,8 +382,39 @@ class CommerceAgent:
             if preferred_brands:
                 for brand in preferred_brands[:2]: # Limit to top 2 brands to avoid query limit hits
                     query = f"{brand} {cat}".strip()
+                    max_retries = 3
+                    import time
+                    for attempt in range(max_retries):
+                        try:
+                            logger.info("Executing branded SerpAPI query (Attempt %d/%d): '%s'", attempt+1, max_retries, query)
+                            query_encoded = urllib.parse.quote(query)
+                            url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
+                            
+                            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                            with urllib.request.urlopen(req, timeout=12) as response:
+                                data = json.loads(response.read().decode('utf-8'))
+                                shopping_results = data.get("shopping_results", [])
+                                
+                                for item in shopping_results:
+                                    parsed = parse_item(item, cat, brand)
+                                    if parsed:
+                                        cat_results.append(parsed)
+                            break # Success, exit retry loop
+                        except Exception as e:
+                            logger.warning("Branded query failed (Attempt %d/%d) for '%s': %s", attempt+1, max_retries, query, str(e))
+                            if attempt < max_retries - 1:
+                                time.sleep(1.5)
+                        
+            # Step B: Generic search fallback
+            # If branded search returned 0 items, or if no preferred brands are set:
+            # We run a generic category search to ensure we ALWAYS return products of ANY brand!
+            if not cat_results:
+                query = cat
+                max_retries = 3
+                import time
+                for attempt in range(max_retries):
                     try:
-                        logger.info("Executing branded SerpAPI query: '%s'", query)
+                        logger.info("Executing generic fallback SerpAPI query (Attempt %d/%d): '%s'", attempt+1, max_retries, query)
                         query_encoded = urllib.parse.quote(query)
                         url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
                         
@@ -393,35 +424,16 @@ class CommerceAgent:
                             shopping_results = data.get("shopping_results", [])
                             
                             for item in shopping_results:
-                                parsed = parse_item(item, cat, brand)
+                                source = item.get("source", "")
+                                detected_brand = item.get("brand") or source or "Generic"
+                                parsed = parse_item(item, cat, detected_brand)
                                 if parsed:
                                     cat_results.append(parsed)
+                        break # Success, exit retry loop
                     except Exception as e:
-                        logger.warning("Branded query failed for '%s': %s", query, str(e))
-                        
-            # Step B: Generic search fallback
-            # If branded search returned 0 items, or if no preferred brands are set:
-            # We run a generic category search to ensure we ALWAYS return products of ANY brand!
-            if not cat_results:
-                query = cat
-                try:
-                    logger.info("Executing generic fallback SerpAPI query: '%s'", query)
-                    query_encoded = urllib.parse.quote(query)
-                    url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
-                    
-                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=12) as response:
-                        data = json.loads(response.read().decode('utf-8'))
-                        shopping_results = data.get("shopping_results", [])
-                        
-                        for item in shopping_results:
-                            source = item.get("source", "")
-                            detected_brand = item.get("brand") or source or "Generic"
-                            parsed = parse_item(item, cat, detected_brand)
-                            if parsed:
-                                cat_results.append(parsed)
-                except Exception as e:
-                    logger.warning("Generic query failed for '%s': %s", query, str(e))
+                        logger.warning("Generic query failed (Attempt %d/%d) for '%s': %s", attempt+1, max_retries, query, str(e))
+                        if attempt < max_retries - 1:
+                            time.sleep(1.5)
                     
             # Step C: Category fallback check if live results are still empty
             if not cat_results:

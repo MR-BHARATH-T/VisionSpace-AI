@@ -214,8 +214,24 @@ class ReconstructionAgent:
                             except Exception:
                                 font = ImageFont.load_default()
                         
-                        # Build list of occupied 2D pixel coordinate boxes from existing detected objects, doors, and windows
-                        occupied_boxes = []
+                        # Height-zone classification definitions:
+                        # y_cm represents vertical distance from room center height.
+                        # Ceiling is high up (negative), floor is low down (positive).
+                        def get_height_zone(name_str, cat_str, y_val):
+                            n_l = str(name_str).lower()
+                            c_l = str(cat_str).lower()
+                            if any(k in n_l or k in c_l for k in ["fan", "chandelier", "pendant"]):
+                                return "ceiling"
+                            if any(k in n_l or k in c_l for k in ["ac", "conditioner", "artwork", "painting", "projector", "screen", "tv", "television", "mirror", "window", "clock", "wall_art"]):
+                                return "wall"
+                            if y_val < -80.0:
+                                return "ceiling"
+                            if y_val < -20.0:
+                                return "wall"
+                            return "floor"
+
+                        # Build dictionary of occupied 2D coordinate boxes segregated by height zone
+                        occupied_boxes_by_zone = {"ceiling": [], "wall": [], "floor": []}
                         
                         room_dim = spatial_output.get("room_dimensions", {}) if spatial_output else {}
                         room_w = float(room_dim.get("width") or 4.0) * 100.0
@@ -263,7 +279,9 @@ class ReconstructionAgent:
                                 by1 = int(min(y1_2d, y2_2d) * height)
                                 bx2 = int(max(x1_2d, x2_2d) * width)
                                 by2 = int(max(y1_2d, y2_2d) * height)
-                                occupied_boxes.append((bx1, by1, bx2, by2))
+                                
+                                zone = get_height_zone(obj.get("name", ""), obj.get("category", ""), y_cm)
+                                occupied_boxes_by_zone[zone].append((bx1, by1, bx2, by2))
                                 
                         # Also avoid blocking doors and windows
                         doors = vision_output.get("doors", []) if vision_output else []
@@ -289,7 +307,10 @@ class ReconstructionAgent:
                                 by1 = int(min(y1_2d, y2_2d) * height)
                                 bx2 = int(max(x1_2d, x2_2d) * width)
                                 by2 = int(max(y1_2d, y2_2d) * height)
-                                occupied_boxes.append((bx1, by1, bx2, by2))
+                                
+                                # Doors block both floor and wall zones
+                                occupied_boxes_by_zone["floor"].append((bx1, by1, bx2, by2))
+                                occupied_boxes_by_zone["wall"].append((bx1, by1, bx2, by2))
 
                         windows = vision_output.get("windows", []) if vision_output else []
                         for win in windows:
@@ -314,7 +335,7 @@ class ReconstructionAgent:
                                 by1 = int(min(y1_2d, y2_2d) * height)
                                 bx2 = int(max(x1_2d, x2_2d) * width)
                                 by2 = int(max(y1_2d, y2_2d) * height)
-                                occupied_boxes.append((bx1, by1, bx2, by2))
+                                occupied_boxes_by_zone["wall"].append((bx1, by1, bx2, by2))
 
                         # Color palettes for overlays
                         fill_colors = [(46, 204, 113, 90), (245, 176, 65, 90), (52, 152, 219, 90)]
@@ -376,6 +397,38 @@ class ReconstructionAgent:
                                 cx, cy = 0.50, 0.60
                                 w_p, h_p = 0.15, 0.20
 
+                            # Determine recommended product height zone
+                            item_zone = "floor"
+                            if any(k in category or k in title_l for k in ["fan", "chandelier", "pendant"]):
+                                item_zone = "ceiling"
+                            elif any(k in category or k in title_l for k in ["ac", "conditioner", "artwork", "painting", "projector", "screen", "tv", "television", "mirror", "clock"]):
+                                item_zone = "wall"
+
+                            # Smart Surface Snapping for accessories & small decorative items
+                            if any(k in category or k in title_l for k in ["laptop", "stand", "support", "lamp", "light", "decor", "organizer"]):
+                                # Look for a supporting surface in the existing objects list
+                                for obj in existing_objects:
+                                    o_name = obj.get("name", "").lower()
+                                    o_cat = obj.get("category", "").lower()
+                                    if any(k in o_name or k in o_cat for k in ["desk", "table", "dresser", "nightstand", "counter"]):
+                                        pos = obj.get("room_position") or obj.get("position")
+                                        if pos:
+                                            x_cm = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                                            y_cm = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                                            z_cm = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                                            if abs(x_cm) < 15.0: x_cm *= 100.0
+                                            if abs(y_cm) < 15.0: y_cm *= 100.0
+                                            if abs(z_cm) < 15.0: z_cm *= 100.0
+                                            
+                                            # Project surface coordinates to 2D
+                                            o_cx, o_cy = map_3d_to_2d(x_cm, y_cm, z_cm)
+                                            
+                                            # Position accessory slightly above the surface center
+                                            cx = o_cx
+                                            cy = max(0.1, o_cy - 0.12)
+                                            logger.info("Snapped small accessory '%s' to surface '%s' at cx: %f, cy: %f", title_l, o_name, cx, cy)
+                                            break
+
                             # Run a collision-free shift search over a search grid to avoid overlapping existing objects/placements
                             placed = False
                             best_cx, best_cy = cx, cy
@@ -400,7 +453,7 @@ class ReconstructionAgent:
                                 test_cy = max(0.04 + h_p/2, min(0.96 - h_p/2, test_cy))
                                 
                                 # For ceiling and high-wall mounted items, freeze the height coordinate to prevent them from dropping to the floor
-                                if "fan" in category or "chandelier" in category or "pendant" in category or (("ac" in category or "conditioner" in category) and ("split" in title_l or "heat" in title_l or "wall" in title_l)):
+                                if item_zone == "ceiling" or (item_zone == "wall" and (("ac" in category or "conditioner" in category) and ("split" in title_l or "heat" in title_l or "wall" in title_l))):
                                     test_cy = cy
                                 
                                 tx1 = int((test_cx - w_p/2) * width)
@@ -408,9 +461,9 @@ class ReconstructionAgent:
                                 tx2 = int((test_cx + w_p/2) * width)
                                 ty2 = int((test_cy + h_p/2) * height)
                                 
-                                # Check for overlap with existing occupied boxes
+                                # Check for overlap with existing occupied boxes in the SAME height zone
                                 overlaps = False
-                                for ox1, oy1, ox2, oy2 in occupied_boxes:
+                                for ox1, oy1, ox2, oy2 in occupied_boxes_by_zone[item_zone]:
                                     # Overlap check with a small safety boundary margin
                                     if tx1 - 8 < ox2 and tx2 + 8 > ox1 and ty1 - 8 < oy2 and ty2 + 8 > oy1:
                                         overlaps = True
@@ -429,8 +482,8 @@ class ReconstructionAgent:
                             )
                             
                             if placed:
-                                # Add placed coords to occupied_boxes list to prevent overlap with subsequent placements
-                                occupied_boxes.append(coords)
+                                # Add placed coords to correct height zone list to prevent overlap with subsequent placements
+                                occupied_boxes_by_zone[item_zone].append(coords)
                             
                             # Format descriptive location labels dynamically
                             pos_desc = f"Placement at dynamic layout coordinates: [{coords[0]}, {coords[1]}, {coords[2]}, {coords[3]}]"
