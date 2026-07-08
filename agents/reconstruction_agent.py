@@ -754,18 +754,27 @@ class ReconstructionAgent:
                             except Exception as inpaint_err:
                                 logger.warning("Inpainting failed: %s. Falling back to high-fidelity feathered overlays.", str(inpaint_err))
                             
-                            # Post-Inpaint Compositing: Overlay the clean transparent product image back on top
-                            # of the inpainted scene to guarantee 100% sharpness and visibility of details and logos,
-                            # while retaining the realistic shadows and lighting blended by inpainting.
+                            # Post-Inpaint Compositing: Blend the clean transparent product image with the inpainted background
+                            # to retain sharp product texture details/colors while letting perspective shading, shadows,
+                            # and light blending from the diffusion model show through.
                             try:
                                 for c, _, p_img in inpaint_targets:
                                     if p_img:
                                         p_w = c[2] - c[0]
                                         p_h = c[3] - c[1]
-                                        p_resized = p_img.resize((p_w, p_h), Image.Resampling.LANCZOS)
-                                        # Paste back using transparency alpha channel
-                                        base_img.paste(p_resized, (c[0], c[1]), p_resized)
-                                logger.info("Successfully completed post-inpaint compositing to guarantee product visibility.")
+                                        p_resized = p_img.resize((p_w, p_h), Image.Resampling.LANCZOS).convert("RGBA")
+                                        
+                                        # Crop background segment from inpainted scene
+                                        crop_box = (c[0], c[1], c[2], c[3])
+                                        bg_crop = base_img.crop(crop_box).convert("RGBA")
+                                        
+                                        # Overlay transparent product cutout
+                                        composite_crop = Image.alpha_composite(bg_crop, p_resized)
+                                        
+                                        # Blend overlay crop with background crop at 65% opacity
+                                        final_crop = Image.blend(bg_crop, composite_crop, 0.65)
+                                        base_img.paste(final_crop, (c[0], c[1]))
+                                logger.info("Successfully completed dynamic alpha-blend post-inpaint compositing.")
                             except Exception as blend_err:
                                 logger.warning("Post-inpaint blending failed: %s", str(blend_err))
                                 
