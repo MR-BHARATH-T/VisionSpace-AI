@@ -355,6 +355,7 @@ class ReconstructionAgent:
                             
                             # 1. Resolve realistic, category-specific coordinate zones to preserve scale, perspective, and prevent distortions.
                             category = item.get("category", "").lower()
+                            title_l = item.get("title", "").lower()
                             
                             # Base coordinate parameters for layout categories
                             if "bed" in category:

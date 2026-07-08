@@ -106,19 +106,26 @@ class SpatialAgent:
         max_y = 0.0
         for item in objects + doors + windows:
             pos = item.get("position", item.get("room_position", {}))
-            cx = float(pos.get("x_cm") or 0.0)
-            cy = float(pos.get("y_cm") or 0.0)
+            cx = float(pos.get("x_cm") or pos.get("x") or 0.0)
+            cy = float(pos.get("y_cm") or pos.get("y") or 0.0)
+            cz = float(pos.get("z_cm") or pos.get("z") or 0.0)
+            
+            # Auto-detect and scale meters to centimeters dynamically
+            if abs(cx) < 15.0: cx *= 100.0
+            if abs(cy) < 15.0: cy *= 100.0
+            if abs(cz) < 15.0: cz *= 100.0
             
             dims = item.get("estimated_dimensions") or {}
-            w = float(dims.get("width_cm") or item.get("estimated_width_cm") or 80.0)
-            d = float(dims.get("depth_cm") or item.get("estimated_height_cm") or 80.0)
+            w = float(dims.get("width_cm") or dims.get("width") or 80.0)
+            d = float(dims.get("depth_cm") or dims.get("depth") or 80.0)
             
             rot = int(item.get("rotation_deg") or item.get("room_position", {}).get("rotation") or 0)
             w_eff = d if rot in (90, 270) else w
             d_eff = w if rot in (90, 270) else d
             
-            max_x = max(max_x, cx + w_eff/2)
-            max_y = max(max_y, cy + d_eff/2)
+            # Map horizontal boundaries in x and depth boundaries in z
+            max_x = max(max_x, abs(cx) + w_eff/2)
+            max_y = max(max_y, cz + d_eff/2)
             
         r_size = room_data.get("room_understanding", {}).get("room_size", "medium").lower()
         default_w, default_d = 400, 500
@@ -798,8 +805,39 @@ class SpatialAgent:
         self, llm_data: Dict[str, Any], geom: Dict[str, Any], fits: List[Dict[str, Any]], room_w: int, room_d: int, room_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Combines LLM spatial evaluation with factual geometric validation into conformed V2 schema."""
-        walkability_score = int(llm_data.get("walkability_score", 88) if llm_data.get("walkability_score") is not None else 88)
-        usable_area_percentage = int(llm_data.get("usable_area_percentage", 80) if llm_data.get("usable_area_percentage") is not None else 80)
+        # Compute dynamic geometric default values based on factual clutter
+        total_room_area = room_w * room_d
+        occupied_footprint = 0.0
+        
+        objects_list = room_data.get("objects", [])
+        for item in objects_list:
+            name_cat = f"{item.get('name', '')} {item.get('category', '')}".lower()
+            is_floor = not any(k in name_cat for k in ["fan", "chandelier", "pendant", "ac", "conditioner", "artwork", "painting", "projector", "screen", "tv", "television", "mirror", "clock", "window"])
+            if is_floor:
+                dims = item.get("estimated_dimensions") or {}
+                w = float(dims.get("width_cm") or dims.get("width") or 80.0)
+                d = float(dims.get("depth_cm") or dims.get("depth") or 80.0)
+                occupied_footprint += w * d
+                
+        # Calculate dynamic usable area percentage based on empty space
+        geom_usable_pct = 100.0
+        if total_room_area > 0:
+            geom_usable_pct = max(40.0, min(95.0, 100.0 - (occupied_footprint / total_room_area) * 100.0))
+            
+        # Calculate dynamic walkability score based on clearance violations and collisions
+        clearance_count = len(geom.get("clearance_violations", []))
+        collision_count = len(geom.get("collision_report", []))
+        
+        geom_walkability = 95.0
+        geom_walkability -= clearance_count * 10.0
+        geom_walkability -= collision_count * 15.0
+        if geom_usable_pct < 60.0:
+            geom_walkability -= (60.0 - geom_usable_pct) * 0.5
+        geom_walkability = max(30.0, min(98.0, geom_walkability))
+        
+        # Merge with LLM output if present
+        walkability_score = int(llm_data.get("walkability_score") if llm_data.get("walkability_score") is not None else geom_walkability)
+        usable_area_percentage = int(llm_data.get("usable_area_percentage") if llm_data.get("usable_area_percentage") is not None else geom_usable_pct)
 
         width_m = round(room_w / 100.0, 2)
         length_m = round(room_d / 100.0, 2)
