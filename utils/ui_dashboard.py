@@ -510,7 +510,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 
                 placed_names = [p.get("name") for p in state["placed_products"]]
                 
-                for item in recommended_list[:10]:
+                for item in recommended_list:
                     # Image priority matching Phase 2 specifications
                     img_url = item.get("thumbnail_url") or item.get("high_resolution_image") or item.get("image") or item.get("image_url") or item.get("thumbnail") or ""
                     

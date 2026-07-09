@@ -224,6 +224,9 @@ class ReconstructionAgent:
                                 return "ceiling"
                             if any(k in n_l or k in c_l for k in ["ac", "conditioner", "artwork", "painting", "projector", "screen", "tv", "television", "mirror", "window", "clock", "wall_art"]):
                                 return "wall"
+                            # Explicitly check for known floor furniture categories to prevent vertical coordinate noise from misclassifying them
+                            if any(k in n_l or k in c_l for k in ["bed", "desk", "table", "chair", "seating", "sofa", "couch", "wardrobe", "cabinet", "bookshelf", "shelf", "dresser", "nightstand", "rug", "floor"]):
+                                return "floor"
                             if y_val < -80.0:
                                 return "ceiling"
                             if y_val < -20.0:

@@ -220,10 +220,26 @@ class CommerceAgent:
                     cat_list.append(item)
             category_grouped[normalized_key] = cat_list[:5] # Keep top 5 per category
 
-        # Union top 3 of each category for the main recommended list
+        # Union top 3 of each category for the main recommended list.
+        # To guarantee every required category is represented, we first add the #1 item of each category.
         curated_ranked = []
+        added_ids = set()
+        
+        # Phase A: Add #1 item of each category
         for cat_list in category_grouped.values():
-            curated_ranked.extend(cat_list[:3])
+            if cat_list:
+                item = cat_list[0]
+                curated_ranked.append(item)
+                added_ids.add(item.get("product_id"))
+                
+        # Phase B: Add subsequent items (up to top 3 per category) if not already added
+        for cat_list in category_grouped.values():
+            for item in cat_list[1:3]:
+                if item.get("product_id") not in added_ids:
+                    curated_ranked.append(item)
+                    added_ids.add(item.get("product_id"))
+                    
+        # Sort the final curated list by rank score
         curated_ranked = self.rank_products(curated_ranked)
 
         # 5. Build shopping list & explanations
@@ -382,7 +398,7 @@ class CommerceAgent:
             if preferred_brands:
                 for brand in preferred_brands[:2]: # Limit to top 2 brands to avoid query limit hits
                     query = f"{brand} {cat}".strip()
-                    max_retries = 3
+                    max_retries = 2
                     import time
                     for attempt in range(max_retries):
                         try:
@@ -391,7 +407,7 @@ class CommerceAgent:
                             url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
                             
                             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                            with urllib.request.urlopen(req, timeout=12) as response:
+                            with urllib.request.urlopen(req, timeout=4) as response:
                                 data = json.loads(response.read().decode('utf-8'))
                                 shopping_results = data.get("shopping_results", [])
                                 
@@ -403,14 +419,14 @@ class CommerceAgent:
                         except Exception as e:
                             logger.warning("Branded query failed (Attempt %d/%d) for '%s': %s", attempt+1, max_retries, query, str(e))
                             if attempt < max_retries - 1:
-                                time.sleep(1.5)
+                                time.sleep(1.0)
                         
             # Step B: Generic search fallback
             # If branded search returned 0 items, or if no preferred brands are set:
             # We run a generic category search to ensure we ALWAYS return products of ANY brand!
             if not cat_results:
                 query = cat
-                max_retries = 3
+                max_retries = 2
                 import time
                 for attempt in range(max_retries):
                     try:
@@ -419,7 +435,7 @@ class CommerceAgent:
                         url = f"https://serpapi.com/search.json?engine=google_shopping&q={query_encoded}&api_key={api_key}"
                         
                         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                        with urllib.request.urlopen(req, timeout=12) as response:
+                        with urllib.request.urlopen(req, timeout=4) as response:
                             data = json.loads(response.read().decode('utf-8'))
                             shopping_results = data.get("shopping_results", [])
                             
@@ -433,7 +449,7 @@ class CommerceAgent:
                     except Exception as e:
                         logger.warning("Generic query failed (Attempt %d/%d) for '%s': %s", attempt+1, max_retries, query, str(e))
                         if attempt < max_retries - 1:
-                            time.sleep(1.5)
+                            time.sleep(1.0)
                     
             # Step C: Category fallback check if live results are still empty
             if not cat_results:
