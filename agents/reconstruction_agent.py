@@ -258,6 +258,33 @@ class ReconstructionAgent:
                             y_2d = cy + (norm_z - 0.5) * 0.65 * scale
                             return max(0.02, min(0.98, x_2d)), max(0.02, min(0.98, y_2d))
 
+                        def map_2d_to_3d(x_2d, y_2d, zone="floor"):
+                            cx = 0.5
+                            cy = 0.35
+                            if zone == "ceiling":
+                                norm_z = 0.0
+                                denom = (norm_z - 0.5) * 0.65
+                                scale = max(0.4, min(1.0, (y_2d - cy) / denom))
+                                norm_y = max(0.0, min(1.0, (scale - 0.4) / 0.6))
+                                norm_x = max(0.0, min(1.0, (x_2d - cx) / scale + 0.5))
+                            elif zone == "wall":
+                                # Assume back wall depth scale = 1.0
+                                scale = 1.0
+                                norm_y = 1.0
+                                norm_x = max(0.0, min(1.0, (x_2d - cx) / scale + 0.5))
+                                norm_z = max(0.0, min(1.0, (y_2d - cy) / 0.65 + 0.5))
+                            else: # floor
+                                norm_z = 1.0
+                                denom = (norm_z - 0.5) * 0.65
+                                scale = max(0.4, min(1.0, (y_2d - cy) / denom))
+                                norm_y = max(0.0, min(1.0, (scale - 0.4) / 0.6))
+                                norm_x = max(0.0, min(1.0, (x_2d - cx) / scale + 0.5))
+                                
+                            x_cm = norm_x * room_w - room_w / 2
+                            y_cm = norm_z * room_h - room_h / 2
+                            z_cm = norm_y * room_d
+                            return x_cm, y_cm, z_cm
+
                         existing_objects = vision_output.get("objects", []) if vision_output else []
                         for obj in existing_objects:
                             pos = obj.get("room_position") or obj.get("position")
@@ -378,42 +405,48 @@ class ReconstructionAgent:
                             category = item.get("category", "").lower()
                             title_l = item.get("title", "").lower()
                             
-                            # Determine category-specific 3D starting coordinates & dimensions
-                            p_dims = item.get("dimensions") or {}
-                            w = float(p_dims.get("width_cm") or item.get("width_cm") or 80.0)
-                            d = float(p_dims.get("depth_cm") or item.get("depth_cm") or 60.0)
-                            h = float(p_dims.get("height_cm") or 75.0)
-
-                            # Assign default 3D starting coords in room coordinate space
-                            x_3d = 0.0
-                            z_3d = room_d * 0.6
-                            y_3d = room_h / 2 - h / 2 # Sitting on the floor
-
-                            # Determine proposed base location depending on product category
+                            # Resolve base 2D starting coordinates & dimensions
+                            cx, cy = 0.50, 0.60
+                            w_p, h_p = 0.15, 0.20
+                            
                             if "bed" in category:
-                                x_3d = -room_w / 6
-                                z_3d = room_d * 0.55
+                                cx, cy = 0.50, 0.65
+                                w_p, h_p = 0.32, 0.28
                             elif "desk" in category or "table" in category:
-                                x_3d = room_w / 4
-                                z_3d = room_d * 0.65
+                                cx, cy = 0.70, 0.65
+                                w_p, h_p = 0.24, 0.24
                             elif "chair" in category or "seating" in category:
-                                x_3d = room_w / 4
-                                z_3d = room_d * 0.75
+                                cx, cy = 0.72, 0.72
+                                w_p, h_p = 0.16, 0.20
                             elif "bookshelf" in category or "shelf" in category or "wardrobe" in category or "cabinet" in category:
-                                x_3d = -room_w / 2 + w / 2 + 25.0
-                                z_3d = room_d * 0.50
-                            elif "fan" in category or "chandelier" in category or "pendant" in category:
-                                x_3d = 0.0
-                                z_3d = room_d * 0.50
-                                y_3d = -room_h / 2 + h / 2
+                                cx, cy = 0.22, 0.52
+                                w_p, h_p = 0.18, 0.32
                             elif "ac" in category or "conditioner" in category:
-                                x_3d = 0.0
-                                z_3d = room_d - d / 2 - 10.0
-                                y_3d = -room_h / 4
+                                title_l = item.get("title", "").lower()
+                                if "split" in title_l or "heat pump" in title_l or "wall" in title_l:
+                                    cx, cy = 0.50, 0.10
+                                    w_p, h_p = 0.20, 0.11
+                                elif "window" in title_l:
+                                    cx, cy = 0.50, 0.30
+                                    w_p, h_p = 0.12, 0.16
+                                else:
+                                    cx, cy = 0.37, 0.55
+                                    w_p, h_p = 0.10, 0.26
+                            elif "lamp" in category or "light" in category:
+                                cx, cy = 0.82, 0.48
+                                w_p, h_p = 0.08, 0.12
                             elif any(k in category for k in ["screen", "tv", "television"]):
-                                x_3d = 0.0
-                                z_3d = room_d - d / 2 - 10.0
-                                y_3d = 0.0
+                                cx, cy = 0.50, 0.28
+                                w_p, h_p = 0.26, 0.20
+                            elif "projector" in category:
+                                cx, cy = 0.18, 0.54
+                                w_p, h_p = 0.12, 0.12
+                            elif "fan" in category or "chandelier" in category or "pendant" in category:
+                                cx, cy = 0.50, 0.10
+                                w_p, h_p = 0.24, 0.14
+                            elif any(k in category or k in title_l for k in ["coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", "accessory"]):
+                                cx, cy = 0.50, 0.50
+                                w_p, h_p = 0.08, 0.10
 
                             # Determine recommended product height zone
                             item_zone = "floor"
@@ -421,6 +454,15 @@ class ReconstructionAgent:
                                 item_zone = "ceiling"
                             elif any(k in category or k in title_l for k in ["ac", "conditioner", "artwork", "painting", "projector", "screen", "tv", "television", "mirror", "clock"]):
                                 item_zone = "wall"
+
+                            # Project 2D starting screen coordinates back to 3D room coordinates (2D to 3D projection)
+                            x_3d, y_3d, z_3d = map_2d_to_3d(cx, cy, item_zone)
+
+                            # Resolve product 3D dimensions (default if not in metadata)
+                            p_dims = item.get("dimensions") or {}
+                            w = float(p_dims.get("width_cm") or item.get("width_cm") or 80.0)
+                            d = float(p_dims.get("depth_cm") or item.get("depth_cm") or 60.0)
+                            h = float(p_dims.get("height_cm") or 75.0)
 
                             # Smart Snapping to surface for accessories & small decorative items
                             snapped = False
