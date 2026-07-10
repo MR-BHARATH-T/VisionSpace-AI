@@ -408,12 +408,39 @@ class ReconstructionAgent:
                         clean_base_img = base_img.copy()
 
                         # B. Fast & reliable PIL visual compositing (downloads and overlays product images)
+                        placed_categories = set()
                         for idx, item in enumerate(recommended):
                             f_color = fill_colors[idx % len(fill_colors)]
                             o_color = outline_colors[idx % len(outline_colors)]
-                            # 1. Resolve realistic, category-specific coordinate zones to preserve scale, perspective, and prevent distortions.
+                            
                             category = item.get("category", "").lower()
                             title_l = item.get("title", "").lower()
+
+                            # Resolve dynamic category key to prevent duplicate placements
+                            cat_key = category
+                            if "fan" in category or "fan" in title_l:
+                                cat_key = "ceiling fan"
+                            elif "ac" in category or "conditioner" in category or "air conditioner" in title_l:
+                                cat_key = "air conditioner"
+                            elif "tv" in category or "television" in category or "tv unit" in title_l or "tv stand" in title_l:
+                                cat_key = "television"
+                            elif "desk" in category or "table" in category or "desk" in title_l:
+                                cat_key = "study table"
+                            elif "chair" in category or "seating" in category or "chair" in title_l:
+                                cat_key = "office chair"
+                            elif "bookshelf" in category or "shelf" in category or "bookcase" in title_l:
+                                cat_key = "bookshelf"
+                            elif "bed" in category or "bed" in title_l:
+                                cat_key = "bed"
+                            elif "coffee" in category or "coffee" in title_l or "press" in title_l:
+                                cat_key = "coffee maker"
+                            elif "laptop" in category or "laptop" in title_l:
+                                cat_key = "laptop holder"
+
+                            if cat_key in placed_categories:
+                                logger.info("Skipping duplicate recommended item for category '%s': %s", cat_key, title_l)
+                                continue
+                            placed_categories.add(cat_key)
                             
                             # Resolve base 2D starting coordinates & dimensions
                             cx, cy = 0.50, 0.60
@@ -511,30 +538,7 @@ class ReconstructionAgent:
                                         if snapped:
                                             break
                                             
-                                # 2. If not found in placed items, search in existing objects
-                                if not snapped:
-                                    for obj in existing_objects:
-                                        o_name = obj.get("name", "").lower()
-                                        o_cat = obj.get("category", "").lower()
-                                        if any(k in o_name or k in o_cat for k in ["desk", "table", "dresser", "nightstand", "counter"]):
-                                            pos = obj.get("room_position") or obj.get("position")
-                                            o_dims = obj.get("estimated_dimensions") or {}
-                                            if pos:
-                                                o_x = float(pos.get("x_cm") or pos.get("x") or 0.0)
-                                                o_y = float(pos.get("y_cm") or pos.get("y") or 0.0)
-                                                o_z = float(pos.get("z_cm") or pos.get("z") or 0.0)
-                                                if abs(o_x) < 15.0: o_x *= 100.0
-                                                if abs(o_y) < 15.0: o_y *= 100.0
-                                                if abs(o_z) < 15.0: o_z *= 100.0
-                                                
-                                                o_h = float(o_dims.get("height_cm") or o_dims.get("height") or 75.0)
-                                                
-                                                x_3d = o_x
-                                                y_3d = o_y - o_h/2 - h/2 - 5.0
-                                                z_3d = o_z
-                                                snapped = True
-                                                logger.info("Snapped product '%s' to existing support surface '%s' in 3D", title_l, o_name)
-                                                break
+
 
                             # Run a collision-free shift search in 3D room coordinates
                             placed = False
@@ -572,10 +576,11 @@ class ReconstructionAgent:
                                 iz1, iz2 = test_z3d - d/2, test_z3d + d/2
                                 
                                 for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
-                                    # 3D AABB overlap check with 8cm clearance margin
+                                    # For structural openings (doors, windows), ignore Z depth check to prevent visual blocking
+                                    is_opening = ("window" in o_label or "door" in o_label)
                                     x_overlap = (ix2 - 8 > ox1 and ix1 + 8 < ox2)
                                     y_overlap = (iy2 - 8 > oy1 and iy1 + 8 < oy2)
-                                    z_overlap = (iz2 - 8 > oz1 and iz1 + 8 < oz2)
+                                    z_overlap = (iz2 - 8 > oz1 and iz1 + 8 < oz2) if not is_opening else True
                                     if x_overlap and y_overlap and z_overlap:
                                         overlaps = True
                                         break
