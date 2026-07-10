@@ -235,6 +235,7 @@ class ReconstructionAgent:
 
                         # Build dictionary of occupied 2D coordinate boxes segregated by height zone
                         occupied_boxes_by_zone = {"ceiling": [], "wall": [], "floor": []}
+                        occupied_3d_boxes = []
                         
                         room_dim = spatial_output.get("room_dimensions", {}) if spatial_output else {}
                         room_w = float(room_dim.get("width") or 4.0) * 100.0
@@ -245,22 +246,16 @@ class ReconstructionAgent:
                             # x_cm is width: range is [-room_w/2, room_w/2] relative to center
                             norm_x = max(0.0, min(1.0, (x_cm + room_w / 2) / room_w))
                             # z_cm is depth (distance from camera)
-                            f = max(0.02, min(1.0, z_cm / room_d))
-                            # y_cm is vertical height (negative = up/ceiling, positive = down/floor)
-                            norm_z = max(0.0, min(1.0, (y_cm + room_h / 2) / room_h))
+                            norm_y = max(0.0, min(1.0, z_cm / room_d))
                             
                             cx = 0.5
                             cy = 0.35  # Horizon line in standard viewpoint
-                            
-                            # Perspective-correct horizontal scale shrinking with depth
-                            scale = 1.0 - f * 0.6
+                            scale = 0.4 + 0.6 * norm_y
                             x_2d = cx + (norm_x - 0.5) * scale
                             
-                            # Perspective-correct floor/ceiling vertical lines projection
-                            y_ceiling_2d = cy - (1.0 - f) * cy
-                            y_floor_2d = cy + (1.0 - f) * (1.0 - cy)
-                            y_2d = y_ceiling_2d + norm_z * (y_floor_2d - y_ceiling_2d)
-                            
+                            # y_cm is vertical height (negative = up/ceiling, positive = down/floor)
+                            norm_z = max(0.0, min(1.0, (y_cm + room_h / 2) / room_h))
+                            y_2d = cy + (norm_z - 0.5) * 0.65 * scale
                             return max(0.02, min(0.98, x_2d)), max(0.02, min(0.98, y_2d))
 
                         existing_objects = vision_output.get("objects", []) if vision_output else []
@@ -291,6 +286,12 @@ class ReconstructionAgent:
                                 
                                 zone = get_height_zone(obj.get("name", ""), obj.get("category", ""), y_cm)
                                 occupied_boxes_by_zone[zone].append((bx1, by1, bx2, by2))
+                                occupied_3d_boxes.append((
+                                    x_cm - w_cm/2, x_cm + w_cm/2,
+                                    y_cm - h_cm/2, y_cm + h_cm/2,
+                                    z_cm - d_cm/2, z_cm + d_cm/2,
+                                    obj.get("name", "object").lower()
+                                ))
                                 
                         # Also avoid blocking doors and windows
                         doors = vision_output.get("doors", []) if vision_output else []
@@ -320,6 +321,12 @@ class ReconstructionAgent:
                                 # Doors block both floor and wall zones
                                 occupied_boxes_by_zone["floor"].append((bx1, by1, bx2, by2))
                                 occupied_boxes_by_zone["wall"].append((bx1, by1, bx2, by2))
+                                occupied_3d_boxes.append((
+                                    x_cm - w_cm/2, x_cm + w_cm/2,
+                                    y_cm - h_cm/2, y_cm + h_cm/2,
+                                    z_cm - d_cm/2, z_cm + d_cm/2,
+                                    "door"
+                                ))
 
                         windows = vision_output.get("windows", []) if vision_output else []
                         for win in windows:
@@ -345,6 +352,12 @@ class ReconstructionAgent:
                                 bx2 = int(max(x1_2d, x2_2d) * width)
                                 by2 = int(max(y1_2d, y2_2d) * height)
                                 occupied_boxes_by_zone["wall"].append((bx1, by1, bx2, by2))
+                                occupied_3d_boxes.append((
+                                    x_cm - w_cm/2, x_cm + w_cm/2,
+                                    y_cm - h_cm/2, y_cm + h_cm/2,
+                                    z_cm - d_cm/2, z_cm + d_cm/2,
+                                    "window"
+                                ))
 
                         # Color palettes for overlays
                         fill_colors = [(46, 204, 113, 90), (245, 176, 65, 90), (52, 152, 219, 90)]
@@ -361,55 +374,46 @@ class ReconstructionAgent:
                         for idx, item in enumerate(recommended):
                             f_color = fill_colors[idx % len(fill_colors)]
                             o_color = outline_colors[idx % len(outline_colors)]
-                            
                             # 1. Resolve realistic, category-specific coordinate zones to preserve scale, perspective, and prevent distortions.
                             category = item.get("category", "").lower()
                             title_l = item.get("title", "").lower()
                             
-                            # Base coordinate parameters for layout categories
+                            # Determine category-specific 3D starting coordinates & dimensions
+                            p_dims = item.get("dimensions") or {}
+                            w = float(p_dims.get("width_cm") or item.get("width_cm") or 80.0)
+                            d = float(p_dims.get("depth_cm") or item.get("depth_cm") or 60.0)
+                            h = float(p_dims.get("height_cm") or 75.0)
+
+                            # Assign default 3D starting coords in room coordinate space
+                            x_3d = 0.0
+                            z_3d = room_d * 0.6
+                            y_3d = room_h / 2 - h / 2 # Sitting on the floor
+
+                            # Determine proposed base location depending on product category
                             if "bed" in category:
-                                cx, cy = 0.50, 0.65
-                                w_p, h_p = 0.32, 0.28
+                                x_3d = -room_w / 6
+                                z_3d = room_d * 0.55
                             elif "desk" in category or "table" in category:
-                                cx, cy = 0.70, 0.65
-                                w_p, h_p = 0.24, 0.24
+                                x_3d = room_w / 4
+                                z_3d = room_d * 0.65
                             elif "chair" in category or "seating" in category:
-                                cx, cy = 0.72, 0.72
-                                w_p, h_p = 0.16, 0.20
+                                x_3d = room_w / 4
+                                z_3d = room_d * 0.75
                             elif "bookshelf" in category or "shelf" in category or "wardrobe" in category or "cabinet" in category:
-                                cx, cy = 0.22, 0.52
-                                w_p, h_p = 0.18, 0.32
-                            elif "ac" in category or "conditioner" in category:
-                                title_l = item.get("title", "").lower()
-                                if "split" in title_l or "heat pump" in title_l or "wall" in title_l:
-                                    cx, cy = 0.50, 0.10
-                                    w_p, h_p = 0.20, 0.11
-                                elif "window" in title_l:
-                                    cx, cy = 0.50, 0.30
-                                    w_p, h_p = 0.12, 0.16
-                                else:
-                                    cx, cy = 0.37, 0.55
-                                    w_p, h_p = 0.10, 0.26
-                            elif "lamp" in category or "light" in category:
-                                cx, cy = 0.82, 0.48
-                                w_p, h_p = 0.08, 0.12
-                            elif any(k in category for k in ["screen", "tv", "television"]):
-                                cx, cy = 0.50, 0.28
-                                w_p, h_p = 0.26, 0.20
-                            elif "projector" in category:
-                                cx, cy = 0.18, 0.54
-                                w_p, h_p = 0.12, 0.12
+                                x_3d = -room_w / 2 + w / 2 + 25.0
+                                z_3d = room_d * 0.50
                             elif "fan" in category or "chandelier" in category or "pendant" in category:
-                                # Ceiling items - mount centered high on the ceiling
-                                cx, cy = 0.50, 0.10
-                                w_p, h_p = 0.24, 0.14
-                            elif any(k in category or k in title_l for k in ["coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", "accessory"]):
-                                # Small table/surface accessories
-                                cx, cy = 0.50, 0.50
-                                w_p, h_p = 0.08, 0.10
-                            else:
-                                cx, cy = 0.50, 0.60
-                                w_p, h_p = 0.15, 0.20
+                                x_3d = 0.0
+                                z_3d = room_d * 0.50
+                                y_3d = -room_h / 2 + h / 2
+                            elif "ac" in category or "conditioner" in category:
+                                x_3d = 0.0
+                                z_3d = room_d - d / 2 - 10.0
+                                y_3d = -room_h / 4
+                            elif any(k in category for k in ["screen", "tv", "television"]):
+                                x_3d = 0.0
+                                z_3d = room_d - d / 2 - 10.0
+                                y_3d = 0.0
 
                             # Determine recommended product height zone
                             item_zone = "floor"
@@ -418,95 +422,121 @@ class ReconstructionAgent:
                             elif any(k in category or k in title_l for k in ["ac", "conditioner", "artwork", "painting", "projector", "screen", "tv", "television", "mirror", "clock"]):
                                 item_zone = "wall"
 
-                            # Smart Surface Snapping for accessories & small decorative items
+                            # Smart Snapping to surface for accessories & small decorative items
+                            snapped = False
                             if any(k in category or k in title_l for k in ["laptop", "stand", "support", "lamp", "light", "decor", "organizer", "coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", "accessory"]):
-                                # Look for a supporting surface in the existing objects list
                                 for obj in existing_objects:
                                     o_name = obj.get("name", "").lower()
                                     o_cat = obj.get("category", "").lower()
                                     if any(k in o_name or k in o_cat for k in ["desk", "table", "dresser", "nightstand", "counter"]):
                                         pos = obj.get("room_position") or obj.get("position")
+                                        o_dims = obj.get("estimated_dimensions") or {}
                                         if pos:
-                                            x_cm = float(pos.get("x_cm") or pos.get("x") or 0.0)
-                                            y_cm = float(pos.get("y_cm") or pos.get("y") or 0.0)
-                                            z_cm = float(pos.get("z_cm") or pos.get("z") or 0.0)
-                                            if abs(x_cm) < 15.0: x_cm *= 100.0
-                                            if abs(y_cm) < 15.0: y_cm *= 100.0
-                                            if abs(z_cm) < 15.0: z_cm *= 100.0
+                                            o_x = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                                            o_y = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                                            o_z = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                                            if abs(o_x) < 15.0: o_x *= 100.0
+                                            if abs(o_y) < 15.0: o_y *= 100.0
+                                            if abs(o_z) < 15.0: o_z *= 100.0
                                             
-                                            # Project surface coordinates to 2D
-                                            o_cx, o_cy = map_3d_to_2d(x_cm, y_cm, z_cm)
+                                            o_h = float(o_dims.get("height_cm") or o_dims.get("height") or 75.0)
                                             
-                                            # Position accessory slightly above the surface center
-                                            cx = o_cx
-                                            cy = max(0.1, o_cy - 0.12)
-                                            logger.info("Snapped small accessory '%s' to surface '%s' at cx: %f, cy: %f", title_l, o_name, cx, cy)
+                                            # Position small accessory in 3D directly above the table center
+                                            x_3d = o_x
+                                            y_3d = o_y - o_h/2 - h/2 - 5.0
+                                            z_3d = o_z
+                                            snapped = True
+                                            logger.info("Snapped small accessory '%s' to surface '%s' at 3D coords: x=%f, y=%f, z=%f", title_l, o_name, x_3d, y_3d, z_3d)
                                             break
 
-                            # Run a collision-free shift search over a search grid to avoid overlapping existing objects/placements
+                            # Run a collision-free shift search in 3D room coordinates
                             placed = False
-                            best_cx, best_cy = cx, cy
+                            best_x3d, best_z3d = x_3d, z_3d
                             
-                            # Shift search offsets: center first, then scan surrounding grids
-                            shifts = [
-                                (0, 0),
-                                (0.08, 0), (-0.08, 0),
-                                (0, 0.08), (0, -0.08),
-                                (0.08, 0.08), (-0.08, 0.08),
-                                (0.16, 0), (-0.16, 0),
-                                (0, 0.16), (0, -0.16),
-                                (0.16, 0.16), (-0.16, 0.16)
+                            # Shift offsets in 3D (scanning grid in cm)
+                            shifts_3d = [
+                                (0.0, 0.0),
+                                (-40.0, 0.0), (40.0, 0.0),
+                                (0.0, -40.0), (0.0, 40.0),
+                                (-40.0, -40.0), (40.0, -40.0),
+                                (-40.0, 40.0), (40.0, 40.0),
+                                (-80.0, 0.0), (80.0, 0.0),
+                                (0.0, -80.0), (0.0, 80.0),
+                                (-80.0, -80.0), (80.0, -80.0),
+                                (-80.0, 80.0), (80.0, 80.0),
                             ]
                             
-                            for shift_x, shift_y in shifts:
-                                test_cx = cx + shift_x
-                                test_cy = cy + shift_y
+                            # Accessories don't shift when snapped
+                            if snapped:
+                                shifts_3d = [(0.0, 0.0)]
+                            
+                            for dx, dz in shifts_3d:
+                                test_x3d = x_3d + dx
+                                test_z3d = z_3d + dz
                                 
-                                # Clamp to ensure the object stays fully within the image viewport
-                                test_cx = max(0.04 + w_p/2, min(0.96 - w_p/2, test_cx))
-                                test_cy = max(0.04 + h_p/2, min(0.96 - h_p/2, test_cy))
+                                # Bound check within 3D room limits
+                                test_x3d = max(-room_w/2 + w/2, min(room_w/2 - w/2, test_x3d))
+                                test_z3d = max(d/2, min(room_d - d/2, test_z3d))
                                 
-                                # For ceiling and high-wall mounted items, freeze the height coordinate to prevent them from dropping to the floor
-                                if item_zone == "ceiling" or (item_zone == "wall" and (("ac" in category or "conditioner" in category) and ("split" in title_l or "heat" in title_l or "wall" in title_l))):
-                                    test_cy = cy
-                                
-                                tx1 = int((test_cx - w_p/2) * width)
-                                ty1 = int((test_cy - h_p/2) * height)
-                                tx2 = int((test_cx + w_p/2) * width)
-                                ty2 = int((test_cy + h_p/2) * height)
-                                
-                                # Check for overlap with existing occupied boxes in the SAME height zone
+                                # Overlap check in 3D
                                 overlaps = False
-                                for ox1, oy1, ox2, oy2 in occupied_boxes_by_zone[item_zone]:
-                                    # Overlap check with a small safety boundary margin
-                                    if tx1 - 8 < ox2 and tx2 + 8 > ox1 and ty1 - 8 < oy2 and ty2 + 8 > oy1:
+                                ix1, ix2 = test_x3d - w/2, test_x3d + w/2
+                                iy1, iy2 = y_3d - h/2, y_3d + h/2
+                                iz1, iz2 = test_z3d - d/2, test_z3d + d/2
+                                
+                                for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
+                                    # 3D AABB overlap check with 8cm clearance margin
+                                    x_overlap = (ix2 - 8 > ox1 and ix1 + 8 < ox2)
+                                    y_overlap = (iy2 - 8 > oy1 and iy1 + 8 < oy2)
+                                    z_overlap = (iz2 - 8 > oz1 and iz1 + 8 < oz2)
+                                    if x_overlap and y_overlap and z_overlap:
                                         overlaps = True
                                         break
-                                
+                                        
                                 if not overlaps:
-                                    best_cx, best_cy = test_cx, test_cy
+                                    best_x3d, best_z3d = test_x3d, test_z3d
                                     placed = True
                                     break
                                     
+                            if placed:
+                                # Add placed coords to 3D occupied boxes
+                                occupied_3d_boxes.append((
+                                    best_x3d - w/2, best_x3d + w/2,
+                                    y_3d - h/2, y_3d + h/2,
+                                    best_z3d - d/2, best_z3d + d/2,
+                                    title_l
+                                ))
+                                
+                            # Project final 3D coordinates to 2D image coordinates
+                            cx, cy = map_3d_to_2d(best_x3d, y_3d, best_z3d)
+                            
+                            # Dynamic perspective size resolution based on 3D dimensions projected to 2D
+                            x1_2d, _ = map_3d_to_2d(best_x3d - w/2, y_3d, best_z3d)
+                            x2_2d, _ = map_3d_to_2d(best_x3d + w/2, y_3d, best_z3d)
+                            _, y1_2d = map_3d_to_2d(best_x3d, y_3d - h/2, best_z3d)
+                            _, y2_2d = map_3d_to_2d(best_x3d, y_3d + h/2, best_z3d)
+                            
+                            w_p = max(0.06, min(0.6, abs(x2_2d - x1_2d)))
+                            h_p = max(0.06, min(0.6, abs(y2_2d - y1_2d)))
+                            
+                            # Special ceiling fan visual sizing adjustments to look clean
+                            if "fan" in category or "chandelier" in category or "pendant" in category:
+                                w_p = max(0.18, min(0.3, w_p))
+                                h_p = max(0.10, min(0.2, h_p))
+                                
                             coords = (
-                                int((best_cx - w_p/2) * width),
-                                int((best_cy - h_p/2) * height),
-                                int((best_cx + w_p/2) * width),
-                                int((best_cy + h_p/2) * height)
+                                int((cx - w_p/2) * width),
+                                int((cy - h_p/2) * height),
+                                int((cx + w_p/2) * width),
+                                int((cy + h_p/2) * height)
                             )
                             
                             if placed:
-                                # Add placed coords to correct height zone list to prevent overlap with subsequent placements
                                 occupied_boxes_by_zone[item_zone].append(coords)
-                            
-                            # Format descriptive location labels dynamically
+                                
                             pos_desc = f"Placement at dynamic layout coordinates: [{coords[0]}, {coords[1]}, {coords[2]}, {coords[3]}]"
-                                    
                             item["proposed_location"] = pos_desc
 
-                            # Attempt to download product image
-                            product_img = None
-                            
                             # Try multiple possible image URL keys (Spec conformed alignment)
                             img_url = (
                                 item.get("image") or 
