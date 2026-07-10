@@ -313,10 +313,18 @@ class ReconstructionAgent:
                                 
                                 zone = get_height_zone(obj.get("name", ""), obj.get("category", ""), y_cm)
                                 occupied_boxes_by_zone[zone].append((bx1, by1, bx2, by2))
+                                # Add walkability corridor buffer (50cm left/right, 60cm foot) for bed/sofa/couch
+                                if any(k in obj.get("name", "").lower() or k in obj.get("category", "").lower() for k in ["bed", "sofa", "couch"]):
+                                    w_cm_collision = w_cm + 100.0
+                                    d_cm_collision = d_cm + 60.0
+                                else:
+                                    w_cm_collision = w_cm
+                                    d_cm_collision = d_cm
+
                                 occupied_3d_boxes.append((
-                                    x_cm - w_cm/2, x_cm + w_cm/2,
+                                    x_cm - w_cm_collision/2, x_cm + w_cm_collision/2,
                                     y_cm - h_cm/2, y_cm + h_cm/2,
-                                    z_cm - d_cm/2, z_cm + d_cm/2,
+                                    z_cm - d_cm_collision/2, z_cm + d_cm_collision/2,
                                     obj.get("name", "object").lower()
                                 ))
                                 
@@ -448,12 +456,17 @@ class ReconstructionAgent:
                                 cx, cy = 0.50, 0.50
                                 w_p, h_p = 0.08, 0.10
 
-                            # Determine recommended product height zone
+                            # Determine recommended product height zone with intelligence
                             item_zone = "floor"
                             if any(k in category or k in title_l for k in ["fan", "chandelier", "pendant"]):
                                 item_zone = "ceiling"
-                            elif any(k in category or k in title_l for k in ["ac", "conditioner", "artwork", "painting", "projector", "screen", "tv", "television", "mirror", "clock"]):
-                                item_zone = "wall"
+                            else:
+                                # Check if it is a wall-mounted item
+                                is_wall = any(k in category or k in title_l for k in ["artwork", "painting", "projector", "screen", "tv", "television", "mirror", "clock", "ac", "conditioner"])
+                                # Exceptions for floor items that contain AC or TV keywords
+                                is_floor_furniture = any(k in category or k in title_l for k in ["unit", "stand", "table", "cabinet", "portable", "credenza", "console", "bookcase", "chair", "desk"])
+                                if is_wall and not is_floor_furniture:
+                                    item_zone = "wall"
 
                             # Project 2D starting screen coordinates back to 3D room coordinates (2D to 3D projection)
                             x_3d, y_3d, z_3d = map_2d_to_3d(cx, cy, item_zone)
@@ -464,32 +477,62 @@ class ReconstructionAgent:
                             d = float(p_dims.get("depth_cm") or item.get("depth_cm") or 60.0)
                             h = float(p_dims.get("height_cm") or 75.0)
 
-                            # Smart Snapping to surface for accessories & small decorative items
+                            # Smart Snapping to surface for accessories & TVs
                             snapped = False
-                            if any(k in category or k in title_l for k in ["laptop", "stand", "support", "lamp", "light", "decor", "organizer", "coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", "accessory"]):
-                                for obj in existing_objects:
-                                    o_name = obj.get("name", "").lower()
-                                    o_cat = obj.get("category", "").lower()
-                                    if any(k in o_name or k in o_cat for k in ["desk", "table", "dresser", "nightstand", "counter"]):
-                                        pos = obj.get("room_position") or obj.get("position")
-                                        o_dims = obj.get("estimated_dimensions") or {}
-                                        if pos:
-                                            o_x = float(pos.get("x_cm") or pos.get("x") or 0.0)
-                                            o_y = float(pos.get("y_cm") or pos.get("y") or 0.0)
-                                            o_z = float(pos.get("z_cm") or pos.get("z") or 0.0)
-                                            if abs(o_x) < 15.0: o_x *= 100.0
-                                            if abs(o_y) < 15.0: o_y *= 100.0
-                                            if abs(o_z) < 15.0: o_z *= 100.0
-                                            
-                                            o_h = float(o_dims.get("height_cm") or o_dims.get("height") or 75.0)
-                                            
-                                            # Position small accessory in 3D directly above the table center
-                                            x_3d = o_x
-                                            y_3d = o_y - o_h/2 - h/2 - 5.0
-                                            z_3d = o_z
-                                            snapped = True
-                                            logger.info("Snapped small accessory '%s' to surface '%s' at 3D coords: x=%f, y=%f, z=%f", title_l, o_name, x_3d, y_3d, z_3d)
+                            is_snappable = any(k in category or k in title_l for k in [
+                                "laptop", "stand", "support", "lamp", "light", "decor", "organizer", 
+                                "coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", 
+                                "accessory", "tv", "television", "screen"
+                            ])
+                            # TV units, stands, tables themselves shouldn't snap!
+                            is_supporting_surface = any(k in category or k in title_l for k in ["unit", "cabinet", "stand", "table"])
+                            
+                            if is_snappable and not is_supporting_surface:
+                                # 1. Search in already placed recommended items
+                                for prev_item in recommended[:idx]:
+                                    p_cat = prev_item.get("category", "").lower()
+                                    p_title = prev_item.get("title", "").lower()
+                                    if any(k in p_cat or k in p_title for k in ["unit", "table", "stand", "dresser", "nightstand", "counter", "desk"]):
+                                        # Retrieve from occupied_3d_boxes
+                                        for ox1, ox2, oy1, oy2, oz1, oz2, o_label in reversed(occupied_3d_boxes):
+                                            if o_label == p_title:
+                                                o_w = ox2 - ox1
+                                                o_h = oy2 - oy1
+                                                o_d = oz2 - oz1
+                                                # Place accessory/TV directly centered on top of this surface
+                                                x_3d = ox1 + o_w / 2
+                                                y_3d = oy1 - h / 2 - 2.0 # top of the support box
+                                                z_3d = oz1 + o_d / 2
+                                                snapped = True
+                                                logger.info("Snapped product '%s' to placed support surface '%s' in 3D", title_l, o_label)
+                                                break
+                                        if snapped:
                                             break
+                                            
+                                # 2. If not found in placed items, search in existing objects
+                                if not snapped:
+                                    for obj in existing_objects:
+                                        o_name = obj.get("name", "").lower()
+                                        o_cat = obj.get("category", "").lower()
+                                        if any(k in o_name or k in o_cat for k in ["desk", "table", "dresser", "nightstand", "counter"]):
+                                            pos = obj.get("room_position") or obj.get("position")
+                                            o_dims = obj.get("estimated_dimensions") or {}
+                                            if pos:
+                                                o_x = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                                                o_y = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                                                o_z = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                                                if abs(o_x) < 15.0: o_x *= 100.0
+                                                if abs(o_y) < 15.0: o_y *= 100.0
+                                                if abs(o_z) < 15.0: o_z *= 100.0
+                                                
+                                                o_h = float(o_dims.get("height_cm") or o_dims.get("height") or 75.0)
+                                                
+                                                x_3d = o_x
+                                                y_3d = o_y - o_h/2 - h/2 - 5.0
+                                                z_3d = o_z
+                                                snapped = True
+                                                logger.info("Snapped product '%s' to existing support surface '%s' in 3D", title_l, o_name)
+                                                break
 
                             # Run a collision-free shift search in 3D room coordinates
                             placed = False
@@ -566,6 +609,10 @@ class ReconstructionAgent:
                                 w_p = max(0.18, min(0.3, w_p))
                                 h_p = max(0.10, min(0.2, h_p))
                                 
+                            # Ensure the 2D projected center is clamped so it stays fully visible inside the viewport bounds
+                            cx = max(w_p/2 + 0.02, min(0.98 - w_p/2, cx))
+                            cy = max(h_p/2 + 0.02, min(0.98 - h_p/2, cy))
+
                             coords = (
                                 int((cx - w_p/2) * width),
                                 int((cy - h_p/2) * height),
