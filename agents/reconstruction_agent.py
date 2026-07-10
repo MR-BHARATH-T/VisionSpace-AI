@@ -245,16 +245,22 @@ class ReconstructionAgent:
                             # x_cm is width: range is [-room_w/2, room_w/2] relative to center
                             norm_x = max(0.0, min(1.0, (x_cm + room_w / 2) / room_w))
                             # z_cm is depth (distance from camera)
-                            norm_y = max(0.0, min(1.0, z_cm / room_d))
+                            f = max(0.02, min(1.0, z_cm / room_d))
+                            # y_cm is vertical height (negative = up/ceiling, positive = down/floor)
+                            norm_z = max(0.0, min(1.0, (y_cm + room_h / 2) / room_h))
                             
                             cx = 0.5
                             cy = 0.35  # Horizon line in standard viewpoint
-                            scale = 0.4 + 0.6 * norm_y
+                            
+                            # Perspective-correct horizontal scale shrinking with depth
+                            scale = 1.0 - f * 0.6
                             x_2d = cx + (norm_x - 0.5) * scale
                             
-                            # y_cm is vertical height (negative = up/ceiling, positive = down/floor)
-                            norm_z = max(0.0, min(1.0, (y_cm + room_h / 2) / room_h))
-                            y_2d = cy + (norm_z - 0.5) * 0.65 * scale
+                            # Perspective-correct floor/ceiling vertical lines projection
+                            y_ceiling_2d = cy - (1.0 - f) * cy
+                            y_floor_2d = cy + (1.0 - f) * (1.0 - cy)
+                            y_2d = y_ceiling_2d + norm_z * (y_floor_2d - y_ceiling_2d)
+                            
                             return max(0.02, min(0.98, x_2d)), max(0.02, min(0.98, y_2d))
 
                         existing_objects = vision_output.get("objects", []) if vision_output else []
@@ -397,6 +403,10 @@ class ReconstructionAgent:
                                 # Ceiling items - mount centered high on the ceiling
                                 cx, cy = 0.50, 0.10
                                 w_p, h_p = 0.24, 0.14
+                            elif any(k in category or k in title_l for k in ["coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", "accessory"]):
+                                # Small table/surface accessories
+                                cx, cy = 0.50, 0.50
+                                w_p, h_p = 0.08, 0.10
                             else:
                                 cx, cy = 0.50, 0.60
                                 w_p, h_p = 0.15, 0.20
@@ -409,7 +419,7 @@ class ReconstructionAgent:
                                 item_zone = "wall"
 
                             # Smart Surface Snapping for accessories & small decorative items
-                            if any(k in category or k in title_l for k in ["laptop", "stand", "support", "lamp", "light", "decor", "organizer"]):
+                            if any(k in category or k in title_l for k in ["laptop", "stand", "support", "lamp", "light", "decor", "organizer", "coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", "accessory"]):
                                 # Look for a supporting surface in the existing objects list
                                 for obj in existing_objects:
                                     o_name = obj.get("name", "").lower()
