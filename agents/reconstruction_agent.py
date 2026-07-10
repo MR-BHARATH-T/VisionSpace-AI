@@ -121,6 +121,8 @@ class ReconstructionAgent:
         self.provider_name = provider
         self.inpaint_pipe = None
         self.product_image_cache = {}
+        from models.text_model import TextModel
+        self.text_model = TextModel(provider=provider)
         logger.info("ReconstructionAgent initialized")
 
     def plan_reconstruction(
@@ -713,7 +715,7 @@ class ReconstructionAgent:
                         # This regenerates/reconstructs the pasted product shapes inside the room realistically!
                         if inpaint_targets:
                             try:
-                                # 1. Build concise prompt to fit CLIP 77-token limit (prevents truncation and erasures)
+                                # 1. Build prompt parts for the LLM input
                                 prompt_parts = []
                                 for _, it, _ in inpaint_targets:
                                     brand = it.get('brand', '')
@@ -722,8 +724,29 @@ class ReconstructionAgent:
                                         desc = title
                                     else:
                                         desc = f"{brand} {title}".strip()
-                                    prompt_parts.append(f"a {desc}")
-                                clip_inpaint_prompt = "photorealistic room interior containing " + ", ".join(prompt_parts) + ", matching shadows and lighting, high resolution"
+                                    prompt_parts.append(desc)
+                                items_joined = ", ".join(prompt_parts)
+                                
+                                # Use LLM as a "Prompt Engineer" to write a highly detailed descriptive prompt
+                                sys_prompt = "You are a professional Stable Diffusion prompt engineer. Write a highly detailed, descriptive, photorealistic prompt for Stable Diffusion to reconstruct/inpaint the specified new items into the room. Output the prompt only, no explanations."
+                                user_prompt = f"Create a descriptive, detail-rich photorealistic prompt (under 50 words) to place: {items_joined} into a {vision_output.get('room_type', 'bedroom')} room with a natural, matching lighting, seamless perspective, and realistic shadows."
+                                
+                                try:
+                                    logger.info("Calling local LLM as a 'Prompt Engineer' to generate diffusion prompt...")
+                                    res = self.text_model.generate(
+                                        prompt=user_prompt,
+                                        system_prompt=sys_prompt,
+                                        max_new_tokens=100
+                                    )
+                                    clip_inpaint_prompt = res.get("response", "").strip()
+                                    # Fallback if VLM output is empty or contains block formatting
+                                    clip_inpaint_prompt = clip_inpaint_prompt.replace("\n", " ").replace("\"", "").strip()
+                                    if not clip_inpaint_prompt or len(clip_inpaint_prompt) < 10:
+                                        raise ValueError("Empty prompt generated")
+                                    logger.info("Successfully engineered diffusion prompt: %s", clip_inpaint_prompt)
+                                except Exception as e:
+                                    logger.warning("LLM prompt engineering failed: %s. Using fallback template.", str(e))
+                                    clip_inpaint_prompt = "photorealistic room interior containing " + ", ".join([f"a {x}" for x in prompt_parts]) + ", matching shadows and lighting, high resolution"
                                 
                                 # 2. Save full prompt report description for JSON layout files
                                 products_prompt_parts = []
