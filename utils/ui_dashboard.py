@@ -77,14 +77,18 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
     # Main outputs container
     output_area = widgets.Output()
     
-    # State tracking dictionary
+    # State tracking dictionary conforming to exact product placement rules
     state = {
         "pipeline": None,
         "out": None,
         "session_path": None,
         "image_box": None,
         "error_banner": None,
-        "placed_products": []
+        "selected_products": [],      # User selected try-in-room items
+        "approved_placements": [],     # Passed geometry check
+        "no_space_products": [],       # Rejections
+        "rendered_products": [],       # Visual verification pass
+        "buttons": {}                  # Map of product_id -> Button widget
     }
 
     # Layout forms HBox/VBox
@@ -124,7 +128,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         if not state["out"]:
             return
         max_budget = float(state["out"]['budget'].get('budget_limit', 40000.0))
-        placed_items = state["placed_products"]
+        placed_items = state["selected_products"]
         total_placed_cost = sum(float(item.get("price", 0)) for item in placed_items)
         reserves_remaining = max_budget - total_placed_cost
         
@@ -159,31 +163,85 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
             return
         
         with output_area:
-            # Check if product is already in our placed list (match by product_id)
-            placed_ids = [p.get("product_id") for p in state["placed_products"] if p.get("product_id")]
             p_id = product_item.get("product_id")
+            selected_ids = [p.get("product_id") for p in state["selected_products"] if p.get("product_id")]
             
-            if p_id in placed_ids:
+            if p_id in selected_ids:
                 # Remove it
-                state["placed_products"] = [p for p in state["placed_products"] if p.get("product_id") != p_id]
-                button.description = " Place in Room"
+                state["selected_products"] = [p for p in state["selected_products"] if p.get("product_id") != p_id]
+                state["approved_placements"] = [p for p in state["approved_placements"] if p.get("product_id") != p_id]
+                state["no_space_products"] = [p for p in state["no_space_products"] if p.get("product_id") != p_id]
+                state["rendered_products"] = [p for p in state["rendered_products"] if p.get("product_id") != p_id]
+                
+                button.description = " Try in Room"
                 button.button_style = "info"
-                print(f" Removed '{product_item.get('name')}' from layout placement list.")
+                print(f" Removed '{product_item.get('name')}' from selected list.")
             else:
-                # Add it
-                state["placed_products"].append(product_item)
-                button.description = " Remove from Room"
-                button.button_style = "danger"
-                print(f" Placed '{product_item.get('name')}' in layout placement list.")
+                # Add to selection
+                state["selected_products"].append(product_item)
+                button.description = " Checking Space..."
+                button.button_style = "warning"
+                print(f" Selected '{product_item.get('name')}' - validating clearance space...")
                 
             try:
-                # Dynamically rerun reconstruction using all selected products in state["placed_products"]
+                # Dynamically rerun reconstruction using all selected products
                 recon = state["pipeline"].reconstruction_agent.plan_reconstruction(
                     vision_output=state["out"]["vision"]["merged_scene"],
-                    commerce_output={"recommended_products": state["placed_products"]},
+                    commerce_output={"recommended_products": state["selected_products"]},
                     session_path=state["session_path"],
                     spatial_output=state["out"]["spatial"]
                 )
+                
+                # Re-initialize placement states
+                state["approved_placements"] = []
+                state["no_space_products"] = []
+                state["rendered_products"] = []
+                
+                product_results = recon.get("product_results", [])
+                for result in product_results:
+                    item_id = result.get("product_id")
+                    f_status = result.get("feasibility_status")
+                    p_status = result.get("placement_status")
+                    r_status = result.get("render_status")
+                    
+                    catalog_item = next((p for p in state["selected_products"] if p.get("product_id") == item_id), None)
+                    if not catalog_item:
+                        continue
+                        
+                    btn = state["buttons"].get(item_id)
+                    
+                    if f_status == "no_space":
+                        state["no_space_products"].append(catalog_item)
+                        if btn:
+                            btn.description = " No Space Available"
+                            btn.button_style = "danger"
+                    elif r_status == "verified":
+                        state["rendered_products"].append(catalog_item)
+                        state["approved_placements"].append(catalog_item)
+                        if btn:
+                            btn.description = " Placed in Room"
+                            btn.button_style = "success"
+                    elif r_status == "failed" or r_status == "identity_verification_failed":
+                        state["approved_placements"].append(catalog_item)
+                        if btn:
+                            btn.description = " Placement Valid — Rendering Failed"
+                            btn.button_style = "warning"
+                    elif p_status == "approved":
+                        state["approved_placements"].append(catalog_item)
+                        if btn:
+                            btn.description = " Placed in Room"
+                            btn.button_style = "success"
+                    else:
+                        if btn:
+                            btn.description = " Try in Room"
+                            btn.button_style = "info"
+                            
+                # Reset deselected buttons
+                current_selected_ids = [p.get("product_id") for p in state["selected_products"]]
+                for cached_id, btn in state["buttons"].items():
+                    if cached_id not in current_selected_ids:
+                        btn.description = " Try in Room"
+                        btn.button_style = "info"
                 
                 # Fetch all processed viewpoint paths
                 reconstructed_views = sorted(list(state["session_path"].glob("processed_reconstructed_*.png")))
@@ -229,14 +287,16 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 # Check for placement errors
                 placement_errors = recon.get("placement_errors", [])
                 if placement_errors:
-                    error_html = "".join([
-                        f'<div style="background-color: #fef2f2; border-left: 4px solid #ef4444; color: #b91c1c; padding: 10px; margin-top: 15px; margin-bottom: 5px; border-radius: 4px; font-weight: bold; font-size: 13px; font-family: sans-serif;">⚠️ Placement Warning: {err}</div>'
-                        for err in placement_errors
-                    ])
-                    state["error_banner"].value = error_html
+                    error_html_parts = []
+                    for err in placement_errors:
+                        msg = err.get("message") if isinstance(err, dict) else str(err)
+                        error_html_parts.append(
+                            f'<div style="background-color: #fef2f2; border-left: 4px solid #ef4444; color: #b91c1c; padding: 10px; margin-top: 15px; margin-bottom: 5px; border-radius: 4px; font-weight: bold; font-size: 13px; font-family: sans-serif;">⚠️ Placement Warning: {msg}</div>'
+                        )
+                    state["error_banner"].value = "".join(error_html_parts)
                 else:
                     state["error_banner"].value = ""
-
+                
                 state["image_box"].value = "\n".join(comparison_html_list)
                 update_budget_display()
                 print(" Success! Updated the layout reconstruction image.")
@@ -335,7 +395,11 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 state["pipeline"] = pipeline
                 state["out"] = out
                 state["session_path"] = session_path
-                state["placed_products"] = list(out.get("selected_products", []))
+                state["selected_products"] = list(out.get("selected_products", []))
+                state["approved_placements"] = []
+                state["no_space_products"] = []
+                state["rendered_products"] = []
+                state["buttons"] = {}
  
                 # Fetch all processed viewpoint paths
                 reconstructed_views = sorted(list(session_path.glob("processed_reconstructed_*.png")))
@@ -492,11 +556,13 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 # Check for placement errors on initial run
                 placement_errors = out.get("reconstruction", {}).get("placement_errors", [])
                 if placement_errors:
-                    error_html = "".join([
-                        f'<div style="background-color: #fef2f2; border-left: 4px solid #ef4444; color: #b91c1c; padding: 10px; margin-top: 15px; margin-bottom: 5px; border-radius: 4px; font-weight: bold; font-size: 13px; font-family: sans-serif;">⚠️ Placement Warning: {err}</div>'
-                        for err in placement_errors
-                    ])
-                    state["error_banner"].value = error_html
+                    error_html_parts = []
+                    for err in placement_errors:
+                        msg = err.get("message") if isinstance(err, dict) else str(err)
+                        error_html_parts.append(
+                            f'<div style="background-color: #fef2f2; border-left: 4px solid #ef4444; color: #b91c1c; padding: 10px; margin-top: 15px; margin-bottom: 5px; border-radius: 4px; font-weight: bold; font-size: 13px; font-family: sans-serif;">⚠️ Placement Warning: {msg}</div>'
+                        )
+                    state["error_banner"].value = "".join(error_html_parts)
                 else:
                     state["error_banner"].value = ""
 
@@ -509,9 +575,34 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 
                 recommended_list = out["commerce"].get("recommended_products", [])
                 
-                placed_names = [p.get("name") for p in state["placed_products"]]
+                placed_results = out.get("reconstruction", {}).get("product_results", [])
                 
                 for item in recommended_list:
+                    p_id = item.get("product_id")
+                    
+                    # Set button description and styling dynamically
+                    btn_desc = " Try in Room"
+                    btn_style = "info"
+                    
+                    result_item = next((r for r in placed_results if r.get("product_id") == p_id), None)
+                    if result_item:
+                        f_status = result_item.get("feasibility_status")
+                        p_status = result_item.get("placement_status")
+                        r_status = result_item.get("render_status")
+                        
+                        if f_status == "no_space":
+                            btn_desc = " No Space Available"
+                            btn_style = "danger"
+                        elif r_status == "verified":
+                            btn_desc = " Placed in Room"
+                            btn_style = "success"
+                        elif r_status == "failed" or r_status == "identity_verification_failed":
+                            btn_desc = " Placement Valid — Rendering Failed"
+                            btn_style = "warning"
+                        elif p_status == "approved":
+                            btn_desc = " Placed in Room"
+                            btn_style = "success"
+                            
                     # Image priority matching Phase 2 specifications
                     img_url = item.get("thumbnail_url") or item.get("high_resolution_image") or item.get("image") or item.get("image_url") or item.get("thumbnail") or ""
                     
@@ -556,16 +647,14 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     </div>
                     """
                     
-                    # Set button description and styling dynamically
-                    is_placed = item.get("name") in placed_names
-                    btn_desc = " Remove from Room" if is_placed else " Place in Room"
-                    btn_style = "danger" if is_placed else "info"
-                    
                     try_btn = widgets.Button(
                         description=btn_desc,
                         button_style=btn_style,
                         layout=widgets.Layout(width="160px", height="32px", margin="4px")
                     )
+                    
+                    # Cache the button mapping
+                    state["buttons"][p_id] = try_btn
                     
                     # Bind local callback with button self-reference
                     try_btn.on_click(lambda b, p=item: on_try_product(p, b))

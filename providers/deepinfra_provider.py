@@ -238,6 +238,14 @@ class DeepInfraProvider(BaseProvider):
             prompt_str += " " + " ".join(str(m.get("content", "")) for m in messages)
 
         mock_data = {}
+        if "yes or no" in prompt_str.lower():
+            return {
+                "text": "YES",
+                "response": "YES",
+                "success": True,
+                "tokens": {"input": 100, "output": 100}
+            }
+        
         if self.task == "vision":
             mock_data = {
               "room_type": "bedroom",
