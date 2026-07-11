@@ -315,10 +315,15 @@ class ReconstructionAgent:
                                 
                                 zone = get_height_zone(obj.get("name", ""), obj.get("category", ""), y_cm)
                                 occupied_boxes_by_zone[zone].append((bx1, by1, bx2, by2))
-                                # Add walkability corridor buffer (50cm left/right, 60cm foot) for bed/sofa/couch
-                                if any(k in obj.get("name", "").lower() or k in obj.get("category", "").lower() for k in ["bed", "sofa", "couch"]):
+                                # Add walkability corridor buffer (50cm left/right, 60cm foot) for bed/sofa/couch only if spacious
+                                walkability_score = float(spatial_output.get("walkability_score", 100)) if spatial_output else 100.0
+                                is_spacious = (walkability_score >= 50.0)
+                                if is_spacious and any(k in obj.get("name", "").lower() or k in obj.get("category", "").lower() for k in ["bed", "sofa", "couch"]):
                                     w_cm_collision = w_cm + 100.0
                                     d_cm_collision = d_cm + 60.0
+                                elif any(k in obj.get("name", "").lower() or k in obj.get("category", "").lower() for k in ["bed", "sofa", "couch"]):
+                                    w_cm_collision = w_cm + 30.0
+                                    d_cm_collision = d_cm + 30.0
                                 else:
                                     w_cm_collision = w_cm
                                     d_cm_collision = d_cm
@@ -561,6 +566,9 @@ class ReconstructionAgent:
                             if snapped:
                                 shifts_3d = [(0.0, 0.0)]
                             
+                            min_overlap_count = 9999
+                            best_overlap_coords = (x_3d, z_3d)
+
                             for dx, dz in shifts_3d:
                                 test_x3d = x_3d + dx
                                 test_z3d = z_3d + dz
@@ -571,6 +579,7 @@ class ReconstructionAgent:
                                 
                                 # Overlap check in 3D
                                 overlaps = False
+                                overlap_count = 0
                                 ix1, ix2 = test_x3d - w/2, test_x3d + w/2
                                 iy1, iy2 = y_3d - h/2, y_3d + h/2
                                 iz1, iz2 = test_z3d - d/2, test_z3d + d/2
@@ -588,12 +597,21 @@ class ReconstructionAgent:
                                     z_overlap = (iz2 - 8 > oz1 and iz1 + 8 < oz2) if not is_opening else True
                                     if x_overlap and y_overlap and z_overlap:
                                         overlaps = True
-                                        break
+                                        overlap_count += 1
                                         
                                 if not overlaps:
                                     best_x3d, best_z3d = test_x3d, test_z3d
                                     placed = True
                                     break
+                                else:
+                                    if overlap_count < min_overlap_count:
+                                        min_overlap_count = overlap_count
+                                        best_overlap_coords = (test_x3d, test_z3d)
+                                        
+                            if not placed:
+                                best_x3d, best_z3d = best_overlap_coords
+                                placed = True
+                                logger.info("No collision-free space found for '%s'. Placing at coordinates with minimal overlap: x=%s, z=%s", title_l, best_x3d, best_z3d)
                                     
                             if placed:
                                 # Add placed coords to 3D occupied boxes
