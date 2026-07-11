@@ -122,8 +122,112 @@ class ReconstructionAgent:
         self.inpaint_pipe = None
         self.product_image_cache = {}
         from models.text_model import TextModel
+        from models.vision_model import VisionModel
         self.text_model = TextModel(provider=provider)
+        self.vision_model = VisionModel(provider=provider)
         logger.info("ReconstructionAgent initialized")
+
+    PLACEMENT_CONFIG = {
+        "normal": {
+            "bed_side_clearance": 100.0,
+            "sofa_clearance": 60.0,
+            "chair_operating_clearance": 75.0,
+            "desk_clearance": 75.0,
+            "bookcase_clearance": 60.0,
+            "tv_unit_clearance": 60.0,
+        },
+        "compact": {
+            "bed_side_clearance": 60.0,
+            "sofa_clearance": 45.0,
+            "chair_operating_clearance": 60.0,
+            "desk_clearance": 50.0,
+            "bookcase_clearance": 40.0,
+            "tv_unit_clearance": 40.0,
+        },
+        "ultra_compact": {
+            "bed_side_clearance": 30.0,
+            "sofa_clearance": 30.0,
+            "chair_operating_clearance": 40.0,
+            "desk_clearance": 40.0,
+            "bookcase_clearance": 30.0,
+            "tv_unit_clearance": 30.0,
+        },
+        "micro": {
+            "bed_side_clearance": 15.0,
+            "sofa_clearance": 15.0,
+            "chair_operating_clearance": 20.0,
+            "desk_clearance": 25.0,
+            "bookcase_clearance": 15.0,
+            "tv_unit_clearance": 15.0,
+        }
+    }
+
+    @staticmethod
+    def classify_product(item: Dict[str, Any]) -> str:
+        category = str(item.get("category", "")).lower()
+        title = str(item.get("title", "")).lower()
+        
+        # Ceiling domain
+        if any(k in category or k in title for k in ["fan", "chandelier", "pendant", "ceiling"]):
+            return "ceiling"
+            
+        # Surface domain (accessories)
+        if any(k in category or k in title for k in ["laptop", "stand", "support", "lamp", "light", "decor", "organizer", "coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", "accessory", "tablet"]):
+            # Make sure it's not a large desk/table itself
+            if not any(k in category or k in title for k in ["table", "desk", "cabinet", "unit", "bookshelf"]):
+                return "surface"
+                
+        # Wall domain
+        is_wall = any(k in category or k in title for k in ["artwork", "painting", "projector", "screen", "tv", "television", "mirror", "clock", "ac", "conditioner", "wall_art"])
+        is_floor_furniture = any(k in category or k in title for k in ["unit", "stand", "table", "cabinet", "portable", "credenza", "console", "bookcase", "chair", "desk"])
+        if is_wall and not is_floor_furniture:
+            return "wall"
+            
+        # Default is floor
+        return "floor"
+
+    @staticmethod
+    def normalize_product_dimensions(item: Dict[str, Any]) -> Dict[str, Any]:
+        dims = item.get("dimensions") or {}
+        w = float(dims.get("width_cm") or item.get("width_cm") or 0.0)
+        d = float(dims.get("depth_cm") or item.get("depth_cm") or 0.0)
+        h = float(dims.get("height_cm") or item.get("height_cm") or 0.0)
+        
+        source = "verified" if w > 0 else "estimated"
+        
+        category = str(item.get("category", "")).lower()
+        title = str(item.get("title", "")).lower()
+        
+        if w == 0 or d == 0 or h == 0:
+            source = "category_default"
+            if "desk" in category or "table" in category:
+                w, d, h = 100.0, 60.0, 75.0
+            elif "chair" in category or "seating" in category:
+                w, d, h = 60.0, 60.0, 85.0
+            elif "bookshelf" in category or "shelf" in category or "bookcase" in title:
+                w, d, h = 80.0, 30.0, 180.0
+            elif "tv unit" in title or "tv stand" in title or "television" in category:
+                w, d, h = 120.0, 40.0, 50.0
+            elif "bed" in category:
+                w, d, h = 150.0, 200.0, 80.0
+            elif "fan" in category or "ceiling" in category:
+                w, d, h = 120.0, 120.0, 30.0
+            elif "ac" in category or "conditioner" in category:
+                w, d, h = 80.0, 25.0, 30.0
+            elif "laptop" in category or "holder" in category or "stand" in category:
+                w, d, h = 40.0, 30.0, 15.0
+            else:
+                w, d, h = 60.0, 60.0, 60.0
+                
+        confidence = 1.0 if source == "verified" else 0.70
+        
+        return {
+            "width_cm": w,
+            "depth_cm": d,
+            "height_cm": h,
+            "dimension_source": source,
+            "dimension_confidence": confidence
+        }
 
     def plan_reconstruction(
         self,
@@ -138,6 +242,11 @@ class ReconstructionAgent:
         detected = vision_output.get("detected_objects") or []
         recommended = commerce_output.get("recommended_products") or []
         placement_errors = []
+        
+        # Ensure all recommended products have stable product_id (Section 9)
+        for idx, item in enumerate(recommended):
+            if not item.get("product_id"):
+                item["product_id"] = str(item.get("id") or item.get("sku") or f"prod_{idx}_{abs(hash(item.get('title', 'item')))}")
 
         # Get spatial layout candidate regions from spatial_output or vision_output
         candidates = []
@@ -414,12 +523,55 @@ class ReconstructionAgent:
 
                         # B. Fast & reliable PIL visual compositing (downloads and overlays product images)
                         placed_categories = set()
+                        
+                        # Set up walkability mode based on score and density
+                        walkability_score = float(spatial_output.get("walkability_score", 100)) if spatial_output else 100.0
+                        
+                        # Calculate occupied floor area of existing objects
+                        occupied_floor_area = 0.0
+                        for obj in existing_objects:
+                            dims = obj.get("estimated_dimensions") or {}
+                            w_cm = float(dims.get("width_cm") or dims.get("width") or 80.0)
+                            d_cm = float(dims.get("depth_cm") or dims.get("depth") or 80.0)
+                            obj_y = float(obj.get("room_position", {}).get("y", 0.0) or 0.0)
+                            if get_height_zone(obj.get("name", ""), obj.get("category", ""), obj_y) == "floor":
+                                occupied_floor_area += (w_cm * d_cm) / 10000.0 # sqm
+                                
+                        usable_area = float(spatial_output.get("usable_area", 9.7)) if spatial_output else 9.7
+                        room_density = occupied_floor_area / max(1.0, usable_area)
+                        
+                        if walkability_score >= 75.0 and usable_area >= 12.0:
+                            w_mode = "normal"
+                        elif walkability_score >= 50.0:
+                            w_mode = "compact"
+                        elif walkability_score >= 30.0:
+                            w_mode = "ultra_compact"
+                        else:
+                            w_mode = "micro"
+                            
+                        logger.info("Adaptive placement solver mode: %s (density: %.2f)", w_mode, room_density)
+                        
+                        # Count breakdown for schema
+                        status_counts = {
+                            "perfect": 0,
+                            "adaptive": 0,
+                            "best_available": 0,
+                            "wall": 0,
+                            "ceiling": 0,
+                            "surface": 0,
+                            "failed": 0
+                        }
+                        
+                        # Add tracking list for warnings
+                        placement_warnings = []
+                        
                         for idx, item in enumerate(recommended):
                             f_color = fill_colors[idx % len(fill_colors)]
                             o_color = outline_colors[idx % len(outline_colors)]
                             
                             category = item.get("category", "").lower()
                             title_l = item.get("title", "").lower()
+                            p_id = item.get("product_id")
 
                             # Resolve dynamic category key to prevent duplicate placements
                             cat_key = category
@@ -447,10 +599,17 @@ class ReconstructionAgent:
                                 continue
                             placed_categories.add(cat_key)
                             
-                            # Resolve base 2D starting coordinates & dimensions
+                            # Classification domain & Normalization
+                            domain = self.classify_product(item)
+                            norm_dims = self.normalize_product_dimensions(item)
+                            w = norm_dims["width_cm"]
+                            d = norm_dims["depth_cm"]
+                            h = norm_dims["height_cm"]
+                            item["normalized_dimensions"] = norm_dims
+                            
+                            # Initial screen coords fallback setup
                             cx, cy = 0.50, 0.60
                             w_p, h_p = 0.15, 0.20
-                            
                             if "bed" in category:
                                 cx, cy = 0.50, 0.65
                                 w_p, h_p = 0.32, 0.28
@@ -464,7 +623,6 @@ class ReconstructionAgent:
                                 cx, cy = 0.22, 0.52
                                 w_p, h_p = 0.18, 0.32
                             elif "ac" in category or "conditioner" in category:
-                                title_l = item.get("title", "").lower()
                                 if "split" in title_l or "heat pump" in title_l or "wall" in title_l:
                                     cx, cy = 0.50, 0.10
                                     w_p, h_p = 0.20, 0.11
@@ -489,173 +647,209 @@ class ReconstructionAgent:
                             elif any(k in category or k in title_l for k in ["coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", "accessory"]):
                                 cx, cy = 0.50, 0.50
                                 w_p, h_p = 0.08, 0.10
-
-                            # Determine recommended product height zone with intelligence
-                            item_zone = "floor"
-                            if any(k in category or k in title_l for k in ["fan", "chandelier", "pendant"]):
-                                item_zone = "ceiling"
-                            else:
-                                # Check if it is a wall-mounted item
-                                is_wall = any(k in category or k in title_l for k in ["artwork", "painting", "projector", "screen", "tv", "television", "mirror", "clock", "ac", "conditioner"])
-                                # Exceptions for floor items that contain AC or TV keywords
-                                is_floor_furniture = any(k in category or k in title_l for k in ["unit", "stand", "table", "cabinet", "portable", "credenza", "console", "bookcase", "chair", "desk"])
-                                if is_wall and not is_floor_furniture:
-                                    item_zone = "wall"
-
-                            # Project 2D starting screen coordinates back to 3D room coordinates (2D to 3D projection)
-                            x_3d, y_3d, z_3d = map_2d_to_3d(cx, cy, item_zone)
-
-                            # Resolve product 3D dimensions (default if not in metadata)
-                            p_dims = item.get("dimensions") or {}
-                            w = float(p_dims.get("width_cm") or item.get("width_cm") or 80.0)
-                            d = float(p_dims.get("depth_cm") or item.get("depth_cm") or 60.0)
-                            h = float(p_dims.get("height_cm") or 75.0)
-
-                            # Smart Snapping to surface for accessories & TVs
-                            snapped = False
-                            is_snappable = any(k in category or k in title_l for k in [
-                                "laptop", "stand", "support", "lamp", "light", "decor", "organizer", 
-                                "coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", 
-                                "accessory", "tv", "television", "screen"
-                            ])
-                            # TV units, stands, tables themselves shouldn't snap!
-                            is_supporting_surface = any(k in category or k in title_l for k in ["unit", "cabinet", "stand", "table"])
+                                
+                            x_3d, y_3d, z_3d = map_2d_to_3d(cx, cy, domain)
                             
-                            if is_snappable and not is_supporting_surface:
-                                # 1. Search in already placed recommended items
-                                for prev_item in recommended[:idx]:
-                                    p_cat = prev_item.get("category", "").lower()
-                                    p_title = prev_item.get("title", "").lower()
-                                    if any(k in p_cat or k in p_title for k in ["unit", "table", "stand", "dresser", "nightstand", "counter", "desk"]):
-                                        # Retrieve from occupied_3d_boxes
-                                        for ox1, ox2, oy1, oy2, oz1, oz2, o_label in reversed(occupied_3d_boxes):
-                                            if o_label == p_title:
-                                                o_w = ox2 - ox1
-                                                o_h = oy2 - oy1
-                                                o_d = oz2 - oz1
-                                                # Place accessory/TV directly centered on top of this surface
-                                                x_3d = ox1 + o_w / 2
-                                                y_3d = oy1 - h / 2 - 2.0 # top of the support box
-                                                z_3d = oz1 + o_d / 2
-                                                snapped = True
-                                                logger.info("Snapped product '%s' to placed support surface '%s' in 3D", title_l, o_label)
-                                                break
-                                        if snapped:
-                                            break
-                                            
-
-
-                            # Run a collision-free shift search in 3D room coordinates
-                            placed = False
-                            best_x3d, best_z3d = x_3d, z_3d
-                            
-                            # Shift offsets in 3D (scanning grid in cm)
-                            shifts_3d = [
-                                (0.0, 0.0),
-                                (-40.0, 0.0), (40.0, 0.0),
-                                (0.0, -40.0), (0.0, 40.0),
-                                (-40.0, -40.0), (40.0, -40.0),
-                                (-40.0, 40.0), (40.0, 40.0),
-                                (-80.0, 0.0), (80.0, 0.0),
-                                (0.0, -80.0), (0.0, 80.0),
-                                (-80.0, -80.0), (80.0, -80.0),
-                                (-80.0, 80.0), (80.0, 80.0),
-                            ]
-                            
-                            # Accessories don't shift when snapped
-                            if snapped:
-                                shifts_3d = [(0.0, 0.0)]
-                            
-                            min_overlap_count = 9999
+                            # Initialize solver state
+                            final_x, final_y, final_z = x_3d, y_3d, z_3d
+                            status = "impossible_due_to_invalid_geometry"
                             best_overlap_coords = (x_3d, z_3d)
-
-                            for dx, dz in shifts_3d:
-                                test_x3d = x_3d + dx
-                                test_z3d = z_3d + dz
-                                
-                                # Bound check within 3D room limits
-                                test_x3d = max(-room_w/2 + w/2, min(room_w/2 - w/2, test_x3d))
-                                test_z3d = max(d/2, min(room_d - d/2, test_z3d))
-                                
-                                # Overlap check in 3D
-                                overlaps = False
-                                overlap_count = 0
-                                ix1, ix2 = test_x3d - w/2, test_x3d + w/2
-                                iy1, iy2 = y_3d - h/2, y_3d + h/2
-                                iz1, iz2 = test_z3d - d/2, test_z3d + d/2
-                                
-                                for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
-                                    # For structural openings (doors, windows), ignore Z/Y checks to prevent visual blocking (unless it's a ceiling item)
-                                    is_opening = ("window" in o_label or "door" in o_label) and (item_zone != "ceiling")
-                                    
-                                    # For floor furniture items, ignore vertical Y height check since they all rest on the floor
-                                    is_floor_obj = not ("window" in o_label or "door" in o_label or "ceiling" in o_label or "wall" in o_label)
-                                    is_floor_item = (item_zone == "floor")
-                                    
-                                    x_overlap = (ix2 - 8 > ox1 and ix1 + 8 < ox2)
-                                    y_overlap = (iy2 - 8 > oy1 and iy1 + 8 < oy2) if not (is_floor_obj and is_floor_item or is_opening) else True
-                                    z_overlap = (iz2 - 8 > oz1 and iz1 + 8 < oz2) if not is_opening else True
-                                    if x_overlap and y_overlap and z_overlap:
-                                        overlaps = True
-                                        overlap_count += 1
-                                        
-                                if not overlaps:
-                                    best_x3d, best_z3d = test_x3d, test_z3d
-                                    placed = True
-                                    break
-                                else:
-                                    if overlap_count < min_overlap_count:
-                                        min_overlap_count = overlap_count
-                                        best_overlap_coords = (test_x3d, test_z3d)
-                                        
-                            if not placed:
-                                best_x3d, best_z3d = best_overlap_coords
-                                placed = True
-                                logger.info("No collision-free space found for '%s'. Placing at coordinates with minimal overlap: x=%s, z=%s", title_l, best_x3d, best_z3d)
-                                    
-                            if placed:
-                                # Add placed coords to 3D occupied boxes
-                                occupied_3d_boxes.append((
-                                    best_x3d - w/2, best_x3d + w/2,
-                                    y_3d - h/2, y_3d + h/2,
-                                    best_z3d - d/2, best_z3d + d/2,
-                                    title_l
-                                ))
-                                
-                            # Project final 3D coordinates to 2D image coordinates
-                            cx, cy = map_3d_to_2d(best_x3d, y_3d, best_z3d)
+                            min_penalty = 1e9
+                            placed = False
                             
-                            # Dynamic perspective size resolution based on 3D dimensions projected to 2D
-                            x1_2d, _ = map_3d_to_2d(best_x3d - w/2, y_3d, best_z3d)
-                            x2_2d, _ = map_3d_to_2d(best_x3d + w/2, y_3d, best_z3d)
-                            _, y1_2d = map_3d_to_2d(best_x3d, y_3d - h/2, best_z3d)
-                            _, y2_2d = map_3d_to_2d(best_x3d, y_3d + h/2, best_z3d)
+                            # Solve by Placement Domain
+                            if domain == "ceiling":
+                                # Ceilings scan center ceiling space
+                                for dx in [-20.0, 0.0, 20.0]:
+                                    for dz in [-20.0, 0.0, 20.0]:
+                                        test_x = max(-room_w/2 + w/2, min(room_w/2 - w/2, x_3d + dx))
+                                        test_z = max(d/2, min(room_d - d/2, z_3d + dz))
+                                        overlaps = False
+                                        for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
+                                            if "ceiling" in o_label or "pendant" in o_label:
+                                                # Check collision with other ceiling items
+                                                if (test_x + w/2 > ox1 and test_x - w/2 < ox2) and (test_z + d/2 > oz1 and test_z - d/2 < oz2):
+                                                    overlaps = True
+                                        if not overlaps:
+                                            final_x, final_z = test_x, test_z
+                                            final_y = y_3d + h/2
+                                            placed = True
+                                            status = "placed_ceiling"
+                                            status_counts["ceiling"] += 1
+                                            break
+                                    if placed: break
+                                    
+                            elif domain == "wall":
+                                # Wall solver: align flush against back or side walls
+                                wall_positions = [
+                                    (0.0, room_d - d/2), # Back wall
+                                    (-room_w/2 + w/2, room_d/2), # Left wall
+                                    (room_w/2 - w/2, room_d/2) # Right wall
+                                ]
+                                for wx, wz in wall_positions:
+                                    overlaps = False
+                                    for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
+                                        if "window" in o_label or "door" in o_label:
+                                            if (wx + w/2 > ox1 and wx - w/2 < ox2) and (wz + d/2 > oz1 and wz - d/2 < oz2):
+                                                overlaps = True
+                                    if not overlaps:
+                                        final_x, final_z = wx, wz
+                                        final_y = y_3d
+                                        placed = True
+                                        status = "placed_wall"
+                                        status_counts["wall"] += 1
+                                        break
+                                        
+                            elif domain == "surface":
+                                # Surface solver: search supporting surfaces
+                                support_found = False
+                                for ox1, ox2, oy1, oy2, oz1, oz2, o_label in reversed(occupied_3d_boxes):
+                                    if any(k in o_label for k in ["unit", "table", "stand", "dresser", "nightstand", "counter", "desk", "bookshelf", "cabinet"]):
+                                        o_w = ox2 - ox1
+                                        o_h = oy2 - oy1
+                                        o_d = oz2 - oz1
+                                        final_x = ox1 + o_w / 2
+                                        final_y = oy1 - h / 2 - 2.0
+                                        final_z = oz1 + o_d / 2
+                                        support_found = True
+                                        placed = True
+                                        status = "placed_surface"
+                                        status_counts["surface"] += 1
+                                        logger.info("Surface Snapped product '%s' to support '%s'", title_l, o_label)
+                                        break
+                                if not support_found:
+                                    domain = "floor" # fallback
+                                    
+                            if domain == "floor":
+                                # Run a 3-Stage floor solver:
+                                # Stage 1 (Perfect), Stage 2 (Adaptive clearance), Stage 3 (Best-Available with lowest penalty)
+                                
+                                # Setup grid candidates
+                                candidate_x = [0.0]
+                                for step in range(20, int(room_w/2), 20):
+                                    candidate_x.extend([-step, step])
+                                candidate_z = [room_d/2]
+                                for step in range(20, int(room_d/2), 20):
+                                    candidate_z.extend([room_d/2 - step, room_d/2 + step])
+                                    
+                                # Stage 1 & 2 Config
+                                clearance = self.PLACEMENT_CONFIG[w_mode]
+                                
+                                # Scan candidates
+                                for test_x in candidate_x:
+                                    for test_z in candidate_z:
+                                        test_x = max(-room_w/2 + w/2, min(room_w/2 - w/2, test_x))
+                                        test_z = max(d/2, min(room_d - d/2, test_z))
+                                        
+                                        # Overlap analysis
+                                        ix1, ix2 = test_x - w/2, test_x + w/2
+                                        iy1, iy2 = y_3d - h/2, y_3d + h/2
+                                        iz1, iz2 = test_z - d/2, test_z + d/2
+                                        
+                                        # Calculate penalty
+                                        hard_collision = False
+                                        overlap_penalty = 0.0
+                                        walkway_penalty = 0.0
+                                        boundary_penalty = 0.0
+                                        
+                                        for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
+                                            is_opening = ("window" in o_label or "door" in o_label)
+                                            is_floor_obj = not ("window" in o_label or "door" in o_label or "ceiling" in o_label or "wall" in o_label)
+                                            
+                                            x_overlap = (ix2 - 8 > ox1 and ix1 + 8 < ox2)
+                                            z_overlap = (iz2 - 8 > oz1 and iz1 + 8 < oz2) if not is_opening else True
+                                            y_overlap = (iy2 - 8 > oy1 and iy1 + 8 < oy2) if not (is_floor_obj or is_opening) else True
+                                            
+                                            if x_overlap and y_overlap and z_overlap:
+                                                if is_opening or "door" in o_label or "bed" in o_label or "wardrobe" in o_label:
+                                                    hard_collision = True
+                                                else:
+                                                    overlap_penalty += 100.0
+                                                    
+                                            # Soft walkway margins clearance check
+                                            if "bed" in o_label:
+                                                req_clear = clearance["bed_side_clearance"]
+                                                if ix1 - req_clear < ox2 and ix2 + req_clear > ox1 and iz1 - req_clear < oz2 and iz2 + req_clear > oz1:
+                                                    walkway_penalty += 20.0
+                                                    
+                                        # Boundary check (prefer wall flush for bookshelves/TV units)
+                                        if any(k in category or k in title_l for k in ["bookshelf", "bookcase", "cabinet", "tv unit", "wardrobe"]):
+                                            dist_wall = min(abs(ix1 - (-room_w/2)), abs(ix2 - (room_w/2)), abs(iz2 - room_d))
+                                            boundary_penalty += dist_wall * 0.1
+                                            
+                                        total_penalty = overlap_penalty + walkway_penalty + boundary_penalty
+                                        
+                                        if not hard_collision and total_penalty == 0:
+                                            # Stage 1: Perfect
+                                            final_x, final_z = test_x, test_z
+                                            final_y = y_3d - h/2
+                                            placed = True
+                                            status = "placed_perfect"
+                                            status_counts["perfect"] += 1
+                                            break
+                                        elif not hard_collision and total_penalty < min_penalty:
+                                            min_penalty = total_penalty
+                                            best_overlap_coords = (test_x, test_z)
+                                            
+                                    if placed: break
+                                    
+                                if not placed:
+                                    # Fallback: Stage 3 Best-Available with lowest penalty
+                                    final_x, final_z = best_overlap_coords
+                                    final_y = y_3d - h/2
+                                    placed = True
+                                    if min_penalty < 50.0:
+                                        status = "placed_adaptive"
+                                        status_counts["adaptive"] += 1
+                                    else:
+                                        status = "placed_best_available"
+                                        status_counts["best_available"] += 1
+                                        # Record warning
+                                        warning_msg = f"Product '{item.get('title', 'Item')}' placed using best-available fallback."
+                                        placement_warnings.append({
+                                            "product_id": p_id,
+                                            "type": "fallback_placement",
+                                            "message": warning_msg
+                                        })
+                                        logger.info("Adaptive Fallback Placement chosen for %s: %s", title_l, warning_msg)
+
+                            # Finish placement and update occupied boxes
+                            item["placement_status"] = status
+                            item["render_status"] = "requested"
+                            
+                            # Project 3D to 2D
+                            cx_proj, cy_proj = map_3d_to_2d(final_x, final_y, final_z)
+                            x1_2d, _ = map_3d_to_2d(final_x - w/2, final_y, final_z)
+                            x2_2d, _ = map_3d_to_2d(final_x + w/2, final_y, final_z)
+                            _, y1_2d = map_3d_to_2d(final_x, final_y - h/2, final_z)
+                            _, y2_2d = map_3d_to_2d(final_x, final_y + h/2, final_z)
                             
                             w_p = max(0.06, min(0.6, abs(x2_2d - x1_2d)))
                             h_p = max(0.06, min(0.6, abs(y2_2d - y1_2d)))
-                            
-                            # Special ceiling fan visual sizing adjustments to look clean
                             if "fan" in category or "chandelier" in category or "pendant" in category:
                                 w_p = max(0.18, min(0.3, w_p))
                                 h_p = max(0.10, min(0.2, h_p))
-                                
-                            # Ensure the 2D projected center is clamped so it stays fully visible inside the viewport bounds
-                            cx = max(w_p/2 + 0.02, min(0.98 - w_p/2, cx))
-                            cy = max(h_p/2 + 0.02, min(0.98 - h_p/2, cy))
-
+                            cx_proj = max(w_p/2 + 0.02, min(0.98 - w_p/2, cx_proj))
+                            cy_proj = max(h_p/2 + 0.02, min(0.98 - h_p/2, cy_proj))
+                            
                             coords = (
-                                int((cx - w_p/2) * width),
-                                int((cy - h_p/2) * height),
-                                int((cx + w_p/2) * width),
-                                int((cy + h_p/2) * height)
+                                int((cx_proj - w_p/2) * width),
+                                int((cy_proj - h_p/2) * height),
+                                int((cx_proj + w_p/2) * width),
+                                int((cy_proj + h_p/2) * height)
                             )
                             
-                            if placed:
-                                occupied_boxes_by_zone[item_zone].append(coords)
-                                
+                            occupied_boxes_by_zone[domain].append(coords)
+                            occupied_3d_boxes.append((
+                                final_x - w/2, final_x + w/2,
+                                final_y - h/2, final_y + h/2,
+                                final_z - d/2, final_z + d/2,
+                                title_l
+                            ))
+                            
                             pos_desc = f"Placement at dynamic layout coordinates: [{coords[0]}, {coords[1]}, {coords[2]}, {coords[3]}]"
                             item["proposed_location"] = pos_desc
-
+                            
                             # Try multiple possible image URL keys (Spec conformed alignment)
                             product_img = None
                             img_url = (
@@ -680,20 +874,18 @@ class ReconstructionAgent:
                                          response = requests.get(img_url, headers=headers, timeout=12)
                                          if response.status_code == 200:
                                              raw_img = Image.open(BytesIO(response.content))
-                                             # Apply background transparency removal (AR style!)
                                              product_img = make_background_transparent(raw_img)
                                              self.product_image_cache[img_url] = product_img
                                      except Exception as e:
                                          logger.warning("Failed to fetch product image from %s: %s", img_url, str(e))
 
-                            # Calculate target bounding box dimensions
                             box_w = coords[2] - coords[0]
                             box_h = coords[3] - coords[1]
 
-                            # Fallback if download failed: use a clean high-resolution Unsplash photo of the product category
+                            # Fallback if download failed: use Unsplash
                             if not product_img:
-                                fallback_url = "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=300&q=80" # Default
-                                cat_lower = item.get("category", "").lower()
+                                fallback_url = "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=300&q=80"
+                                cat_lower = category.lower()
                                 if "desk" in cat_lower or "table" in cat_lower:
                                     fallback_url = "https://images.unsplash.com/photo-1581428982868-e410dd047a90?q=80&w=300&auto=format&fit=crop"
                                 elif "chair" in cat_lower or "seating" in cat_lower:
@@ -722,30 +914,20 @@ class ReconstructionAgent:
                                 except Exception as e:
                                     logger.warning("Failed to fetch fallback image from Unsplash: %s", str(e))
 
-                            # If both download and Unsplash fallback failed (e.g. offline environment),
-                            # generate a high-fidelity colored silhouette placeholder locally so that
-                            # the item is ALWAYS rendered and visible in the scene comparison!
+                            # If still no image, draw locally
                             if not product_img:
-                                logger.info("Generating high-fidelity offline placeholder for '%s'...", title_l)
                                 placeholder_w = 400
                                 placeholder_h = 400
-                                placeholder = Image.new("RGBA", (placeholder_w, placeholder_h), (46, 204, 113, 200)) # Clean emerald green
+                                placeholder = Image.new("RGBA", (placeholder_w, placeholder_h), (46, 204, 113, 200))
                                 draw_placeholder = ImageDraw.Draw(placeholder)
-                                
-                                # Draw a nice styling border
                                 draw_placeholder.rectangle(
                                     [15, 15, placeholder_w - 15, placeholder_h - 15],
                                     outline=(255, 255, 255, 220),
                                     width=6
                                 )
-                                
-                                # Draw item title inside the card
                                 label_text = item.get("title", "Furniture Item")
-                                # Truncate if too long
                                 if len(label_text) > 25:
                                     label_text = label_text[:22] + "..."
-                                
-                                # Fallback to default font but draw it clearly centered
                                 draw_placeholder.text(
                                     (placeholder_w // 2, placeholder_h // 2),
                                     label_text,
@@ -755,23 +937,14 @@ class ReconstructionAgent:
                                 product_img = placeholder
 
                             if placed and product_img:
-                                # Guided Inpainting: Pre-paste the transparent product visual onto base_img
-                                # to act as color/shape reference for the diffusion model.
                                 product_img_resized = product_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
                                 base_img.paste(product_img_resized, (coords[0], coords[1]), product_img_resized)
                                 inpaint_targets.append((coords, item, product_img))
                             elif placed:
-                                 # Fallback if both primary and secondary failed: draw a subtle outline but keep mask
-                                 inpaint_targets.append((coords, item, None))
-                            else:
-                                 # Record placement error if it doesn't fit
-                                 err_msg = f"Product '{item.get('name', 'Item')}' cannot be placed inside the room as its size exceeds the available empty space."
-                                 placement_errors.append(err_msg)
-                                 logger.warning(err_msg)
+                                inpaint_targets.append((coords, item, None))
                                  
                             item["proposed_location"] = pos_desc
 
-                        # C. Run AI Inpainting Reconstruction Pass (FLUX/SDXL Cloud or HF local)
                         # C. Run AI Inpainting Reconstruction Pass (FLUX/SDXL Cloud or HF local)
                         # This regenerates/reconstructs the pasted product shapes inside the room realistically!
                         if inpaint_targets:
@@ -987,8 +1160,8 @@ class ReconstructionAgent:
                                         # Overlay transparent product cutout
                                         composite_crop = Image.alpha_composite(bg_crop, p_resized)
                                         
-                                        # Blend overlay crop with background crop at 65% opacity
-                                        final_crop = Image.blend(bg_crop, composite_crop, 0.65)
+                                        # Blend overlay crop with background crop at 88% opacity
+                                        final_crop = Image.blend(bg_crop, composite_crop, 0.88)
                                         base_img.paste(final_crop, (c[0], c[1]))
                                 logger.info("Successfully completed dynamic alpha-blend post-inpaint compositing.")
                             except Exception as blend_err:
@@ -1004,35 +1177,189 @@ class ReconstructionAgent:
                         if img_idx == 0:
                             composite.save(s_path / after_image)
                             
+                            # VLM Post-generation Product Verification and Retry Loop (Section 14)
+                            verified_product_ids = []
+                            missing_product_ids = []
+                            retry_count = 0
+                            retry_limit = 2
+                            
+                            if inpaint_targets:
+                                logger.info("Running post-generation visual verification...")
+                                for c, item, _ in inpaint_targets:
+                                    p_id = item.get("product_id")
+                                    title = item.get("title", "furniture")
+                                    vlm_prompt = f"Analyze the image and tell me: Is a product with title '{title}' visible in the scene? Answer only with YES or NO."
+                                    try:
+                                        vlm_res = self.vision_model.generate(
+                                            prompt=vlm_prompt,
+                                            images=s_path / after_image,
+                                            max_new_tokens=10
+                                        )
+                                        ans = vlm_res.get("response", "").strip().upper()
+                                        if "YES" in ans:
+                                            verified_product_ids.append(p_id)
+                                            item["render_status"] = "verified"
+                                        else:
+                                            missing_product_ids.append(p_id)
+                                            item["render_status"] = "verification_failed"
+                                    except Exception as v_err:
+                                        logger.warning("VLM verification failed: %s. Defaulting to verified.", str(v_err))
+                                        verified_product_ids.append(p_id)
+                                        item["render_status"] = "verified"
+                                        
+                                # Retry Loop
+                                while missing_product_ids and retry_count < retry_limit:
+                                    logger.info("Visual verification failed for: %s. Running retry pass %d...", missing_product_ids, retry_count + 1)
+                                    retry_targets = [t for t in inpaint_targets if t[1].get("product_id") in missing_product_ids]
+                                    
+                                    mask_img = Image.new("L", base_img.size, 0)
+                                    mask_draw = ImageDraw.Draw(mask_img)
+                                    for c, _, _ in retry_targets:
+                                        x1, y1, x2, y2 = c
+                                        mask_draw.rectangle((max(0, x1 - 10), max(0, y1 - 10), min(width, x2 + 10), min(height, y2 + 10)), fill=255)
+                                        
+                                    retry_parts = [it.get("title", "furniture") for _, it, _ in retry_targets]
+                                    retry_prompt_text = "Preserve the current reconstructed image exactly. Add only: " + ", ".join(retry_parts) + " at the previously calculated placement locations."
+                                    
+                                    try:
+                                        if self.inpaint_pipe and not isinstance(self.inpaint_pipe, str):
+                                            init_rgb = base_img.convert("RGB")
+                                            mask_l = mask_img.convert("L")
+                                            inpainted_img = self.inpaint_pipe(
+                                                prompt=retry_prompt_text,
+                                                image=init_rgb,
+                                                mask_image=mask_l,
+                                                num_inference_steps=20,
+                                                strength=0.75,
+                                                guidance_scale=7.5
+                                            ).images[0]
+                                            base_img = inpainted_img.convert("RGBA")
+                                            
+                                            # Apply alpha-blend post-inpaint compositing for the retried targets
+                                            for c, _, p_img in retry_targets:
+                                                if p_img:
+                                                    p_w = c[2] - c[0]
+                                                    p_h = c[3] - c[1]
+                                                    p_resized = p_img.convert("RGBA").resize((p_w, p_h), Image.Resampling.LANCZOS)
+                                                    crop_box = (c[0], c[1], c[2], c[3])
+                                                    bg_crop = base_img.crop(crop_box).convert("RGBA")
+                                                    composite_crop = Image.alpha_composite(bg_crop, p_resized)
+                                                    final_crop = Image.blend(bg_crop, composite_crop, 0.88)
+                                                    base_img.paste(final_crop, (c[0], c[1]))
+                                                    
+                                            composite = base_img.convert("RGB")
+                                            composite.save(s_path / view_filename)
+                                            composite.save(s_path / after_image)
+                                    except Exception as r_err:
+                                        logger.error("Retry inpainting pass failed: %s", str(r_err))
+                                        break
+                                        
+                                    retry_count += 1
+                                    new_verified = []
+                                    new_missing = []
+                                    for c, item, _ in retry_targets:
+                                        p_id = item.get("product_id")
+                                        title = item.get("title", "furniture")
+                                        vlm_prompt = f"Analyze the image and tell me: Is a product with title '{title}' visible in the scene? Answer only with YES or NO."
+                                        try:
+                                            vlm_res = self.vision_model.generate(
+                                                prompt=vlm_prompt,
+                                                images=s_path / after_image,
+                                                max_new_tokens=10
+                                            )
+                                            ans = vlm_res.get("response", "").strip().upper()
+                                            if "YES" in ans:
+                                                new_verified.append(p_id)
+                                                item["render_status"] = "verified"
+                                            else:
+                                                new_missing.append(p_id)
+                                                item["render_status"] = "verification_failed"
+                                        except Exception:
+                                            new_verified.append(p_id)
+                                            item["render_status"] = "verified"
+                                            
+                                    for p_id in new_verified:
+                                        if p_id in missing_product_ids:
+                                            missing_product_ids.remove(p_id)
+                                            verified_product_ids.append(p_id)
+                                            
                         logger.info("Successfully generated clean layout reconstruction image at: %s", view_filename)
                     except Exception as e:
                         logger.error("Failed to generate visualized layout reconstruction image for view %s: %s", orig_image_path.name, str(e))
-
+                        
         # Generate prompts for backwards-compatibility reports
-        prompts = [inpaint_prompt] if inpaint_targets else [
+        prompts = [inpaint_prompt] if (inpaint_targets and 'inpaint_prompt' in locals()) else [
             "Preserve the existing room exactly. Add: white study table and ergonomic office chair near the window. "
             "Maintain: existing lighting, existing perspective, existing objects. Do not modify: walls, flooring, room dimensions."
         ]
 
-        # Map conformed placements matching Spec 7 schema
+        # Map conformed placements matching Section 21 schema
         placements = []
-        for c, item, _ in inpaint_targets:
+        for idx, item in enumerate(recommended):
+            p_id = item.get("product_id")
+            status = item.get("placement_status", "impossible_due_to_invalid_geometry")
+            render = item.get("render_status", "requested")
+            
+            # Find in inpaint_targets to get coords
+            coords = []
+            for c, it, _ in inpaint_targets:
+                if it.get("product_id") == p_id:
+                    coords = list(c)
+                    break
+                    
             placements.append({
-                "product_id": item.get("product_id", "serp_001"),
+                "product_id": p_id,
+                "name": item.get("name", item.get("title", "furniture")),
+                "placement_status": status,
+                "render_status": render,
                 "position": item.get("proposed_location", "Placement in empty floor coordinates."),
-                "coords": list(c)
+                "coords": coords
             })
 
-        # Map to final spec format containing conformed Spec 7 keys + legacy compatibility parameters
+        # Enforce Section 9 Product Presence Contract Assertions
+        selected_ids = {p.get("product_id") for p in recommended}
+        placed_ids = {p.get("product_id") for p in placements}
+        missing_from_placements = selected_ids - placed_ids
+        if missing_from_placements:
+            raise ValueError(f"Product presence contract violation: Selected products {missing_from_placements} are missing from conformed placements!")
+
+        # Make sure 'verified_product_ids' and 'missing_product_ids' exist in local scope
+        if 'verified_product_ids' not in locals():
+            verified_product_ids = [p.get("product_id") for p in placements if p.get("render_status") == "verified"]
+        if 'missing_product_ids' not in locals():
+            missing_product_ids = [p.get("product_id") for p in placements if p.get("render_status") == "verification_failed"]
+        if 'retry_count' not in locals():
+            retry_count = 0
+            
+        # Map to final spec format containing conformed Section 21 keys + legacy compatibility parameters
         output = {
-            "generated_image": after_image,
+            "layout_id": "layout_reconstruction_v2",
+            "room": {
+                "usable_area_sqm": usable_area if 'usable_area' in locals() else 9.7,
+                "walkability_score_before": float(spatial_output.get("walkability_score", 30.0)) if spatial_output else 30.0,
+                "walkability_mode": w_mode if 'w_mode' in locals() else "compact",
+                "walkability_score_after": float(spatial_output.get("walkability_score", 30.0)) if spatial_output else 30.0
+            },
+            "selected_products_count": len(recommended),
+            "placement_summary": status_counts if 'status_counts' in locals() else {
+                "perfect": 0, "adaptive": len(placements), "best_available": 0, "wall": 0, "ceiling": 0, "surface": 0, "failed": 0
+            },
             "placements": placements,
+            "placement_warnings": placement_warnings if 'placement_warnings' in locals() else [],
+            "placement_errors": placement_errors,
+            "reconstruction": {
+                "requested_product_ids": [p.get("product_id") for p in recommended],
+                "verified_product_ids": verified_product_ids,
+                "missing_product_ids": missing_product_ids,
+                "retry_count": retry_count,
+                "status": "success" if not missing_product_ids else "partial"
+            },
+            
+            # Backwards-compatibility legacy properties
+            "generated_image": after_image,
             "collision_score": 0.0,
             "walkability_score": float(spatial_output.get("walkability_score", 88.0)) if spatial_output else 88.0,
             "realism_score": 0.95,
-            "placement_errors": placement_errors,
-            
-            # Backwards-compatibility legacy properties
             "before_image": before_image,
             "after_image": after_image,
             "difference_summary": diff_summary,

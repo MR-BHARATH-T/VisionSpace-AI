@@ -159,12 +159,13 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
             return
         
         with output_area:
-            # Check if product is already in our placed list (match by name)
-            placed_names = [p.get("name") for p in state["placed_products"]]
+            # Check if product is already in our placed list (match by product_id)
+            placed_ids = [p.get("product_id") for p in state["placed_products"] if p.get("product_id")]
+            p_id = product_item.get("product_id")
             
-            if product_item.get("name") in placed_names:
+            if p_id in placed_ids:
                 # Remove it
-                state["placed_products"] = [p for p in state["placed_products"] if p.get("name") != product_item.get("name")]
+                state["placed_products"] = [p for p in state["placed_products"] if p.get("product_id") != p_id]
                 button.description = " Place in Room"
                 button.button_style = "info"
                 print(f" Removed '{product_item.get('name')}' from layout placement list.")
