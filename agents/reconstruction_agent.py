@@ -576,10 +576,15 @@ class ReconstructionAgent:
                                 iz1, iz2 = test_z3d - d/2, test_z3d + d/2
                                 
                                 for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
-                                    # For structural openings (doors, windows), ignore Z depth check to prevent visual blocking
-                                    is_opening = ("window" in o_label or "door" in o_label)
+                                    # For structural openings (doors, windows), ignore Z/Y checks to prevent visual blocking (unless it's a ceiling item)
+                                    is_opening = ("window" in o_label or "door" in o_label) and (item_zone != "ceiling")
+                                    
+                                    # For floor furniture items, ignore vertical Y height check since they all rest on the floor
+                                    is_floor_obj = not ("window" in o_label or "door" in o_label or "ceiling" in o_label or "wall" in o_label)
+                                    is_floor_item = (item_zone == "floor")
+                                    
                                     x_overlap = (ix2 - 8 > ox1 and ix1 + 8 < ox2)
-                                    y_overlap = (iy2 - 8 > oy1 and iy1 + 8 < oy2)
+                                    y_overlap = (iy2 - 8 > oy1 and iy1 + 8 < oy2) if not (is_floor_obj and is_floor_item or is_opening) else True
                                     z_overlap = (iz2 - 8 > oz1 and iz1 + 8 < oz2) if not is_opening else True
                                     if x_overlap and y_overlap and z_overlap:
                                         overlaps = True
@@ -634,6 +639,7 @@ class ReconstructionAgent:
                             item["proposed_location"] = pos_desc
 
                             # Try multiple possible image URL keys (Spec conformed alignment)
+                            product_img = None
                             img_url = (
                                 item.get("image") or 
                                 item.get("thumbnail_url") or 
@@ -668,42 +674,74 @@ class ReconstructionAgent:
 
                             # Fallback if download failed: use a clean high-resolution Unsplash photo of the product category
                             if not product_img:
-                                 fallback_url = "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=300&q=80" # Default
-                                 cat_lower = item.get("category", "").lower()
-                                 if "desk" in cat_lower or "table" in cat_lower:
-                                     fallback_url = "https://images.unsplash.com/photo-1581428982868-e410dd047a90?q=80&w=300&auto=format&fit=crop"
-                                 elif "chair" in cat_lower or "seating" in cat_lower:
-                                     fallback_url = "https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?q=80&w=300&auto=format&fit=crop"
-                                 elif "bookshelf" in cat_lower or "shelf" in cat_lower:
-                                     fallback_url = "https://images.unsplash.com/photo-1594980596870-8cb524ebf6bc?auto=format&fit=crop&w=300&q=80"
-                                 elif "bed" in cat_lower:
-                                     fallback_url = "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=300&q=80"
-                                 elif "fan" in cat_lower:
-                                     fallback_url = "https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?auto=format&fit=crop&w=300&q=80"
-                                 elif "ac" in cat_lower or "conditioner" in cat_lower:
-                                     fallback_url = "https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=300&q=80"
-                                 elif "projector" in cat_lower:
-                                     fallback_url = "https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=300&q=80"
-                                     
-                                 try:
-                                     import requests
-                                     from io import BytesIO
-                                     headers = {
-                                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                                     }
-                                     response = requests.get(fallback_url, headers=headers, timeout=10)
-                                     if response.status_code == 200:
-                                         fallback_raw = Image.open(BytesIO(response.content))
-                                         product_img = make_background_transparent(fallback_raw)
-                                 except Exception as e:
-                                     logger.warning("Failed to fetch fallback image from Unsplash: %s", str(e))
+                                fallback_url = "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=300&q=80" # Default
+                                cat_lower = item.get("category", "").lower()
+                                if "desk" in cat_lower or "table" in cat_lower:
+                                    fallback_url = "https://images.unsplash.com/photo-1581428982868-e410dd047a90?q=80&w=300&auto=format&fit=crop"
+                                elif "chair" in cat_lower or "seating" in cat_lower:
+                                    fallback_url = "https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?q=80&w=300&auto=format&fit=crop"
+                                elif "bookshelf" in cat_lower or "shelf" in cat_lower:
+                                    fallback_url = "https://images.unsplash.com/photo-1594980596870-8cb524ebf6bc?auto=format&fit=crop&w=300&q=80"
+                                elif "bed" in cat_lower:
+                                    fallback_url = "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=300&q=80"
+                                elif "fan" in cat_lower:
+                                    fallback_url = "https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?auto=format&fit=crop&w=300&q=80"
+                                elif "ac" in cat_lower or "conditioner" in cat_lower:
+                                    fallback_url = "https://images.unsplash.com/photo-1585338107529-13afc5f02586?auto=format&fit=crop&w=300&q=80"
+                                elif "projector" in cat_lower:
+                                    fallback_url = "https://images.unsplash.com/photo-1535016120720-40c646be5580?auto=format&fit=crop&w=300&q=80"
+                                    
+                                try:
+                                    import requests
+                                    from io import BytesIO
+                                    headers = {
+                                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                                    }
+                                    response = requests.get(fallback_url, headers=headers, timeout=10)
+                                    if response.status_code == 200:
+                                        fallback_raw = Image.open(BytesIO(response.content))
+                                        product_img = make_background_transparent(fallback_raw)
+                                except Exception as e:
+                                    logger.warning("Failed to fetch fallback image from Unsplash: %s", str(e))
+
+                            # If both download and Unsplash fallback failed (e.g. offline environment),
+                            # generate a high-fidelity colored silhouette placeholder locally so that
+                            # the item is ALWAYS rendered and visible in the scene comparison!
+                            if not product_img:
+                                logger.info("Generating high-fidelity offline placeholder for '%s'...", title_l)
+                                placeholder_w = 400
+                                placeholder_h = 400
+                                placeholder = Image.new("RGBA", (placeholder_w, placeholder_h), (46, 204, 113, 200)) # Clean emerald green
+                                draw_placeholder = ImageDraw.Draw(placeholder)
+                                
+                                # Draw a nice styling border
+                                draw_placeholder.rectangle(
+                                    [15, 15, placeholder_w - 15, placeholder_h - 15],
+                                    outline=(255, 255, 255, 220),
+                                    width=6
+                                )
+                                
+                                # Draw item title inside the card
+                                label_text = item.get("title", "Furniture Item")
+                                # Truncate if too long
+                                if len(label_text) > 25:
+                                    label_text = label_text[:22] + "..."
+                                
+                                # Fallback to default font but draw it clearly centered
+                                draw_placeholder.text(
+                                    (placeholder_w // 2, placeholder_h // 2),
+                                    label_text,
+                                    fill=(255, 255, 255, 255),
+                                    anchor="mm"
+                                )
+                                product_img = placeholder
 
                             if placed and product_img:
-                                 # Guided Inpainting: Pre-paste the transparent product visual onto base_img
-                                 # to act as color/shape reference for the diffusion model.
-                                 product_img_resized = product_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
-                                 base_img.paste(product_img_resized, (coords[0], coords[1]), product_img_resized)
-                                 inpaint_targets.append((coords, item, product_img))
+                                # Guided Inpainting: Pre-paste the transparent product visual onto base_img
+                                # to act as color/shape reference for the diffusion model.
+                                product_img_resized = product_img.resize((box_w, box_h), Image.Resampling.LANCZOS)
+                                base_img.paste(product_img_resized, (coords[0], coords[1]), product_img_resized)
+                                inpaint_targets.append((coords, item, product_img))
                             elif placed:
                                  # Fallback if both primary and secondary failed: draw a subtle outline but keep mask
                                  inpaint_targets.append((coords, item, None))
