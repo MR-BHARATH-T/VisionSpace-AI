@@ -1138,7 +1138,7 @@ class ReconstructionAgent:
                             crop_final = base_img.crop(paste_box)
                             sim_score = self.calculate_identity_similarity(crop_final, p_resized)
                             
-                            if (not is_visible or sim_score < 0.75) and retry_count < 2:
+                            if (not is_visible or sim_score < 0.58) and retry_count < 2:
                                 logger.info("Similarity / Visibility check failed for '%s' (similarity: %.2f). Retrying...", p["name"], sim_score)
                                 retry_count += 1
                                 try:
@@ -1173,7 +1173,7 @@ class ReconstructionAgent:
                                 except Exception as r_err:
                                     logger.error("Retry pass failed: %s", str(r_err))
                                     
-                            if is_visible and sim_score >= 0.75:
+                            if is_visible and sim_score >= 0.58:
                                 p["render_status"] = "verified"
                                 if p["product_id"] not in verified_product_ids:
                                     verified_product_ids.append(p["product_id"])
