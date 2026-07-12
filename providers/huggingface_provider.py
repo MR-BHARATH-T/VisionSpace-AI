@@ -886,7 +886,12 @@ class HuggingFaceProvider(BaseProvider):
                so model.generate(**inputs) works correctly.
         """
         if not self.loaded or (self.tokenizer is None and self.processor is None):
-            raise RuntimeError("Model parameters must be loaded before preparing inputs.")
+            if hasattr(self, "model_name") and self.model_name and hasattr(self, "task") and self.task:
+                logger.warning("HuggingFaceProvider: lazy-loading missing parameters in prepare_inputs...")
+                self.load(self.model_name, self.task)
+            
+            if not self.loaded or (self.tokenizer is None and self.processor is None):
+                raise RuntimeError(f"Model parameters must be loaded before preparing inputs. loaded={self.loaded}, tokenizer={self.tokenizer is not None}, processor={self.processor is not None}")
 
         # Determine if we have visual inputs to process
         has_imgs = False

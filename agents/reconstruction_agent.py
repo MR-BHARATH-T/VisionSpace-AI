@@ -96,8 +96,8 @@ def make_background_transparent(img: Any) -> Any:
         # Check distance to average corner color
         dist = math.sqrt((r - avg_r)**2 + (g - avg_g)**2 + (b - avg_b)**2)
         
-        # Always key out near-white or near-black
-        if (r > 225 and g > 225 and b > 225) or (r < 25 and g < 25 and b < 25):
+        # Key out near-white only if the backdrop average corner is near-white
+        if (avg_r > 230 and avg_g > 230 and avg_b > 230) and (r > 248 and g > 248 and b > 248):
             new_data.append((r, g, b, 0))
         elif is_solid_backdrop and dist < threshold:
             new_data.append((r, g, b, 0))
@@ -676,6 +676,7 @@ class ReconstructionAgent:
                     try:
                         base_img = Image.open(orig_image_path).convert("RGBA")
                         width, height = base_img.size
+                        temp_filename = None
                         
                         def get_sort_key(p):
                             dom = p["placement"]["domain"]
@@ -984,7 +985,7 @@ class ReconstructionAgent:
                         if img_idx == 0:
                             composite.save(s_path / after_image)
                             
-                        if temp_filename.exists():
+                        if temp_filename and temp_filename.exists():
                             temp_filename.unlink()
                             
                     except Exception as e:
