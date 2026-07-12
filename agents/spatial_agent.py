@@ -1004,7 +1004,7 @@ class SpatialAgent:
         # Insufficient check
         feasibility_status = "valid"
         reason = ""
-        if len(objects_list) == 0 or room_w <= 100 or room_d <= 100:
+        if room_w <= 100 or room_d <= 100:
             feasibility_status = "unknown"
             reason = "Insufficient spatial geometry for reliable placement."
 
