@@ -833,7 +833,8 @@ class ReconstructionAgent:
                 
                 cx = 0.5
                 cy = 0.35
-                scale = 0.4 + 0.6 * norm_depth
+                # Correct perspective scale: objects further away (higher depth) must be smaller
+                scale = 1.0 - 0.65 * norm_depth
                 
                 x_2d = cx + (norm_x - 0.5) * scale
                 norm_z = 1.0 - norm_height
@@ -1007,18 +1008,35 @@ class ReconstructionAgent:
                                 d_p.rectangle([15, 15, 285, 285], outline=(255,255,255,220), width=6)
                                 d_p.text((150, 150), p["name"][:20], fill=(255,255,255,255), anchor="mm")
                                 product_img = placeholder
-                            # Calculate perspective rotation based on room position (left, center, right)
+                            # Calculate perspective rotation and affine shear based on room position (left, center, right)
                             rotation_angle = 0.0
+                            shear_x = 0.0
+                            shear_y = 0.0
                             domain = p["placement"]["domain"]
+                            rel_x = (wx - room_w / 2) / (room_w / 2) if room_w > 0 else 0.0
+                            
                             if domain == "floor" or domain == "surface":
-                                rel_x = (wx - room_w / 2) / (room_w / 2) if room_w > 0 else 0.0
                                 rotation_angle = -rel_x * 12.0
+                                shear_x = -rel_x * 0.1
                             elif domain == "wall":
-                                rel_x = (wx - room_w / 2) / (room_w / 2) if room_w > 0 else 0.0
                                 rotation_angle = -rel_x * 8.0
-                                
-                            if abs(rotation_angle) > 1.0 and product_img:
-                                product_img = product_img.rotate(rotation_angle, resample=Image.Resampling.BICUBIC, expand=True)
+                                if rel_x < -0.2:
+                                    shear_y = 0.18 * abs(rel_x)
+                                elif rel_x > 0.2:
+                                    shear_y = -0.18 * abs(rel_x)
+                                    
+                            if product_img:
+                                if (abs(shear_x) > 0.01 or abs(shear_y) > 0.01):
+                                    w_orig, h_orig = product_img.size
+                                    pad_w = int(w_orig * 0.2)
+                                    pad_h = int(h_orig * 0.2)
+                                    padded = Image.new("RGBA", (w_orig + 2 * pad_w, h_orig + 2 * pad_h), (0, 0, 0, 0))
+                                    padded.paste(product_img, (pad_w, pad_h))
+                                    matrix = (1.0, -shear_x, 0.0, -shear_y, 1.0, 0.0)
+                                    product_img = padded.transform(padded.size, Image.Transform.AFFINE, matrix, resample=Image.Resampling.BICUBIC)
+                                    
+                                if abs(rotation_angle) > 1.0:
+                                    product_img = product_img.rotate(rotation_angle, resample=Image.Resampling.BICUBIC, expand=True)
                                 
                             p_w_box = paste_box[2] - paste_box[0]
                             p_h_box = paste_box[3] - paste_box[1]
