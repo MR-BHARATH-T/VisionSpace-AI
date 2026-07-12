@@ -44,6 +44,8 @@ def apply_edge_feathering(img: Any, feather_radius: int = 15) -> Any:
 
 def make_background_transparent(img: Any) -> Any:
     """Converts solid or near-solid backgrounds of product thumbnails to transparent."""
+    original_img = img.copy()
+    
     # 1. Attempt to use rembg if installed for professional AR background removal
     try:
         # Pre-check onnxruntime to avoid rembg module-level sys.exit(1) execution
@@ -51,13 +53,14 @@ def make_background_transparent(img: Any) -> Any:
         from rembg import remove
         removed = remove(img)
         if removed:
-            logger.info("Successfully removed showroom background using rembg library.")
             feathered = apply_edge_feathering(removed, feather_radius=8)
             # Autocrop transparent margins to make the product fill the canvas
             bbox = feathered.getbbox()
             if bbox:
-                feathered = feathered.crop(bbox)
-            return feathered
+                logger.info("Successfully removed showroom background using rembg library.")
+                return feathered.crop(bbox)
+            else:
+                logger.warning("rembg produced a completely transparent image. Discarding and falling back to chroma keying.")
     except BaseException as rembg_err:
         logger.warning("rembg failed, not installed, or exited: %s. Falling back to corner-sample keying.", str(rembg_err))
 
@@ -109,8 +112,10 @@ def make_background_transparent(img: Any) -> Any:
     # Autocrop transparent margins to make the product fill the canvas
     bbox = feathered.getbbox()
     if bbox:
-        feathered = feathered.crop(bbox)
-    return feathered
+        return feathered.crop(bbox)
+        
+    logger.warning("All background removal attempts resulted in an empty image. Returning original image.")
+    return original_img
 
 
 class ReconstructionAgent:
