@@ -633,6 +633,8 @@ class CommerceAgent:
             room_d = float(spatial_output["room_dimensions_cm"].get("length", 500.0))
 
         # Classify placement domain
+        prod_cat = product.get("category", "").lower()
+        prod_name = product.get("title", product.get("name", "")).lower()
         domain = "floor"
         if any(k in prod_cat or k in prod_name for k in ["fan", "ceiling"]):
             domain = "ceiling"
