@@ -99,10 +99,10 @@ def make_background_transparent(img: Any) -> Any:
         # Check distance to average corner color
         dist = math.sqrt((r - avg_r)**2 + (g - avg_g)**2 + (b - avg_b)**2)
         
-        # Key out near-white only if the backdrop average corner is near-white
-        if (avg_r > 230 and avg_g > 230 and avg_b > 230) and (r > 248 and g > 248 and b > 248):
+        # Key out light backdrops and near-white pixels
+        if r > 218 and g > 218 and b > 218:
             new_data.append((r, g, b, 0))
-        elif is_solid_backdrop and dist < threshold:
+        elif dist < threshold:
             new_data.append((r, g, b, 0))
         else:
             new_data.append(item)
@@ -262,6 +262,12 @@ class ReconstructionAgent:
                 w, d, h = 120.0, 120.0, 30.0
             elif "ac" in category or "conditioner" in category:
                 w, d, h = 80.0, 25.0, 30.0
+            elif "coffee" in category or "maker" in category or "coffee" in title_lower:
+                w, d, h = 25.0, 25.0, 35.0
+            elif "projector screen" in category or "screen" in category or "projector screen" in title_lower:
+                w, d, h = 180.0, 10.0, 120.0
+            elif "projector" in category or "projector" in title_lower:
+                w, d, h = 30.0, 25.0, 15.0
             elif "laptop" in category or "holder" in category or "stand" in category:
                 w, d, h = 40.0, 30.0, 15.0
             else:
@@ -1070,7 +1076,7 @@ class ReconstructionAgent:
                             mask_img = Image.new("L", base_img.size, 0)
                             mask_draw = ImageDraw.Draw(mask_img)
                             # Boundary outline mask for local blending (Section 8)
-                            mask_draw.polygon(polygon_px, outline=255, width=15)
+                            mask_draw.polygon(polygon_px, fill=255)
                             
                             clip_inpaint_prompt = f"Insert the provided exact {p['name']} reference at the validated position. Match room lighting, shadows, and perspective."
                             neg_prompt = "floating object, warped structure, distorted design, blurry outline, extra legs, wrong scale"
