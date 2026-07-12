@@ -673,7 +673,7 @@ class ReconstructionAgent:
                             status = "placed_perfect"
                             status_counts["perfect"] += 1
                             break
-                        elif not hard_collision and total_penalty < min_penalty:
+                        elif total_penalty < min_penalty:
                             min_penalty = total_penalty
                             best_coords = (test_x, test_y)
                             
@@ -681,7 +681,14 @@ class ReconstructionAgent:
                     
                 if not placed:
                     final_x, final_y = best_coords
-                    final_z = h/2
+                    if domain == "ceiling":
+                        final_z = room_h - h/2
+                    elif domain == "wall":
+                        final_z = room_h * 0.7
+                    elif domain == "surface":
+                        final_z = 75.0 + h/2
+                    else:
+                        final_z = h/2
                     placed = True
                     status = "placed_adaptive"
                     status_counts["adaptive"] += 1
