@@ -350,6 +350,16 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
             
             # Extract uploaded images
             uploaded_files = uploader_widget.value
+            
+            # Clear uploader widget to prevent accumulative uploads on subsequent runs
+            try:
+                uploader_widget.value = ()
+            except Exception:
+                try:
+                    uploader_widget.value = {}
+                except Exception:
+                    pass
+                    
             images = []
             uploads_dir = pathlib.Path("uploads")
             
