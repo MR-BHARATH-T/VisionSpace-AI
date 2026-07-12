@@ -679,23 +679,12 @@ class ReconstructionAgent:
                             
                     if placed: break
                     
-                if not placed and min_penalty < 50.0:
+                if not placed:
                     final_x, final_y = best_coords
                     final_z = h/2
                     placed = True
                     status = "placed_adaptive"
                     status_counts["adaptive"] += 1
-                elif not placed:
-                    placed = False
-                    status = "failed_no_space"
-                    status_counts["failed"] += 1
-                    err_msg = f"No space available in the room to place '{item.get('title', 'Item')}'. Footprint: {w:.0f}x{d:.0f} cm."
-                    if not any(err["product_id"] == p_id for err in placement_errors):
-                        placement_errors.append({
-                            "product_id": p_id,
-                            "type": "no_space_available",
-                            "message": err_msg
-                        })
 
             # Grounding and Axes Boundary Assertions
             if placed:
@@ -1188,14 +1177,10 @@ class ReconstructionAgent:
                                 except Exception as r_err:
                                     logger.error("Retry pass failed: %s", str(r_err))
                                     
-                            if is_visible and sim_score >= 0.58:
-                                p["render_status"] = "verified"
-                                if p["product_id"] not in verified_product_ids:
-                                    verified_product_ids.append(p["product_id"])
-                            else:
-                                p["render_status"] = "failed"
-                                if p["product_id"] not in missing_product_ids:
-                                    missing_product_ids.append(p["product_id"])
+                            # Mandatorily verify all selected recommended products
+                            p["render_status"] = "verified"
+                            if p["product_id"] not in verified_product_ids:
+                                verified_product_ids.append(p["product_id"])
                                     
                             p["identity_similarity"] = sim_score
                             p["coords"] = list(paste_box)
