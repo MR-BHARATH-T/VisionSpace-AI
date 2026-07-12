@@ -32,6 +32,85 @@ def image_to_base64(img_path: pathlib.Path) -> str:
         return ""
 
 
+def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) -> str:
+    """Generates the comparison HTML for viewpoints, respecting the strict false-preview guard."""
+    reconstruction_meta = recon.get("reconstruction") or {}
+    verified_product_ids = reconstruction_meta.get("verified_product_ids") or []
+    verified_count = len(verified_product_ids)
+    
+    reconstructed_views = sorted(list(session_path.glob("processed_reconstructed_*.png")))
+    if not reconstructed_views:
+        reconstructed_views = [session_path / "processed_reconstructed.png"]
+        
+    comparison_html_list = []
+    
+    for idx, after_path in enumerate(reconstructed_views):
+        before_img_name = f"original_{idx + 1}.png"
+        before_path = session_path / "original_images" / before_img_name
+        if not before_path.exists():
+            before_path = session_path / "processed_images" / f"processed_{idx + 1}.png"
+        if not before_path.exists():
+            before_path = session_path / "original_images" / "original_1.png"
+        if not before_path.exists():
+            before_path = session_path / "processed_images" / "processed_1.png"
+            
+        # Target path for preview
+        preview_path = after_path if (verified_count > 0 and after_path.exists()) else before_path
+        
+        if before_path.exists() and preview_path.exists():
+            b64_before = image_to_base64(before_path)
+            b64_after = image_to_base64(preview_path)
+            view_title = f"Viewpoint {idx + 1}"
+            
+            if verified_count > 0:
+                header_title = f"Layout Reconstruction comparison - {view_title}"
+                header_color = "#38bdf8"
+                after_label = f"Reconstructed Layout Preview ({view_title})"
+                button_label = f"Download Reconstructed View {idx+1}"
+            else:
+                header_title = f"Original Room — No Products Successfully Rendered - {view_title}"
+                header_color = "#ef4444"
+                after_label = f"Original View (Reconstruction Failed/No Space Available) ({view_title})"
+                button_label = f"Download Original View {idx+1}"
+                
+            comparison_html = f"""
+            <div style="margin-top: 15px; border-top: 1px solid #2d3748; padding-top: 15px;">
+                <h4 style="color: {header_color}; font-family: 'Inter', sans-serif; margin-bottom: 10px;">{header_title}</h4>
+                <div class="image-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                        <img src="data:image/png;base64,{b64_before}" alt="Before View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                        <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Original Viewpoint ({view_title})</div>
+                    </div>
+                    <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                        <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                        <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">{after_label}</div>
+                        <div style="margin-top: 10px;">
+                            <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;">{button_label}</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """
+            comparison_html_list.append(comparison_html)
+            
+    if verified_count == 0:
+        reasons_html = """
+        <div style="background-color: #fef2f2; border: 1px solid #fee2e2; border-left: 5px solid #ef4444; border-radius: 6px; padding: 15px; margin-top: 20px; font-family: 'Inter', sans-serif;">
+            <h5 style="color: #991b1b; margin: 0 0 10px 0; font-size: 16px;">❌ No selected product was successfully rendered.</h5>
+            <ul style="color: #7f1d1d; margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.5;">
+        """
+        product_results = recon.get("product_results", [])
+        for result in product_results:
+            reasons_html += f"<li><strong>{result.get('name', 'Product')}</strong>: {result.get('message', 'Failed verification')}</li>"
+        reasons_html += """
+            </ul>
+        </div>
+        """
+        comparison_html_list.append(reasons_html)
+        
+    return "\n".join(comparison_html_list)
+
+
 def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None:
     """Constructs and renders the interactive dashboard in a Jupyter/Kaggle cell."""
     
@@ -243,46 +322,8 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         btn.description = " Try in Room"
                         btn.button_style = "info"
                 
-                # Fetch all processed viewpoint paths
-                reconstructed_views = sorted(list(state["session_path"].glob("processed_reconstructed_*.png")))
-                if not reconstructed_views:
-                    reconstructed_views = [state["session_path"] / "processed_reconstructed.png"]
-                
-                comparison_html_list = []
-                for idx, after_path in enumerate(reconstructed_views):
-                    before_img_name = f"original_{idx + 1}.png"
-                    before_path = state["session_path"] / "original_images" / before_img_name
-                    if not before_path.exists():
-                        before_path = state["session_path"] / "processed_images" / f"processed_{idx + 1}.png"
-                    if not before_path.exists():
-                        before_path = state["session_path"] / "original_images" / "original_1.png"
-                    if not before_path.exists():
-                        before_path = state["session_path"] / "processed_images" / "processed_1.png"
-                        
-                    if after_path.exists() and before_path.exists():
-                        b64_before = image_to_base64(before_path)
-                        b64_after = image_to_base64(after_path)
-                        view_title = f"Viewpoint {idx + 1}"
-                        
-                        comparison_html = f"""
-                        <div style="margin-top: 15px; border-top: 1px solid #2d3748; padding-top: 15px;">
-                            <h4 style="color: #38bdf8; font-family: 'Inter', sans-serif; margin-bottom: 10px;"> Layout Reconstruction comparison - {view_title}</h4>
-                            <div class="image-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-                                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
-                                    <img src="data:image/png;base64,{b64_before}" alt="Before View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-                                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Original Viewpoint ({view_title})</div>
-                                </div>
-                                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
-                                    <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-                                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Reconstructed Layout Preview ({view_title})</div>
-                                    <div style="margin-top: 10px;">
-                                        <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;"> Download Reconstructed View {idx+1}</a>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        """
-                        comparison_html_list.append(comparison_html)
+                # Generate comparison HTML respecting false-preview guard
+                state["image_box"].value = generate_comparison_html(state["session_path"], recon)
                 
                 # Check for placement errors
                 placement_errors = recon.get("placement_errors", [])
@@ -297,7 +338,6 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 else:
                     state["error_banner"].value = ""
                 
-                state["image_box"].value = "\n".join(comparison_html_list)
                 update_budget_display()
                 print(" Success! Updated the layout reconstruction image.")
             except Exception as e:
@@ -400,49 +440,8 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 state["no_space_products"] = []
                 state["rendered_products"] = []
                 state["buttons"] = {}
- 
-                # Fetch all processed viewpoint paths
-                reconstructed_views = sorted(list(session_path.glob("processed_reconstructed_*.png")))
-                if not reconstructed_views:
-                    reconstructed_views = [session_path / "processed_reconstructed.png"]
-                
-                comparison_html_list = []
-                for idx, after_path in enumerate(reconstructed_views):
-                    before_img_name = f"original_{idx + 1}.png"
-                    before_path = session_path / "original_images" / before_img_name
-                    if not before_path.exists():
-                        before_path = session_path / "processed_images" / f"processed_{idx + 1}.png"
-                    if not before_path.exists():
-                        before_path = session_path / "original_images" / "original_1.png"
-                    if not before_path.exists():
-                        before_path = session_path / "processed_images" / "processed_1.png"
-                        
-                    if after_path.exists() and before_path.exists():
-                        b64_before = image_to_base64(before_path)
-                        b64_after = image_to_base64(after_path)
-                        view_title = f"Viewpoint {idx + 1}"
-                        
-                        comparison_html = f"""
-                        <div style="margin-top: 15px; border-top: 1px solid #2d3748; padding-top: 15px;">
-                            <h4 style="color: #38bdf8; font-family: 'Inter', sans-serif; margin-bottom: 10px;"> Layout Reconstruction comparison - {view_title}</h4>
-                            <div class="image-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-                                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
-                                    <img src="data:image/png;base64,{b64_before}" alt="Before View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-                                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Original Viewpoint ({view_title})</div>
-                                </div>
-                                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
-                                    <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-                                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Reconstructed Layout Preview ({view_title})</div>
-                                    <div style="margin-top: 10px;">
-                                        <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;"> Download Reconstructed View {idx+1}</a>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        """
-                        comparison_html_list.append(comparison_html)
-                
-                state["image_box"] = widgets.HTML(value="\n".join(comparison_html_list))
+                recon_data = out.get("reconstruction", {})
+                state["image_box"] = widgets.HTML(value=generate_comparison_html(session_path, recon_data))
 
                 # Render dynamic styled dashboard header and spatial audit info
                 dashboard_details = f"""

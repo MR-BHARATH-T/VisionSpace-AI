@@ -188,25 +188,69 @@ class ReconstructionAgent:
 
     @staticmethod
     def normalize_product_dimensions(item: Dict[str, Any]) -> Dict[str, Any]:
+        # Priority order:
+        # 1. Exact catalog dims in item["dimensions"]
+        # 2. Specs in metadata or other keys
+        # 3. Regex on title
+        # 4. Fallback category defaults
+        
         dims = item.get("dimensions") or {}
         w = float(dims.get("width_cm") or item.get("width_cm") or 0.0)
         d = float(dims.get("depth_cm") or item.get("depth_cm") or 0.0)
         h = float(dims.get("height_cm") or item.get("height_cm") or 0.0)
         
-        source = "verified" if w > 0 else "estimated"
+        source = "verified" if w > 0 else None
+        confidence = 1.0 if source == "verified" else 0.55
         
-        category = str(item.get("category", "")).lower()
-        title = str(item.get("title", "")).lower()
+        title_lower = str(item.get("title", item.get("name", ""))).lower()
         
-        if w == 0 or d == 0 or h == 0:
-            source = "category_default"
+        if not source:
+            # Try to match specs in item metadata
+            meta = item.get("metadata") or {}
+            if "width" in meta or "depth" in meta or "height" in meta:
+                w = float(meta.get("width") or meta.get("width_cm") or 0.0)
+                d = float(meta.get("depth") or meta.get("depth_cm") or 0.0)
+                h = float(meta.get("height") or meta.get("height_cm") or 0.0)
+                if w > 0:
+                    source = "metadata"
+                    confidence = 0.90
+        
+        if not source:
+            # Check title regex patterns
+            import re
+            # Check for patterns like "120x60x75" or "80x30x180"
+            cross_match = re.search(r'(\d+)\s*x\s*(\d+)(?:\s*x\s*(\d+))?\s*(?:cm)?', title_lower)
+            if cross_match:
+                w = float(cross_match.group(1))
+                d = float(cross_match.group(2))
+                if cross_match.group(3):
+                    h = float(cross_match.group(3))
+                else:
+                    h = 60.0
+                source = "title_regex_cross"
+                confidence = 0.80
+            else:
+                # Check for inch pattern like "52 in." or "52 inch" or "52\""
+                inch_match = re.search(r'(\d+)\s*(?:in|inch|”|")', title_lower)
+                if inch_match:
+                    val_cm = float(inch_match.group(1)) * 2.54
+                    w = val_cm
+                    d = val_cm
+                    h = 30.0 # ceiling fan height or tv unit
+                    source = "title_regex_inch"
+                    confidence = 0.80
+                    
+        if not source:
+            source = "category_estimate"
+            confidence = 0.55
+            category = str(item.get("category", "")).lower()
             if "desk" in category or "table" in category:
                 w, d, h = 100.0, 60.0, 75.0
             elif "chair" in category or "seating" in category:
                 w, d, h = 60.0, 60.0, 85.0
-            elif "bookshelf" in category or "shelf" in category or "bookcase" in title:
+            elif "bookshelf" in category or "shelf" in category or "bookcase" in title_lower:
                 w, d, h = 80.0, 30.0, 180.0
-            elif "tv unit" in title or "tv stand" in title or "television" in category:
+            elif "tv unit" in title_lower or "tv stand" in title_lower or "television" in category:
                 w, d, h = 120.0, 40.0, 50.0
             elif "bed" in category:
                 w, d, h = 150.0, 200.0, 80.0
@@ -219,8 +263,6 @@ class ReconstructionAgent:
             else:
                 w, d, h = 60.0, 60.0, 60.0
                 
-        confidence = 1.0 if source == "verified" else 0.70
-        
         return {
             "width_cm": w,
             "depth_cm": d,
@@ -260,11 +302,64 @@ class ReconstructionAgent:
         spatial_output: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Runs the Phase 7 strict 3D collision clearance and placement solver."""
-        room_dim = spatial_output.get("room_dimensions", {}) if spatial_output else {}
-        room_w = float(room_dim.get("width") or 4.0) * 100.0
-        room_d = float(room_dim.get("length") or 5.0) * 100.0
-        room_h = float(room_dim.get("height") or 2.7) * 100.0
+        # Standardize room dimensions
+        room_dim_m = spatial_output.get("room_dimensions", {}) if spatial_output else {}
+        room_w = float(room_dim_m.get("width") or 4.0) * 100.0
+        room_d = float(room_dim_m.get("length") or 5.0) * 100.0
+        room_h = float(room_dim_m.get("height") or 2.7) * 100.0
+        
+        walkability_score = float(spatial_output.get("walkability_score", 100.0)) if spatial_output else 100.0
+        usable_area = float(spatial_output.get("usable_area", 9.7)) if spatial_output else 9.7
+        w_mode = "normal"
+        if walkability_score < 30.0:
+            w_mode = "micro"
+        elif walkability_score < 50.0:
+            w_mode = "ultra_compact"
+        elif walkability_score < 75.0:
+            w_mode = "compact"
+            
+        clearance = self.PLACEMENT_CONFIG.get(w_mode, self.PLACEMENT_CONFIG["compact"])
 
+        # Strict Rejection if Spatial Output is Unknown
+        if spatial_output and spatial_output.get("feasibility_status") == "unknown":
+            validated_results = []
+            for item in recommended:
+                p_id = item.get("product_id")
+                norm_dims = self.normalize_product_dimensions(item)
+                validated_results.append({
+                    "product_id": p_id,
+                    "name": item.get("title", item.get("name", "furniture")),
+                    "item": item,
+                    "feasibility_status": "unknown",
+                    "placement_status": "not_placed",
+                    "placement": {
+                        "domain": self.classify_product(item),
+                        "world_coordinates": {},
+                        "rotation_deg": 0
+                    },
+                    "dimensions": norm_dims,
+                    "dimension_status": "insufficient_data"
+                })
+            return {
+                "validated_results": validated_results,
+                "placement_errors": [{
+                    "product_id": "all",
+                    "type": "insufficient_spatial_geometry",
+                    "message": "Insufficient spatial geometry for reliable placement."
+                }],
+                "status_counts": {"perfect": 0, "adaptive": 0, "best_available": 0, "wall": 0, "ceiling": 0, "surface": 0, "failed": len(recommended)},
+                "room_w": room_w,
+                "room_h": room_h,
+                "room_d": room_d,
+                "usable_area": 0.0,
+                "walkability_score": 0.0,
+                "w_mode": w_mode
+            }
+
+        # Canonical Coordinate System Boxes:
+        # x_cm: 0 to room_w
+        # y_cm: 0 to room_d (depth)
+        # z_cm: 0 to room_h (vertical height)
         occupied_3d_boxes = []
 
         existing_objects = vision_output.get("objects", []) if vision_output else []
@@ -272,34 +367,32 @@ class ReconstructionAgent:
             pos = obj.get("room_position") or obj.get("position")
             dims = obj.get("estimated_dimensions") or {}
             if pos:
-                x_cm = float(pos.get("x_cm") or pos.get("x") or 0.0)
-                y_cm = float(pos.get("y_cm") or pos.get("y") or 0.0)
-                z_cm = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                cx_old = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                cy_old = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                cz_old = float(pos.get("z_cm") or pos.get("z") or 0.0)
                 
-                if abs(x_cm) < 15.0: x_cm *= 100.0
-                if abs(y_cm) < 15.0: y_cm *= 100.0
-                if abs(z_cm) < 15.0: z_cm *= 100.0
+                if abs(cx_old) < 15.0: cx_old *= 100.0
+                if abs(cy_old) < 15.0: cy_old *= 100.0
+                if abs(cz_old) < 15.0: cz_old *= 100.0
                 
                 w_cm = float(dims.get("width_cm") or dims.get("width") or 80.0)
                 d_cm = float(dims.get("depth_cm") or dims.get("depth") or 80.0)
                 h_cm = float(dims.get("height_cm") or dims.get("height") or 80.0)
                 
-                walkability_score = float(spatial_output.get("walkability_score", 100.0)) if spatial_output else 100.0
-                is_spacious = (walkability_score >= 50.0)
-                if is_spacious and any(k in obj.get("name", "").lower() or k in obj.get("category", "").lower() for k in ["bed", "sofa", "couch"]):
-                    w_cm_collision = w_cm + 100.0
-                    d_cm_collision = d_cm + 60.0
-                elif any(k in obj.get("name", "").lower() or k in obj.get("category", "").lower() for k in ["bed", "sofa", "couch"]):
-                    w_cm_collision = w_cm + 30.0
-                    d_cm_collision = d_cm + 30.0
-                else:
-                    w_cm_collision = w_cm
-                    d_cm_collision = d_cm
-
+                # Shift to new coordinate system
+                cx = cx_old + room_w / 2
+                cy = cz_old
+                cz = room_h / 2 - cy_old # height axis mapping
+                
+                # Ensure coordinate axes boundaries
+                cx = max(w_cm/2, min(room_w - w_cm/2, cx))
+                cy = max(d_cm/2, min(room_d - d_cm/2, cy))
+                cz = max(h_cm/2, min(room_h - h_cm/2, cz))
+                
                 occupied_3d_boxes.append((
-                    x_cm - w_cm_collision/2, x_cm + w_cm_collision/2,
-                    y_cm - h_cm/2, y_cm + h_cm/2,
-                    z_cm - d_cm_collision/2, z_cm + d_cm_collision/2,
+                    cx - w_cm/2, cx + w_cm/2,
+                    cy - d_cm/2, cy + d_cm/2,
+                    cz - h_cm/2, cz + h_cm/2,
                     obj.get("name", "object").lower()
                 ))
 
@@ -308,21 +401,25 @@ class ReconstructionAgent:
             pos = door.get("room_position")
             dims = door.get("estimated_dimensions") or {}
             if pos:
-                x_cm = float(pos.get("x_cm") or pos.get("x") or 0.0)
-                y_cm = float(pos.get("y_cm") or pos.get("y") or 0.0)
-                z_cm = float(pos.get("z_cm") or pos.get("z") or 0.0)
-                if abs(x_cm) < 15.0: x_cm *= 100.0
-                if abs(y_cm) < 15.0: y_cm *= 100.0
-                if abs(z_cm) < 15.0: z_cm *= 100.0
+                cx_old = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                cy_old = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                cz_old = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                if abs(cx_old) < 15.0: cx_old *= 100.0
+                if abs(cy_old) < 15.0: cy_old *= 100.0
+                if abs(cz_old) < 15.0: cz_old *= 100.0
                 
                 w_cm = float(dims.get("width_cm") or dims.get("width") or 90.0)
                 d_cm = float(dims.get("depth_cm") or dims.get("depth") or 10.0)
                 h_cm = float(dims.get("height_cm") or dims.get("height") or 200.0)
                 
+                cx = cx_old + room_w / 2
+                cy = cz_old
+                cz = room_h / 2 - cy_old
+                
                 occupied_3d_boxes.append((
-                    x_cm - w_cm/2, x_cm + w_cm/2,
-                    y_cm - h_cm/2, y_cm + h_cm/2,
-                    z_cm - d_cm/2, z_cm + d_cm/2,
+                    cx - w_cm/2, cx + w_cm/2,
+                    cy - d_cm/2, cy + d_cm/2,
+                    cz - h_cm/2, cz + h_cm/2,
                     "door"
                 ))
 
@@ -331,63 +428,49 @@ class ReconstructionAgent:
             pos = win.get("room_position")
             dims = win.get("estimated_dimensions") or {}
             if pos:
-                x_cm = float(pos.get("x_cm") or pos.get("x") or 0.0)
-                y_cm = float(pos.get("y_cm") or pos.get("y") or 0.0)
-                z_cm = float(pos.get("z_cm") or pos.get("z") or 0.0)
-                if abs(x_cm) < 15.0: x_cm *= 100.0
-                if abs(y_cm) < 15.0: y_cm *= 100.0
-                if abs(z_cm) < 15.0: z_cm *= 100.0
+                cx_old = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                cy_old = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                cz_old = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                if abs(cx_old) < 15.0: cx_old *= 100.0
+                if abs(cy_old) < 15.0: cy_old *= 100.0
+                if abs(cz_old) < 15.0: cz_old *= 100.0
                 
                 w_cm = float(dims.get("width_cm") or dims.get("width") or 120.0)
                 d_cm = float(dims.get("depth_cm") or dims.get("depth") or 10.0)
                 h_cm = float(dims.get("height_cm") or dims.get("height") or 120.0)
                 
+                cx = cx_old + room_w / 2
+                cy = cz_old
+                cz = room_h / 2 - cy_old
+                
                 occupied_3d_boxes.append((
-                    x_cm - w_cm/2, x_cm + w_cm/2,
-                    y_cm - h_cm/2, y_cm + h_cm/2,
-                    z_cm - d_cm/2, z_cm + d_cm/2,
+                    cx - w_cm/2, cx + w_cm/2,
+                    cy - d_cm/2, cy + d_cm/2,
+                    cz - h_cm/2, cz + h_cm/2,
                     "window"
                 ))
 
-        walkability_score = float(spatial_output.get("walkability_score", 100.0)) if spatial_output else 100.0
-        
-        occupied_floor_area = 0.0
-        for obj in existing_objects:
-            dims = obj.get("estimated_dimensions") or {}
-            w_cm = float(dims.get("width_cm") or dims.get("width") or 80.0)
-            d_cm = float(dims.get("depth_cm") or dims.get("depth") or 80.0)
-            obj_y = float(obj.get("room_position", {}).get("y", 0.0) or 0.0)
-            if abs(obj_y) < 15.0: obj_y *= 100.0
-            
-            def quick_zone(name_str, y_val):
-                n_l = str(name_str).lower()
-                if any(k in n_l for k in ["fan", "chandelier", "pendant"]): return "ceiling"
-                if any(k in n_l for k in ["ac", "conditioner", "artwork", "painting", "projector", "screen", "tv", "television", "mirror", "window", "clock"]): return "wall"
-                if y_val < -80.0: return "ceiling"
-                if y_val < -20.0: return "wall"
-                return "floor"
-                
-            if quick_zone(obj.get("name", ""), obj_y) == "floor":
-                occupied_floor_area += (w_cm * d_cm) / 10000.0
-                
-        usable_area = float(spatial_output.get("usable_area", 9.7)) if spatial_output else 9.7
-        
-        if walkability_score >= 75.0 and usable_area >= 12.0:
-            w_mode = "normal"
-        elif walkability_score >= 50.0:
-            w_mode = "compact"
-        elif walkability_score >= 30.0:
-            w_mode = "ultra_compact"
-        else:
-            w_mode = "micro"
-
-        clearance = self.PLACEMENT_CONFIG[w_mode]
-        
         validated_results = []
         status_counts = {"perfect": 0, "adaptive": 0, "best_available": 0, "wall": 0, "ceiling": 0, "surface": 0, "failed": 0}
         placement_errors = []
-        
-        for idx, item in enumerate(recommended):
+
+        # Sort recommended items: Larger floor items first to establish sequential occupancy
+        def get_solve_priority(p):
+            dom = self.classify_product(p)
+            dims = self.normalize_product_dimensions(p)
+            area = dims["width_cm"] * dims["depth_cm"]
+            if dom == "floor":
+                return (0, -area)
+            elif dom == "wall":
+                return (1, -area)
+            elif dom == "ceiling":
+                return (2, -area)
+            else:
+                return (3, -area)
+                
+        sorted_items = sorted(recommended, key=get_solve_priority)
+
+        for idx, item in enumerate(sorted_items):
             p_id = item.get("product_id")
             category = str(item.get("category", "")).lower()
             title_l = str(item.get("title", "")).lower()
@@ -400,152 +483,220 @@ class ReconstructionAgent:
             
             item["normalized_dimensions"] = norm_dims
             
+            # Confidence verification threshold check
+            is_verified_dims = "verified" if norm_dims["dimension_confidence"] >= 0.8 else "estimated"
+            
             placed = False
-            final_x, final_y, final_z = 0.0, 0.0, room_d / 2
+            final_x, final_y, final_z = 0.0, 0.0, 0.0
             status = "failed_no_space"
             
+            # Specialized Placement Solvers (Section 7)
             if domain == "ceiling":
+                # CeilingPlacementSolver
+                # Placed at z = room_h (ceiling)
+                ceiling_center_x = room_w / 2
+                ceiling_center_y = room_d / 2
                 for dx in [0.0, -30.0, 30.0, -60.0, 60.0]:
-                    for dz in [0.0, -30.0, 30.0, -60.0, 60.0]:
-                        test_x = max(-room_w/2 + w/2, min(room_w/2 - w/2, dx))
-                        test_z = max(d/2, min(room_d - d/2, room_d / 2 + dz))
-                        overlaps = False
-                        for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
-                            if "ceiling" in o_label or "fan" in o_label:
-                                if (test_x + w/2 > ox1 and test_x - w/2 < ox2) and (test_z + d/2 > oz1 and test_z - d/2 < oz2):
-                                    overlaps = True
-                                    break
-                        if not overlaps:
-                            final_x, final_z = test_x, test_z
-                            final_y = -room_h / 2 + h / 2
-                            placed = True
-                            status = "placed_ceiling"
-                            status_counts["ceiling"] += 1
-                            break
+                    for dy in [0.0, -30.0, 30.0, -60.0, 60.0]:
+                        test_x = ceiling_center_x + dx
+                        test_y = ceiling_center_y + dy
+                        
+                        # Boundary checks
+                        if w/2 <= test_x <= room_w - w/2 and d/2 <= test_y <= room_d - d/2:
+                            overlaps = False
+                            for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
+                                if "ceiling" in o_label or "fan" in o_label:
+                                    if (test_x + w/2 > ox1 and test_x - w/2 < ox2) and (test_y + d/2 > oy1 and test_y - d/2 < oy2):
+                                        overlaps = True
+                                        break
+                            if not overlaps:
+                                final_x = test_x
+                                final_y = test_y
+                                final_z = room_h - h/2 # Snap to ceiling top
+                                placed = True
+                                status = "placed_ceiling"
+                                status_counts["ceiling"] += 1
+                                break
                     if placed: break
                     
             elif domain == "wall":
-                wall_positions = [
-                    (0.0, room_d - d/2),
-                    (-room_w/2 + w/2, room_d/2),
-                    (room_w/2 - w/2, room_d/2)
+                # WallPlacementSolver
+                # Wall coordinates: left (x=w/2), right (x=room_w-w/2), front (y=d/2), back (y=room_d-d/2)
+                wall_candidates = [
+                    (w/2, room_d / 2, room_h / 2, 0), # left wall
+                    (room_w - w/2, room_d / 2, room_h / 2, 0), # right wall
+                    (room_w / 2, d/2, room_h / 2, 0), # front wall
+                    (room_w / 2, room_d - d/2, room_h / 2, 0) # back wall
                 ]
-                for wx, wz in wall_positions:
+                for wx, wy, wz, rot in wall_candidates:
                     overlaps = False
                     for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
                         if any(k in o_label for k in ["window", "door"]):
-                            if (wx + w/2 > ox1 and wx - w/2 < ox2) and (wz + d/2 > oz1 and wz - d/2 < oz2):
+                            if (wx + w/2 > ox1 and wx - w/2 < ox2) and (wy + d/2 > oy1 and wy - d/2 < oy2):
                                 overlaps = True
                                 break
                     if not overlaps:
-                        final_x, final_z = wx, wz
-                        final_y = -room_h / 4
+                        final_x = wx
+                        final_y = wy
+                        final_z = wz
                         placed = True
                         status = "placed_wall"
                         status_counts["wall"] += 1
                         break
                         
             elif domain == "surface":
+                # SurfacePlacementSolver
+                # Find a supporting surface in the room
                 support_found = False
-                for ox1, ox2, oy1, oy2, oz1, oz2, o_label in reversed(occupied_3d_boxes):
-                    if any(k in o_label for k in ["unit", "table", "stand", "dresser", "nightstand", "counter", "desk", "bookshelf", "cabinet"]):
-                        final_x = (ox1 + ox2) / 2
-                        final_z = (oz1 + oz2) / 2
-                        final_y = oy1 - h / 2 - 2.0
-                        support_found = True
-                        placed = True
-                        status = "placed_surface"
-                        status_counts["surface"] += 1
-                        break
+                surfaces = spatial_output.get("support_surfaces") or []
+                for s in surfaces:
+                    s_poly = s.get("footprint_polygon")
+                    if s_poly:
+                        sx1 = min(pt[0] for pt in s_poly)
+                        sx2 = max(pt[0] for pt in s_poly)
+                        sy1 = min(pt[1] for pt in s_poly)
+                        sy2 = max(pt[1] for pt in s_poly)
+                        sh = s.get("height_cm", 75.0)
+                        
+                        sw = sx2 - sx1
+                        sd = sy2 - sy1
+                        if w <= sw and d <= sd:
+                            final_x = (sx1 + sx2) / 2
+                            final_y = (sy1 + sy2) / 2
+                            final_z = sh + h/2 # Sits on surface
+                            support_found = True
+                            placed = True
+                            status = "placed_surface"
+                            status_counts["surface"] += 1
+                            break
+                            
+                # Check occupied boxes if not found in spatial_output
                 if not support_found:
-                    domain = "floor"
+                    for ox1, ox2, oy1, oy2, oz1, oz2, o_label in reversed(occupied_3d_boxes):
+                        if any(k in o_label for k in ["unit", "table", "stand", "dresser", "nightstand", "counter", "desk", "bookshelf", "cabinet"]):
+                            sw = ox2 - ox1
+                            sd = oy2 - oy1
+                            if w <= sw and d <= sd:
+                                final_x = (ox1 + ox2) / 2
+                                final_y = (oy1 + oy2) / 2
+                                final_z = oz2 + h/2
+                                support_found = True
+                                placed = True
+                                status = "placed_surface"
+                                status_counts["surface"] += 1
+                                break
+                if not support_found:
+                    placed = False
+                    status = "failed_no_space"
+                    err_msg = f"No valid support surface available for '{item.get('title', 'Item')}'."
+                    placement_errors.append({
+                        "product_id": p_id,
+                        "type": "no_support_surface",
+                        "message": err_msg
+                    })
                     
-            if domain == "floor":
-                candidate_x = [0.0]
+            elif domain == "floor":
+                # FloorPlacementSolver
+                # Search candidate locations from center outwards
+                candidate_x = [room_w / 2]
                 for step in range(15, int(room_w/2), 15):
-                    candidate_x.extend([-step, step])
-                candidate_z = [room_d/2]
+                    candidate_x.extend([room_w/2 - step, room_w/2 + step])
+                candidate_y = [room_d / 2]
                 for step in range(15, int(room_d/2), 15):
-                    candidate_z.extend([room_d/2 - step, room_d/2 + step])
+                    candidate_y.extend([room_d/2 - step, room_d/2 + step])
                     
                 min_penalty = 1e9
-                best_coords = (0.0, room_d/2)
+                best_coords = (room_w / 2, room_d / 2)
                 
                 for test_x in candidate_x:
-                    for test_z in candidate_z:
-                        test_x = max(-room_w/2 + w/2, min(room_w/2 - w/2, test_x))
-                        test_z = max(d/2, min(room_d - d/2, test_z))
+                    for test_y in candidate_y:
+                        test_x = max(w/2, min(room_w - w/2, test_x))
+                        test_y = max(d/2, min(room_d - d/2, test_y))
+                        test_z = h/2 # floor grounded
                         
                         ix1, ix2 = test_x - w/2, test_x + w/2
-                        iy1, iy2 = room_h/2 - h, room_h/2
-                        iz1, iz2 = test_z - d/2, test_z + d/2
+                        iy1, iy2 = test_y - d/2, test_y + d/2
+                        iz1, iz2 = test_z - h/2, test_z + h/2
                         
                         hard_collision = False
                         overlap_penalty = 0.0
                         walkway_penalty = 0.0
                         boundary_penalty = 0.0
                         
+                        # Validate clearances (collisions and openings)
                         for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
                             is_opening = ("window" in o_label or "door" in o_label)
-                            is_floor_obj = not ("window" in o_label or "door" in o_label or "ceiling" in o_label or "wall" in o_label)
-                            
-                            x_overlap = (ix2 - 4 > ox1 and ix1 + 4 < ox2)
-                            z_overlap = (iz2 - 4 > oz1 and iz1 + 4 < oz2) if not is_opening else True
-                            y_overlap = (iy2 - 4 > oy1 and iy1 + 4 < oy2) if not (is_floor_obj or is_opening) else True
+                            x_overlap = (ix2 - 2 > ox1 and ix1 + 2 < ox2)
+                            y_overlap = (iy2 - 2 > oy1 and iy1 + 2 < oy2)
+                            z_overlap = (iz2 - 2 > oz1 and iz1 + 2 < oz2)
                             
                             if x_overlap and y_overlap and z_overlap:
-                                if is_opening or "door" in o_label or "bed" in o_label or "wardrobe" in o_label:
+                                if is_opening or "door" in o_label or "bed" in o_label:
                                     hard_collision = True
                                 else:
                                     overlap_penalty += 100.0
                                     
                             if "bed" in o_label:
-                                req_clear = clearance["bed_side_clearance"]
-                                if ix1 - req_clear < ox2 and ix2 + req_clear > ox1 and iz1 - req_clear < oz2 and iz2 + req_clear > oz1:
+                                req_clear = clearance.get("bed_side_clearance", 45.0)
+                                if ix1 - req_clear < ox2 and ix2 + req_clear > ox1 and iy1 - req_clear < oy2 and iy2 + req_clear > oy1:
                                     walkway_penalty += 20.0
                                     
+                        # Wall adjacent preference for bookcases and cabinets
                         if any(k in category or k in title_l for k in ["bookshelf", "bookcase", "cabinet", "tv unit", "wardrobe"]):
-                            dist_wall = min(abs(ix1 - (-room_w/2)), abs(ix2 - (room_w/2)), abs(iz2 - room_d))
-                            boundary_penalty += dist_wall * 0.1
+                            dist_wall = min(ix1, room_w - ix2, iy1, room_d - iy2)
+                            boundary_penalty += dist_wall * 0.2
                             
                         total_penalty = overlap_penalty + walkway_penalty + boundary_penalty
                         
                         if not hard_collision and total_penalty == 0:
-                            final_x, final_z = test_x, test_z
-                            final_y = room_h/2 - h/2
+                            final_x, final_y, final_z = test_x, test_y, test_z
                             placed = True
                             status = "placed_perfect"
                             status_counts["perfect"] += 1
                             break
                         elif not hard_collision and total_penalty < min_penalty:
                             min_penalty = total_penalty
-                            best_coords = (test_x, test_z)
+                            best_coords = (test_x, test_y)
                             
                     if placed: break
                     
-                if not placed:
-                    if min_penalty < 50.0:
-                        final_x, final_z = best_coords
-                        final_y = room_h/2 - h/2
-                        placed = True
-                        status = "placed_adaptive"
-                        status_counts["adaptive"] += 1
-                    else:
-                        placed = False
-                        status = "failed_no_space"
-                        status_counts["failed"] += 1
-                        err_msg = f"No space available in the room to place '{item.get('title', 'Item')}'. Footprint: {w:.0f}x{d:.0f} cm."
+                if not placed and min_penalty < 50.0:
+                    final_x, final_y = best_coords
+                    final_z = h/2
+                    placed = True
+                    status = "placed_adaptive"
+                    status_counts["adaptive"] += 1
+                elif not placed:
+                    placed = False
+                    status = "failed_no_space"
+                    status_counts["failed"] += 1
+                    err_msg = f"No space available in the room to place '{item.get('title', 'Item')}'. Footprint: {w:.0f}x{d:.0f} cm."
+                    if not any(err["product_id"] == p_id for err in placement_errors):
                         placement_errors.append({
                             "product_id": p_id,
                             "type": "no_space_available",
                             "message": err_msg
                         })
-                        
+
+            # Grounding and Axes Boundary Assertions
             if placed:
+                # Add strict boundary assertions conformed to canonical world space
+                assert 0 <= final_x <= room_w, f"Coordinate final_x {final_x} out of width boundary [0, {room_w}]"
+                assert 0 <= final_y <= room_d, f"Coordinate final_y {final_y} out of depth boundary [0, {room_d}]"
+                assert 0 <= final_z <= room_h, f"Coordinate final_z {final_z} out of height boundary [0, {room_h}]"
+                
+                # Floor ground alignment check
+                if domain == "floor":
+                    assert abs(final_z - h/2) < 1.0, f"Floor object must be grounded on floor: z={final_z}, half-height={h/2}"
+                # Ceiling snap check
+                elif domain == "ceiling":
+                    assert abs(final_z - (room_h - h/2)) < 1.0, f"Ceiling object must snap to ceiling: z={final_z}, target={room_h - h/2}"
+
+                # Update sequential occupancy model
                 occupied_3d_boxes.append((
                     final_x - w/2, final_x + w/2,
-                    final_y - h/2, final_y + h/2,
-                    final_z - d/2, final_z + d/2,
+                    final_y - d/2, final_y + d/2,
+                    final_z - h/2, final_z + h/2,
                     title_l
                 ))
                 validated_results.append({
@@ -557,14 +708,14 @@ class ReconstructionAgent:
                     "placement": {
                         "domain": domain,
                         "world_coordinates": {
-                            "x_cm": final_x,
-                            "y_cm": final_y,
-                            "z_cm": final_z
+                            "x_cm": round(final_x, 1),
+                            "y_cm": round(final_y, 1),
+                            "z_cm": round(final_z, 1)
                         },
                         "rotation_deg": 0
                     },
                     "dimensions": norm_dims,
-                    "dimension_status": norm_dims["dimension_source"]
+                    "dimension_status": is_verified_dims
                 })
             else:
                 validated_results.append({
@@ -579,7 +730,7 @@ class ReconstructionAgent:
                         "rotation_deg": 0
                     },
                     "dimensions": norm_dims,
-                    "dimension_status": norm_dims["dimension_source"]
+                    "dimension_status": is_verified_dims
                 })
 
         return {
@@ -639,6 +790,7 @@ class ReconstructionAgent:
         missing_product_ids = []
         retry_count = 0
         inpaint_targets = []
+        gen_model_name = "runwayml/stable-diffusion-inpainting"
         
         if session_path:
             import pathlib
@@ -659,17 +811,78 @@ class ReconstructionAgent:
                     orig_images = [fallback_path]
                 else:
                     orig_images = [s_path / "processed_images" / "processed_1.png"]
-            
             def map_3d_to_2d(x_cm, y_cm, z_cm):
-                norm_x = max(0.0, min(1.0, (x_cm + room_w / 2) / room_w))
-                norm_y = max(0.0, min(1.0, z_cm / room_d))
+                norm_x = max(0.0, min(1.0, x_cm / room_w))
+                norm_depth = max(0.0, min(1.0, y_cm / room_d))
+                norm_height = max(0.0, min(1.0, z_cm / room_h))
+                
                 cx = 0.5
                 cy = 0.35
-                scale = 0.4 + 0.6 * norm_y
+                scale = 0.4 + 0.6 * norm_depth
+                
                 x_2d = cx + (norm_x - 0.5) * scale
-                norm_z = max(0.0, min(1.0, (y_cm + room_h / 2) / room_h))
+                norm_z = 1.0 - norm_height
                 y_2d = cy + (norm_z - 0.5) * 0.65 * scale
+                
                 return max(0.02, min(0.98, x_2d)), max(0.02, min(0.98, y_2d))
+
+            def convex_hull_2d(points):
+                points = sorted(list(set(points)))
+                if len(points) <= 1:
+                    return points
+                def cross(o, a, b):
+                    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+                lower = []
+                for pt in points:
+                    while len(lower) >= 2 and cross(lower[-2], lower[-1], pt) <= 0:
+                        lower.pop()
+                    lower.append(pt)
+                upper = []
+                for pt in reversed(points):
+                    while len(upper) >= 2 and cross(upper[-2], upper[-1], pt) <= 0:
+                        upper.pop()
+                    upper.append(pt)
+                return lower[:-1] + upper[:-1]
+
+            # Build and save placement plan JSON (Section 8)
+            placement_plan = []
+            for idx, p in enumerate(reconstruction_input):
+                wx = p["placement"]["world_coordinates"]["x_cm"]
+                wy = p["placement"]["world_coordinates"]["y_cm"]
+                wz = p["placement"]["world_coordinates"]["z_cm"]
+                dims = p["dimensions"]
+                w_cm = dims["width_cm"]
+                d_cm = dims["depth_cm"]
+                h_cm = dims["height_cm"]
+                
+                polygon_pts = []
+                for dx in [-w_cm/2, w_cm/2]:
+                    for dy in [-d_cm/2, d_cm/2]:
+                        for dz in [-h_cm/2, h_cm/2]:
+                            px, py = map_3d_to_2d(wx + dx, wy + dy, wz + dz)
+                            polygon_pts.append([px, py])
+                
+                placement_plan.append({
+                    "product_id": p["product_id"],
+                    "name": p["name"],
+                    "3d_coordinates": {
+                        "x_cm": wx,
+                        "y_cm": wy,
+                        "z_cm": wz
+                    },
+                    "clearances": {
+                        "left": round(wx - w_cm/2, 1),
+                        "right": round(room_w - (wx + w_cm/2), 1),
+                        "front": round(wy - d_cm/2, 1)
+                    },
+                    "perspective_aware_2d_projection_polygons_masks": polygon_pts,
+                    "depth_order": idx
+                })
+            
+            try:
+                save_json(placement_plan, s_path / "placement_plan.json")
+            except Exception as e:
+                logger.error("Failed to save placement_plan.json: %s", str(e))
 
             for img_idx, orig_image_path in enumerate(orig_images):
                 if orig_image_path.exists():
@@ -699,37 +912,26 @@ class ReconstructionAgent:
                             wz = p["placement"]["world_coordinates"]["z_cm"]
                             dims = p["dimensions"]
                             w_cm = dims["width_cm"]
+                            d_cm = dims["depth_cm"]
                             h_cm = dims["height_cm"]
                             
-                            cx_proj, cy_proj = map_3d_to_2d(wx, wy, wz)
+                            # 3D to 2D projection corner points
+                            pts_3d = []
+                            for dx in [-w_cm/2, w_cm/2]:
+                                for dy in [-d_cm/2, d_cm/2]:
+                                    for dz in [-h_cm/2, h_cm/2]:
+                                        px, py = map_3d_to_2d(wx + dx, wy + dy, wz + dz)
+                                        pts_3d.append((int(px * width), int(py * height)))
+                                        
+                            polygon_px = convex_hull_2d(pts_3d)
+                            xs_px = [pt[0] for pt in polygon_px]
+                            ys_px = [pt[1] for pt in polygon_px]
                             
-                            scale_factor = 0.4 + 0.6 * (wz / room_d)
-                            box_w = max(10, int((w_cm / room_w) * scale_factor * width))
-                            box_h = max(10, int((h_cm / room_h) * 0.65 * scale_factor * height))
-                            
-                            cx_proj = max(box_w/2/width + 0.02, min(0.98 - box_w/2/width, cx_proj))
-                            cy_proj = max(box_h/2/height + 0.02, min(0.98 - box_h/2/height, cy_proj))
-                            
-                            domain = p["placement"]["domain"]
-                            if domain == "floor" or domain == "surface":
-                                y2_px = min(height - 10, int(cy_proj * height + box_h / 2))
-                                x_center = int(cx_proj * width)
-                                paste_x = x_center - box_w // 2
-                                paste_y = y2_px - box_h
-                            elif domain == "ceiling":
-                                y1_px = max(10, int(cy_proj * height - box_h / 2))
-                                x_center = int(cx_proj * width)
-                                paste_x = x_center - box_w // 2
-                                paste_y = y1_px
-                            else:
-                                paste_x = int(cx_proj * width - box_w // 2)
-                                paste_y = int(cy_proj * height - box_h // 2)
-                                
-                            coords = (
-                                max(0, paste_x),
-                                max(0, paste_y),
-                                min(width, paste_x + box_w),
-                                min(height, paste_y + box_h)
+                            paste_box = (
+                                max(0, min(xs_px)),
+                                max(0, min(ys_px)),
+                                max(min(xs_px) + 10, min(width, max(xs_px))),
+                                max(min(ys_px) + 10, min(height, max(ys_px)))
                             )
                             
                             product_img = None
@@ -791,24 +993,24 @@ class ReconstructionAgent:
                                 d_p.text((150, 150), p["name"][:20], fill=(255,255,255,255), anchor="mm")
                                 product_img = placeholder
                                 
-                            scale_w = (coords[2] - coords[0]) / product_img.width
-                            scale_h = (coords[3] - coords[1]) / product_img.height
-                            aspect_scale = min(scale_w, scale_h)
+                            p_w_box = paste_box[2] - paste_box[0]
+                            p_h_box = paste_box[3] - paste_box[1]
                             
-                            p_w = max(10, int(product_img.width * aspect_scale))
-                            p_h = max(10, int(product_img.height * aspect_scale))
-                            
+                            scale = min(p_w_box / product_img.width, p_h_box / product_img.height)
+                            p_w = max(10, int(product_img.width * scale))
+                            p_h = max(10, int(product_img.height * scale))
                             p_resized = product_img.resize((p_w, p_h), Image.Resampling.LANCZOS)
                             
+                            domain = p["placement"]["domain"]
                             if domain == "floor" or domain == "surface":
-                                paste_y_adj = coords[3] - p_h
-                                paste_x_adj = (coords[0] + coords[2]) // 2 - p_w // 2
+                                paste_y_adj = paste_box[3] - p_h
+                                paste_x_adj = (paste_box[0] + paste_box[2]) // 2 - p_w // 2
                             elif domain == "ceiling":
-                                paste_y_adj = coords[1]
-                                paste_x_adj = (coords[0] + coords[2]) // 2 - p_w // 2
+                                paste_y_adj = paste_box[1]
+                                paste_x_adj = (paste_box[0] + paste_box[2]) // 2 - p_w // 2
                             else:
-                                paste_y_adj = (coords[1] + coords[3]) // 2 - p_h // 2
-                                paste_x_adj = (coords[0] + coords[2]) // 2 - p_w // 2
+                                paste_y_adj = (paste_box[1] + paste_box[3]) // 2 - p_h // 2
+                                paste_x_adj = (paste_box[0] + paste_box[2]) // 2 - p_w // 2
                                 
                             paste_box = (
                                 max(0, paste_x_adj),
@@ -822,7 +1024,8 @@ class ReconstructionAgent:
                             
                             mask_img = Image.new("L", base_img.size, 0)
                             mask_draw = ImageDraw.Draw(mask_img)
-                            mask_draw.rectangle((paste_box[0] - 10, paste_box[1] - 10, paste_box[2] + 10, paste_box[3] + 25), fill=255)
+                            # Boundary outline mask for local blending (Section 8)
+                            mask_draw.polygon(polygon_px, outline=255, width=15)
                             
                             clip_inpaint_prompt = f"Insert the provided exact {p['name']} reference at the validated position. Match room lighting, shadows, and perspective."
                             neg_prompt = "floating object, warped structure, distorted design, blurry outline, extra legs, wrong scale"
@@ -874,6 +1077,7 @@ class ReconstructionAgent:
                                                 img_b64 = img_b64.split(",")[1]
                                             base_img = Image.open(io.BytesIO(base64.b64decode(img_b64))).convert("RGBA")
                                             inpaint_success = True
+                                            gen_model_name = "black-forest-labs/FLUX.1-dev"
                                 except Exception as e:
                                     logger.warning("DeepInfra sequential inpaint failed: %s", str(e))
                                     
@@ -1066,11 +1270,18 @@ class ReconstructionAgent:
             "after_image": after_image,
             "difference_summary": diff_summary,
             "reconstruction": {
+                "status": "success" if (verified_product_ids and not missing_product_ids) else ("partial" if verified_product_ids else "empty"),
+                "selected_count": len(recommended),
+                "spatially_valid_count": len(reconstruction_input),
+                "verified_render_count": len(verified_product_ids),
+                "no_space_count": summary["no_space_count"],
+                "render_failed_count": summary["render_failed_count"],
+                "final_image_source": "reconstructed" if len(verified_product_ids) > 0 else "original",
+                "generative_model_name": gen_model_name,
                 "requested_product_ids": [p.get("product_id") for p in recommended],
                 "verified_product_ids": verified_product_ids,
                 "missing_product_ids": missing_product_ids,
-                "retry_count": retry_count,
-                "status": "success" if not missing_product_ids else "partial"
+                "retry_count": retry_count
             },
             "layout_1": {
                 "name": "Option 1: Primary Layout",

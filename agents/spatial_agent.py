@@ -849,12 +849,190 @@ class SpatialAgent:
         empty_regions = room_data.get("empty_regions", [])
         occupancy_grid = room_data.get("occupancy_grid", {})
 
+        # Build extended spatial analysis geometry
+        room_h_cm = int(float(room_data.get("ceiling", {}).get("height_cm", 290.0)))
+        
+        # 1. Floor & ceiling polygons
+        floor_polygon = [[0, 0], [room_w, 0], [room_w, room_d], [0, room_d]]
+        ceiling_polygon = [[0, 0], [room_w, 0], [room_w, room_d], [0, room_d]]
+        
+        # 2. Wall segments
+        wall_segments = [
+            {"wall_id": "wall_front", "start": [0, 0], "end": [room_w, 0]},
+            {"wall_id": "wall_right", "start": [room_w, 0], "end": [room_w, room_d]},
+            {"wall_id": "wall_back", "start": [room_w, room_d], "end": [0, room_d]},
+            {"wall_id": "wall_left", "start": [0, room_d], "end": [0, 0]}
+        ]
+        
+        # 3. Doors & Windows
+        doors = room_data.get("doors", [])
+        windows = room_data.get("windows", [])
+        doors_list = []
+        for idx, d in enumerate(doors):
+            pos = d.get("position", d.get("room_position", {}))
+            cx = float(pos.get("x_cm") or pos.get("x") or 0.0)
+            cy = float(pos.get("y_cm") or pos.get("y") or 0.0)
+            if abs(cx) < 15.0: cx *= 100.0
+            if abs(cy) < 15.0: cy *= 100.0
+            dims = d.get("estimated_dimensions") or {}
+            w_val = float(dims.get("width_cm") or dims.get("width") or 90.0)
+            doors_list.append({
+                "door_id": d.get("id", f"door_{idx}"),
+                "center": [cx, cy],
+                "width_cm": w_val
+            })
+            
+        windows_list = []
+        for idx, w_item in enumerate(windows):
+            pos = w_item.get("position", w_item.get("room_position", {}))
+            cx = float(pos.get("x_cm") or pos.get("x") or 0.0)
+            cy = float(pos.get("y_cm") or pos.get("y") or 0.0)
+            if abs(cx) < 15.0: cx *= 100.0
+            if abs(cy) < 15.0: cy *= 100.0
+            dims = w_item.get("estimated_dimensions") or {}
+            w_val = float(dims.get("width_cm") or dims.get("width") or 120.0)
+            windows_list.append({
+                "window_id": w_item.get("id", f"window_{idx}"),
+                "center": [cx, cy],
+                "width_cm": w_val
+            })
+            
+        # 4. Existing Objects
+        existing_objects = []
+        for idx, obj in enumerate(objects_list):
+            pos = obj.get("position", obj.get("room_position", {}))
+            cx = float(pos.get("x_cm") or pos.get("x") or 0.0)
+            cy = float(pos.get("y_cm") or pos.get("y") or 0.0)
+            if abs(cx) < 15.0: cx *= 100.0
+            if abs(cy) < 15.0: cy *= 100.0
+            
+            dims = obj.get("estimated_dimensions") or {}
+            w_val = float(dims.get("width_cm") or dims.get("width") or 80.0)
+            d_val = float(dims.get("depth_cm") or dims.get("depth") or 80.0)
+            h_val = float(dims.get("height_cm") or dims.get("height") or 80.0)
+            
+            existing_objects.append({
+                "object_id": obj.get("id", f"object_{idx}"),
+                "category": obj.get("category", obj.get("name", "furniture")),
+                "footprint_polygon": [
+                    [cx - w_val/2, cy - d_val/2],
+                    [cx + w_val/2, cy - d_val/2],
+                    [cx + w_val/2, cy + d_val/2],
+                    [cx - w_val/2, cy + d_val/2]
+                ],
+                "height_cm": h_val,
+                "movable": obj.get("movable", True)
+            })
+            
+        # 5. Blocked Regions, Walkable Regions, Candidate Floor, Candidate Wall, Candidate Ceiling, Support Surfaces
+        blocked_regions = []
+        for item in existing_objects:
+            blocked_regions.append({
+                "polygon": item["footprint_polygon"],
+                "height_cm": item["height_cm"],
+                "reason": f"Occupied by {item['category']}"
+            })
+        for d in doors_list:
+            cx, cy = d["center"]
+            w_val = d["width_cm"]
+            blocked_regions.append({
+                "polygon": [
+                    [cx - w_val, cy - w_val],
+                    [cx + w_val, cy - w_val],
+                    [cx + w_val, cy + w_val],
+                    [cx - w_val, cy + w_val]
+                ],
+                "height_cm": 200.0,
+                "reason": "Door swing clearance zone"
+            })
+            
+        walkable_regions = []
+        candidates = geom.get("placement_candidates", [])
+        for c in candidates:
+            cw = c["max_dimensions"]["width_cm"]
+            cd = c["max_dimensions"]["depth_cm"]
+            cx = c["center"]["x_cm"]
+            cy = c["center"]["y_cm"]
+            walkable_regions.append({
+                "polygon": [
+                    [cx - cw/2, cy - cd/2],
+                    [cx + cw/2, cy - cd/2],
+                    [cx + cw/2, cy + cd/2],
+                    [cx - cw/2, cy + cd/2]
+                ]
+            })
+            
+        candidate_floor_regions = []
+        for c in candidates:
+            cw = c["max_dimensions"]["width_cm"]
+            cd = c["max_dimensions"]["depth_cm"]
+            cx = c["center"]["x_cm"]
+            cy = c["center"]["y_cm"]
+            candidate_floor_regions.append({
+                "center": [cx, cy],
+                "width_cm": cw,
+                "depth_cm": cd,
+                "polygon": [
+                    [cx - cw/2, cy - cd/2],
+                    [cx + cw/2, cy - cd/2],
+                    [cx + cw/2, cy + cd/2],
+                    [cx - cw/2, cy + cd/2]
+                ]
+            })
+            
+        candidate_wall_regions = [
+            {"wall_id": "wall_front", "width_cm": room_w, "height_cm": room_h_cm},
+            {"wall_id": "wall_back", "width_cm": room_w, "height_cm": room_h_cm},
+            {"wall_id": "wall_left", "width_cm": room_d, "height_cm": room_h_cm},
+            {"wall_id": "wall_right", "width_cm": room_d, "height_cm": room_h_cm}
+        ]
+        
+        candidate_ceiling_regions = [
+            {
+                "center": [room_w / 2, room_d / 2],
+                "width_cm": room_w,
+                "depth_cm": room_d,
+                "polygon": [[0, 0], [room_w, 0], [room_w, room_d], [0, room_d]]
+            }
+        ]
+        
+        support_surfaces = []
+        for item in existing_objects:
+            if any(k in item["category"].lower() for k in ["table", "desk", "unit", "dresser", "nightstand", "counter", "cabinet", "bookshelf"]):
+                support_surfaces.append(item)
+                
+        # Insufficient check
+        feasibility_status = "valid"
+        reason = ""
+        if len(objects_list) == 0 or room_w <= 100 or room_d <= 100:
+            feasibility_status = "unknown"
+            reason = "Insufficient spatial geometry for reliable placement."
+
         return {
             "room_dimensions": {
                 "length": length_m,
                 "width": width_m,
                 "height": height_m
             },
+            "room_dimensions_cm": {
+                "length": room_d,
+                "width": room_w,
+                "height": room_h_cm
+            },
+            "floor_polygon": floor_polygon,
+            "wall_segments": wall_segments,
+            "ceiling_polygon": ceiling_polygon,
+            "doors": doors_list,
+            "windows": windows_list,
+            "existing_objects": existing_objects,
+            "blocked_regions": blocked_regions,
+            "walkable_regions": walkable_regions,
+            "candidate_floor_regions": candidate_floor_regions,
+            "candidate_wall_regions": candidate_wall_regions,
+            "candidate_ceiling_regions": candidate_ceiling_regions,
+            "support_surfaces": support_surfaces,
+            "feasibility_status": feasibility_status,
+            "reason": reason,
             "empty_regions": empty_regions,
             "usable_area": usable_area,
             "walkable_area": walkable_area,

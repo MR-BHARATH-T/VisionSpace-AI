@@ -201,6 +201,7 @@ class CommerceAgent:
             item.update(scores)
             # Add conformed schema score aliases matching Section 1
             item["fit_score"] = scores.get("fit_score", 0.8)
+            item["fit_status"] = scores.get("fit_status", "unknown")
             item["design_score"] = scores.get("design_score", 0.8)
             item["rank_score"] = scores.get("final_score", 0.8)
             scored.append(item)
@@ -620,22 +621,109 @@ class CommerceAgent:
           Final Score = 0.40 * fit_score + 0.25 * rating_score + 0.15 * design_score + 0.10 * brand_score + 0.10 * popularity_score
         """
         # 1. fit_score: how well dimensions fit the empty regions/clearance boundaries (40%)
-        empty_regions = []
-        if spatial_output:
-            empty_regions = spatial_output.get("empty_regions") or []
         prod_w = float(product.get("width_cm") or required_w)
         prod_d = float(product.get("depth_cm") or required_d)
+        prod_h = float(product.get("height_cm") or 60.0)
         
-        fit_score = 0.3
-        if empty_regions:
-            for region in empty_regions:
-                rw = float(region.get("width_cm") or 0.0)
-                rd = float(region.get("depth_cm") or 0.0)
-                if prod_w <= rw and prod_d <= rd:
-                    fit_score = 1.0
-                    break
+        # Determine room boundaries if available
+        room_w = 400.0
+        room_d = 500.0
+        if spatial_output and "room_dimensions_cm" in spatial_output:
+            room_w = float(spatial_output["room_dimensions_cm"].get("width", 400.0))
+            room_d = float(spatial_output["room_dimensions_cm"].get("length", 500.0))
+
+        # Classify placement domain
+        domain = "floor"
+        if any(k in prod_cat or k in prod_name for k in ["fan", "ceiling"]):
+            domain = "ceiling"
+        elif any(k in prod_cat or k in prod_name for k in ["artwork", "painting", "projector screen", "ac", "conditioner"]):
+            domain = "wall"
+        elif any(k in prod_cat or k in prod_name for k in ["laptop", "stand", "lamp", "coffee", "maker"]):
+            if not any(k in prod_cat or k in prod_name for k in ["table", "desk", "bookshelf"]):
+                domain = "surface"
+
+        fit_status = "unknown"
+        fit_score = 0.5
+
+        if spatial_output:
+            if domain == "ceiling":
+                ceilings = spatial_output.get("candidate_ceiling_regions", [])
+                if ceilings:
+                    fit_status = "no_space"
+                    fit_score = 0.1
+                    for c in ceilings:
+                        cw = float(c.get("width_cm") or room_w)
+                        cd = float(c.get("depth_cm") or room_d)
+                        if prod_w <= cw and prod_d <= cd:
+                            fit_status = "fits"
+                            fit_score = 1.0
+                            break
+                else:
+                    fit_status = "fits"
+                    fit_score = 0.9
+                    
+            elif domain == "wall":
+                walls = spatial_output.get("candidate_wall_regions", [])
+                if walls:
+                    fit_status = "no_space"
+                    fit_score = 0.1
+                    for w_seg in walls:
+                        ww = float(w_seg.get("width_cm", room_w))
+                        wh = float(w_seg.get("height_cm", 290.0))
+                        if prod_w <= ww and prod_h <= wh:
+                            fit_status = "fits"
+                            fit_score = 1.0
+                            break
+                else:
+                    fit_status = "fits"
+                    fit_score = 0.9
+                    
+            elif domain == "surface":
+                surfaces = spatial_output.get("support_surfaces", [])
+                if surfaces:
+                    fit_status = "no_space"
+                    fit_score = 0.1
+                    for s in surfaces:
+                        s_polygon = s.get("footprint_polygon", [])
+                        if s_polygon:
+                            sw = max(pt[0] for pt in s_polygon) - min(pt[0] for pt in s_polygon)
+                            sd = max(pt[1] for pt in s_polygon) - min(pt[1] for pt in s_polygon)
+                            if prod_w <= sw and prod_d <= sd:
+                                fit_status = "fits"
+                                fit_score = 1.0
+                                break
+                        else:
+                            fit_status = "fits"
+                            fit_score = 1.0
+                            break
+                else:
+                    fit_status = "no_space"
+                    fit_score = 0.0 # No surface exists to support accessories!
+                    
+            elif domain == "floor":
+                floors = spatial_output.get("candidate_floor_regions", [])
+                if not floors:
+                    floors = spatial_output.get("empty_regions", [])
+                
+                if floors:
+                    fit_status = "no_space"
+                    fit_score = 0.0
+                    for f in floors:
+                        fw = float(f.get("width_cm") or 0.0)
+                        fd = float(f.get("depth_cm") or 0.0)
+                        if prod_w <= fw and prod_d <= fd:
+                            fit_status = "fits"
+                            fit_score = 1.0
+                            break
+                        elif prod_w <= fw + 20.0 and prod_d <= fd + 20.0:
+                            fit_status = "tight_fit"
+                            fit_score = 0.7
+                else:
+                    fit_status = "unknown"
+                    fit_score = 0.5
         else:
-            fit_score = 1.0 if (prod_w <= required_w and prod_d <= required_d) else 0.5
+            fit_status = "fits" if (prod_w <= required_w and prod_d <= required_d) else "no_space"
+            fit_score = 1.0 if fit_status == "fits" else 0.2
 
         # 2. rating_score (25%)
         rating = float(product.get("rating") or product.get("quality_score", 0.8) * 5.0 or 4.0)
@@ -661,9 +749,12 @@ class CommerceAgent:
             0.10 * brand_score +
             0.10 * popularity_score
         )
+        if fit_status == "no_space":
+            final_score -= 1.0 # Ensure no_space items rank at the very bottom
         
         return {
             "fit_score": round(fit_score, 2),
+            "fit_status": fit_status,
             "rating_score": round(rating_score, 2),
             "design_score": round(design_score, 2),
             "brand_score": round(brand_score, 2),

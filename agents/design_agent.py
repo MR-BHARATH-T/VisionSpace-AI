@@ -46,23 +46,13 @@ class DesignAgent:
         """Orchestrates design plan recommendations generation."""
         logger.info("Generating style alignment and design recommendations...")
 
-        # Guard: Execute only if walkability_score >= 60
-        walkability_score = spatial_output.get("walkability_score", 0)
-        if walkability_score < 60:
-            logger.warning("Spatial walkability score %s < 60. Skipping Design recommendations.", walkability_score)
-            return {
-                "design_theme": f"modern {preferred_style}",
-                "wall_color": "warm white",
-                "floor_material": "oak wood",
-                "lighting_type": "warm lighting",
-                "dominant_colors": ["#ffffff", "#c49a6c"],
-                "style_score": 0.0
-            }
-
         # Extract merged scene if nested in a VisionAgent response structure
         if "merged_scene" in vision_output:
             vision_output = vision_output["merged_scene"]
 
+        walkability_score = spatial_output.get("walkability_score", 100)
+        design_mode = "space_constrained" if walkability_score < 60 else "standard"
+        
         prompt_system = (
             "You are the Design Agent of VisionSpace AI. Perform interior design evaluations.\n"
             "Analyze current styling, colors, lighting, and layout opportunities.\n"
@@ -72,7 +62,8 @@ class DesignAgent:
             f"Current room details:\n"
             f"- Room Type: {vision_output.get('room_type', 'bedroom')}\n"
             f"- Empty regions: {vision_output.get('empty_regions', [])}\n"
-            f"- Spatial walkability: {walkability_score}\n\n"
+            f"- Spatial walkability: {walkability_score}\n"
+            f"- Design Mode: {design_mode}\n\n"
             "Analyze the design aesthetics and return conforming JSON:\n"
             "{\n"
             '  "design_theme": "string (e.g. modern minimal)",\n'
@@ -80,7 +71,31 @@ class DesignAgent:
             '  "floor_material": "string",\n'
             '  "lighting_type": "string (e.g. warm lighting)",\n'
             '  "dominant_colors": ["hex_colors"],\n'
-            '  "style_score": number\n'
+            '  "style_score": number,\n'
+            '  "recommended_additions": [\n'
+            '    {\n'
+            '      "item_type": "string (e.g. bookcase, table, chair, ceiling_fan, projector, coffee_maker)",\n'
+            '      "priority": "recommended | required",\n'
+            '      "preferred_zone": {\n'
+            '        "zone_type": "wall_adjacent | corner | ceiling_center | support_surface",\n'
+            '        "wall_id": "wall_left | wall_right | wall_front | wall_back | none",\n'
+            '        "reason": "string"\n'
+            '      },\n'
+            '      "placement_constraints": {\n'
+            '        "must_be_floor_supported": boolean,\n'
+            '        "must_be_wall_adjacent": boolean,\n'
+            '        "avoid_window": boolean,\n'
+            '        "avoid_door": boolean,\n'
+            '        "minimum_front_clearance_cm": number\n'
+            '      }\n'
+            '    }\n'
+            '  ],\n'
+            '  "rejected_requests": [\n'
+            '    {\n'
+            '      "item": "string (e.g. large bookshelf)",\n'
+            '      "reason": "string"\n'
+            '    }\n'
+            '  ]\n'
             "}"
         )
 
@@ -88,7 +103,7 @@ class DesignAgent:
             llm_res = self.text_model.generate(
                 system_prompt=prompt_system,
                 prompt=prompt_user,
-                max_new_tokens=512,
+                max_new_tokens=1024,
                 temperature=0.1,
                 enable_thinking=True
             )
@@ -99,7 +114,7 @@ class DesignAgent:
             llm_data = {}
 
         # Fuses final output payload
-        final_output = self._fuse_design_payload(llm_data, preferred_style, budget)
+        final_output = self._fuse_design_payload(llm_data, preferred_style, budget, design_mode)
 
         # Save output if path is given
         if session_path is not None:
@@ -245,13 +260,83 @@ class DesignAgent:
             "confidence_score": 0.85
         }
 
-    def _fuse_design_payload(self, llm_data: Dict[str, Any], style: str, budget: float | int) -> Dict[str, Any]:
+    def _fuse_design_payload(self, llm_data: Dict[str, Any], style: str, budget: float | int, design_mode: str = "standard") -> Dict[str, Any]:
         """Conforms output structure strictly to Design Agent schema."""
+        default_additions = [
+            {
+                "item_type": "study table",
+                "priority": "required",
+                "preferred_zone": {
+                    "zone_type": "wall_adjacent",
+                    "wall_id": "wall_left",
+                    "reason": "Workspace next to left wall."
+                },
+                "placement_constraints": {
+                    "must_be_floor_supported": True,
+                    "must_be_wall_adjacent": True,
+                    "avoid_window": True,
+                    "avoid_door": True,
+                    "minimum_front_clearance_cm": 45 if design_mode == "space_constrained" else 60
+                }
+            },
+            {
+                "item_type": "bookshelf",
+                "priority": "recommended",
+                "preferred_zone": {
+                    "zone_type": "wall_adjacent",
+                    "wall_id": "wall_back",
+                    "reason": "Vertical storage on rear wall."
+                },
+                "placement_constraints": {
+                    "must_be_floor_supported": True,
+                    "must_be_wall_adjacent": True,
+                    "avoid_window": True,
+                    "avoid_door": True,
+                    "minimum_front_clearance_cm": 30 if design_mode == "space_constrained" else 45
+                }
+            },
+            {
+                "item_type": "ceiling fan",
+                "priority": "recommended",
+                "preferred_zone": {
+                    "zone_type": "ceiling_center",
+                    "wall_id": "none",
+                    "reason": "Central placement on ceiling."
+                },
+                "placement_constraints": {
+                    "must_be_floor_supported": False,
+                    "must_be_wall_adjacent": False,
+                    "avoid_window": False,
+                    "avoid_door": False,
+                    "minimum_front_clearance_cm": 0
+                }
+            }
+        ]
+        
+        default_rejected = []
+        if design_mode == "space_constrained":
+            default_rejected = [
+                {
+                    "item": "large bookshelf",
+                    "reason": "Insufficient floor clearance in space-constrained room."
+                },
+                {
+                    "item": "large sofa",
+                    "reason": "Exceeds available room footprint."
+                }
+            ]
+
+        recommended_additions = llm_data.get("recommended_additions") or default_additions
+        rejected_requests = llm_data.get("rejected_requests") or default_rejected
+        
         return {
+            "design_mode": design_mode,
             "design_theme": str(llm_data.get("design_theme") or f"modern {style}"),
             "wall_color": str(llm_data.get("wall_color") or "warm white"),
             "floor_material": str(llm_data.get("floor_material") or "oak wood"),
             "lighting_type": str(llm_data.get("lighting_type") or "warm lighting"),
             "dominant_colors": list(llm_data.get("dominant_colors") or ["#ffffff", "#c49a6c"]),
-            "style_score": float(llm_data.get("style_score") if llm_data.get("style_score") is not None else 0.91)
+            "style_score": float(llm_data.get("style_score") if llm_data.get("style_score") is not None else 0.91),
+            "recommended_additions": recommended_additions,
+            "rejected_requests": rejected_requests
         }
