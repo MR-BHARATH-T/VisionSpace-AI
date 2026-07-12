@@ -1007,6 +1007,18 @@ class ReconstructionAgent:
                                 d_p.rectangle([15, 15, 285, 285], outline=(255,255,255,220), width=6)
                                 d_p.text((150, 150), p["name"][:20], fill=(255,255,255,255), anchor="mm")
                                 product_img = placeholder
+                            # Calculate perspective rotation based on room position (left, center, right)
+                            rotation_angle = 0.0
+                            domain = p["placement"]["domain"]
+                            if domain == "floor" or domain == "surface":
+                                rel_x = (wx - room_w / 2) / (room_w / 2) if room_w > 0 else 0.0
+                                rotation_angle = -rel_x * 12.0
+                            elif domain == "wall":
+                                rel_x = (wx - room_w / 2) / (room_w / 2) if room_w > 0 else 0.0
+                                rotation_angle = -rel_x * 8.0
+                                
+                            if abs(rotation_angle) > 1.0 and product_img:
+                                product_img = product_img.rotate(rotation_angle, resample=Image.Resampling.BICUBIC, expand=True)
                                 
                             p_w_box = paste_box[2] - paste_box[0]
                             p_h_box = paste_box[3] - paste_box[1]
@@ -1046,10 +1058,10 @@ class ReconstructionAgent:
                             neg_prompt = "floating object, warped structure, distorted design, blurry outline, extra legs, wrong scale"
                             prompts.append(clip_inpaint_prompt)
                             
-                            target_strength = 0.52
+                            target_strength = 0.65
                             cat_l = p["item"].get("category", "").lower()
                             if any(k in cat_l for k in ["ac", "conditioner", "fan", "projector", "lamp", "light", "screen", "tv"]):
-                                target_strength = 0.42
+                                target_strength = 0.55
                                 
                             inpaint_success = False
                             if self.provider_name == "deepinfra" and os.environ.get("DEEPINFRA_API_KEY"):
