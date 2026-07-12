@@ -164,26 +164,25 @@ class ReconstructionAgent:
 
     @staticmethod
     def classify_product(item: Dict[str, Any]) -> str:
-        category = str(item.get("category", "")).lower()
-        title = str(item.get("title", "")).lower()
-        
-        # Ceiling domain
-        if any(k in category or k in title for k in ["fan", "chandelier", "pendant", "ceiling"]):
+        # Check if conformed fields already exist (backward compatibility)
+        if isinstance(item, dict):
+            p_domain = item.get("placement_domain")
+            p_cat = item.get("canonical_category")
+            if p_domain and p_cat:
+                domain = p_domain
+            else:
+                from utils.product_classifier import ProductClassifier
+                _, domain = ProductClassifier.classify(item)
+        else:
+            domain = "floor"
+            
+        # Map classifier domains to conformed local reconstruction domains
+        if domain == "ceiling":
             return "ceiling"
-            
-        # Surface domain (accessories)
-        if any(k in category or k in title for k in ["laptop", "stand", "support", "lamp", "light", "decor", "organizer", "coffee", "maker", "pot", "mug", "cup", "tray", "holder", "device", "accessory", "tablet"]):
-            # Make sure it's not a large desk/table itself
-            if not any(k in category or k in title for k in ["table", "desk", "cabinet", "unit", "bookshelf"]):
-                return "surface"
-                
-        # Wall domain
-        is_wall = any(k in category or k in title for k in ["artwork", "painting", "projector", "screen", "tv", "television", "mirror", "clock", "ac", "conditioner", "wall_art"])
-        is_floor_furniture = any(k in category or k in title for k in ["unit", "stand", "table", "cabinet", "portable", "credenza", "console", "bookcase", "chair", "desk"])
-        if is_wall and not is_floor_furniture:
+        elif domain in ["support_surface", "surface", "ceiling_or_surface"]:
+            return "surface"
+        elif domain in ["wall", "wall_or_surface"]:
             return "wall"
-            
-        # Default is floor
         return "floor"
 
     @staticmethod

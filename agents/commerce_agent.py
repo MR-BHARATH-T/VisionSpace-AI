@@ -107,7 +107,12 @@ class CommerceAgent:
             # Ceiling Fans (3 products for fallback)
             {"name": "Ceiling Fan Hugger 52 in. LED Indoor Brushed Nickel Ceiling Fan", "category": "ceiling fan", "brand": "Generic", "price": 4977.51, "style": "modern", "width_cm": 130, "depth_cm": 130, "quality_score": 0.88, "link": "https://www.google.com/search?tbm=shop&q=Ceiling+Fan+Hugger+52+in.+LED+Indoor+Brushed+Nickel+Ceiling+Fan"},
             {"name": "Hugger 52 in. LED Indoor Black Ceiling Fan", "category": "ceiling fan", "brand": "Generic", "price": 4977.51, "style": "modern", "width_cm": 130, "depth_cm": 130, "quality_score": 0.87, "link": "https://www.google.com/search?tbm=shop&q=Hugger+52+in.+LED+Indoor+Black+Ceiling+Fan"},
-            {"name": "Visual Comfort Fan Ikon 44\" Ceiling Fan", "category": "ceiling fan", "brand": "Generic", "price": 26493.60, "style": "modern", "width_cm": 110, "depth_cm": 110, "quality_score": 0.9, "link": "https://www.google.com/search?tbm=shop&q=Visual+Comfort+Fan+Ikon+44%22+Ceiling+Fan"}
+            {"name": "Visual Comfort Fan Ikon 44\" Ceiling Fan", "category": "ceiling fan", "brand": "Generic", "price": 26493.60, "style": "modern", "width_cm": 110, "depth_cm": 110, "quality_score": 0.9, "link": "https://www.google.com/search?tbm=shop&q=Visual+Comfort+Fan+Ikon+44%22+Ceiling+Fan"},
+            
+            # Mock Air Coolers, Coffee Makers, Laptop Stands (Step 13/14)
+            {"name": "Symphony Diet 12T Personal Tower Air Cooler", "category": "air cooler", "brand": "Symphony", "price": 5999, "style": "modern", "width_cm": 38, "depth_cm": 35, "quality_score": 0.85, "link": "https://www.google.com/search?q=Symphony+Air+Cooler"},
+            {"name": "Havells Coffee Maker", "category": "coffee maker", "brand": "Havells", "price": 2499, "style": "modern", "width_cm": 25, "depth_cm": 20, "quality_score": 0.8, "link": "https://www.google.com/search?q=Havells+Coffee+Maker"},
+            {"name": "Gizga Essentials Laptop Stand", "category": "laptop holder", "brand": "Gizga", "price": 999, "style": "modern", "width_cm": 28, "depth_cm": 23, "quality_score": 0.78, "link": "https://www.google.com/search?q=Gizga+Laptop+Stand"}
         ]
         logger.info("CommerceAgent initialized (Provider: %s)", provider)
 
@@ -393,7 +398,8 @@ class CommerceAgent:
 
         # Process each category independently to ensure we never truncate entire categories!
         for cat in categories or ["desk"]:
-            cat_results = []
+            branded_results = []
+            fallback_results = []
             
             # Step A: Try searching with preferred brands first
             if preferred_brands:
@@ -415,7 +421,7 @@ class CommerceAgent:
                                 for item in shopping_results:
                                     parsed = parse_item(item, cat, brand)
                                     if parsed:
-                                        cat_results.append(parsed)
+                                        branded_results.append(parsed)
                             break # Success, exit retry loop
                         except Exception as e:
                             logger.warning("Branded query failed (Attempt %d/%d) for '%s': %s", attempt+1, max_retries, query, str(e))
@@ -425,7 +431,7 @@ class CommerceAgent:
             # Step B: Generic search fallback
             # If branded search returned 0 items, or if no preferred brands are set:
             # We run a generic category search to ensure we ALWAYS return products of ANY brand!
-            if not cat_results:
+            if not branded_results:
                 query = cat
                 max_retries = 2
                 import time
@@ -445,18 +451,23 @@ class CommerceAgent:
                                 detected_brand = item.get("brand") or source or "Generic"
                                 parsed = parse_item(item, cat, detected_brand)
                                 if parsed:
-                                    cat_results.append(parsed)
+                                    fallback_results.append(parsed)
                         break # Success, exit retry loop
                     except Exception as e:
                         logger.warning("Generic query failed (Attempt %d/%d) for '%s': %s", attempt+1, max_retries, query, str(e))
                         if attempt < max_retries - 1:
                             time.sleep(1.0)
-                    
+            
+            cat_results = branded_results if branded_results else fallback_results
+            
             # Step C: Category fallback check if live results are still empty
             if not cat_results:
                 logger.info("SerpAPI failed completely for category '%s'. Fetching fallbacks from local mock catalog...", cat)
-                mock_items = self._search_mock_catalog([cat])
-                cat_results.extend(mock_items)
+                try:
+                    mock_items = self._search_mock_catalog([cat])
+                    cat_results.extend(mock_items)
+                except Exception as mock_err:
+                    logger.error("Failed to fetch mock fallbacks for category '%s': %s", cat, str(mock_err))
                 
             results.extend(cat_results)
             
@@ -470,7 +481,7 @@ class CommerceAgent:
             matches = []
             for cat in categories:
                 normalized_cat = cat.lower()
-                words = ["bed", "desk", "chair", "table", "bookshelf", "shelf", "fan", "ac", "conditioner", "projector", "screen", "lamp", "light"]
+                words = ["bed", "desk", "chair", "table", "bookshelf", "shelf", "fan", "ac", "conditioner", "projector", "screen", "lamp", "light", "cooler", "coffee", "laptop", "holder", "stand", "maker"]
                 match_words = [w for w in words if w in normalized_cat]
                 
                 cat_matches = []
@@ -632,17 +643,25 @@ class CommerceAgent:
             room_w = float(spatial_output["room_dimensions_cm"].get("width", 400.0))
             room_d = float(spatial_output["room_dimensions_cm"].get("length", 500.0))
 
-        # Classify placement domain
-        prod_cat = product.get("category", "").lower()
-        prod_name = product.get("title", product.get("name", "")).lower()
+        # Classify placement domain using the reusable ProductClassifier
+        from utils.product_classifier import ProductClassifier
+        canonical_category, placement_domain = ProductClassifier.classify(product)
+        
+        # Enrich candidate product metadata (Section 6)
+        product["canonical_category"] = canonical_category
+        product["placement_domain"] = placement_domain
+        
         domain = "floor"
-        if any(k in prod_cat or k in prod_name for k in ["fan", "ceiling"]):
+        if placement_domain == "ceiling":
             domain = "ceiling"
-        elif any(k in prod_cat or k in prod_name for k in ["artwork", "painting", "projector screen", "ac", "conditioner"]):
+        elif placement_domain == "wall":
             domain = "wall"
-        elif any(k in prod_cat or k in prod_name for k in ["laptop", "stand", "lamp", "coffee", "maker"]):
-            if not any(k in prod_cat or k in prod_name for k in ["table", "desk", "bookshelf"]):
-                domain = "surface"
+        elif placement_domain in ["support_surface", "surface"]:
+            domain = "surface"
+        elif placement_domain == "wall_or_surface":
+            domain = "wall"
+        elif placement_domain == "ceiling_or_surface":
+            domain = "surface"
 
         fit_status = "unknown"
         fit_score = 0.5

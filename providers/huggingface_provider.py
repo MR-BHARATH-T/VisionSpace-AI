@@ -1279,15 +1279,20 @@ class HuggingFaceProvider(BaseProvider):
         if im_end_id is not None:
             terminators.append(im_end_id)
             
-        gen_config = GenerationConfig(
-            max_new_tokens=max_new,
-            do_sample=do_sample_val,
-            temperature=temp if do_sample_val else None,
-            top_p=top_p_val if do_sample_val else None,
-            repetition_penalty=1.1,
-            eos_token_id=terminators,
-            pad_token_id=tok.pad_token_id,
-        )
+        gen_kwargs = {
+            "max_new_tokens": max_new,
+            "do_sample": do_sample_val,
+            "repetition_penalty": 1.1,
+            "eos_token_id": terminators,
+            "pad_token_id": tok.pad_token_id,
+        }
+        if do_sample_val:
+            if temp is not None:
+                gen_kwargs["temperature"] = temp
+            if top_p_val is not None:
+                gen_kwargs["top_p"] = top_p_val
+                
+        gen_config = GenerationConfig(**gen_kwargs)
 
         # Load inputs & model execute with OOM recovery loop
         start_time = time.perf_counter()
@@ -1300,17 +1305,11 @@ class HuggingFaceProvider(BaseProvider):
                 inputs = self.prepare_inputs(final_messages, images=images, videos=videos, **kwargs)
                 input_length = inputs["input_ids"].shape[1] if "input_ids" in inputs else 0
 
-                # Dynamically scale max_length to bypass HF default limit (2048) without pre-allocation overhead
-                gen_config.max_length = input_length + max_new
-
                 try:
                     with torch.inference_mode():
                         outputs = self.model.generate(
                             **inputs,
                             generation_config=gen_config,
-                            max_new_tokens=max_new,
-                            max_length=gen_config.max_length,
-                            eos_token_id=terminators,
                             stopping_criteria=stopping_list
                         )
                 except (torch.cuda.OutOfMemoryError, RuntimeError) as oom_err:
