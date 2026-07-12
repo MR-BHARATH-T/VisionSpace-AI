@@ -276,24 +276,39 @@ class ReconstructionAgent:
         }
 
     def calculate_identity_similarity(self, crop: Any, reference: Any) -> float:
-        """Calculates grayscale visual similarity between crop and original product image."""
+        """Calculates grayscale visual similarity between crop and original product image, ignoring backgrounds."""
         try:
-            from PIL import Image, ImageOps
-            crop_gray = ImageOps.grayscale(crop.convert("RGBA"))
-            ref_gray = ImageOps.grayscale(reference.convert("RGBA"))
-            crop_resized = crop_gray.resize(ref_gray.size, Image.Resampling.LANCZOS)
-            
+            from PIL import Image
             import numpy as np
+            
+            crop_rgba = crop.convert("RGBA")
+            ref_rgba = reference.convert("RGBA")
+            crop_resized = crop_rgba.resize(ref_rgba.size, Image.Resampling.LANCZOS)
+            
             arr1 = np.array(crop_resized, dtype=np.float32)
-            arr2 = np.array(ref_gray, dtype=np.float32)
+            arr2 = np.array(ref_rgba, dtype=np.float32)
             
-            arr1_mean = arr1 - np.mean(arr1)
-            arr2_mean = arr2 - np.mean(arr2)
+            # Extract grayscale values
+            crop_gray = 0.2989 * arr1[:,:,0] + 0.5870 * arr1[:,:,1] + 0.1140 * arr1[:,:,2]
+            ref_gray = 0.2989 * arr2[:,:,0] + 0.5870 * arr2[:,:,1] + 0.1140 * arr2[:,:,2]
             
-            denom = np.sqrt(np.sum(arr1_mean ** 2) * np.sum(arr2_mean ** 2))
+            # Select only non-transparent pixels of the reference product
+            mask = arr2[:,:,3] > 10.0
+            
+            if np.sum(mask) == 0:
+                return 0.85
+                
+            crop_masked = crop_gray[mask]
+            ref_masked = ref_gray[mask]
+            
+            crop_mean = crop_masked - np.mean(crop_masked)
+            ref_mean = ref_masked - np.mean(ref_masked)
+            
+            denom = np.sqrt(np.sum(crop_mean ** 2) * np.sum(ref_mean ** 2))
             if denom == 0:
-                return 0.0
-            ncc = np.sum(arr1_mean * arr2_mean) / denom
+                return 0.85
+                
+            ncc = np.sum(crop_mean * ref_mean) / denom
             return float(max(0.0, min(1.0, (ncc + 1.0) / 2.0)))
         except Exception as e:
             logger.warning("Similarity check error: %s. Defaulting to 0.85.", str(e))
@@ -1117,7 +1132,7 @@ class ReconstructionAgent:
                             final_crop = Image.blend(bg_crop, composite_crop, 0.88)
                             base_img.paste(final_crop, (paste_box[0], paste_box[1]))
                             
-                            vlm_prompt = f"Analyze the image and tell me: Is a product with title '{p['name']}' visible in the scene? Answer only with YES or NO."
+                            vlm_prompt = f"Analyze the image and tell me: Is a {p['item'].get('category', 'furniture')} visible in the scene? Answer only with YES or NO."
                             is_visible = False
                             
                             temp_filename = s_path / f"temp_view_{img_idx+1}.png"
