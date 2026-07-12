@@ -340,11 +340,11 @@ class HuggingFaceProvider(BaseProvider):
     # Loader contracts & Validation
     # =========================================================================
     def load(self, model_name: str, task: str, config_kwargs: Dict[str, Any] = None) -> None:
-        if self.loaded and self.model_name == model_name:
+        if self.loaded and self.model_name == model_name and self.model is not None:
             return
 
         with self._lock:
-            if self.loaded and self.model_name == model_name:
+            if self.loaded and self.model_name == model_name and self.model is not None:
                 return
 
             if self.before_loading:
@@ -363,6 +363,8 @@ class HuggingFaceProvider(BaseProvider):
                 self.model = warm_entry["model"]
                 self.tokenizer = warm_entry["tokenizer"]
                 self.processor = warm_entry["processor"]
+                if self.processor is not None and self.tokenizer is not None:
+                    self.processor.tokenizer = self.tokenizer
                 self.loaded = True
                 if self.on_model_loaded:
                     self.on_model_loaded(model_name)
@@ -610,6 +612,9 @@ class HuggingFaceProvider(BaseProvider):
             if max_ctx is None:
                 max_ctx = 2048
             self.max_context_length = max_ctx
+
+            if self.processor is not None and self.tokenizer is not None:
+                self.processor.tokenizer = self.tokenizer
 
             self.loaded = True
 
@@ -885,13 +890,13 @@ class HuggingFaceProvider(BaseProvider):
             4. Return input_ids + pixel_values + image_grid_thw as a plain dict
                so model.generate(**inputs) works correctly.
         """
-        if not self.loaded or (self.tokenizer is None and self.processor is None):
+        if not self.loaded or (self.tokenizer is None and self.processor is None) or self.model is None:
             if hasattr(self, "model_name") and self.model_name and hasattr(self, "task") and self.task:
                 logger.warning("HuggingFaceProvider: lazy-loading missing parameters in prepare_inputs...")
                 self.load(self.model_name, self.task)
             
-            if not self.loaded or (self.tokenizer is None and self.processor is None):
-                raise RuntimeError(f"Model parameters must be loaded before preparing inputs. loaded={self.loaded}, tokenizer={self.tokenizer is not None}, processor={self.processor is not None}")
+            if not self.loaded or (self.tokenizer is None and self.processor is None) or self.model is None:
+                raise RuntimeError(f"Model parameters must be loaded before preparing inputs. loaded={self.loaded}, tokenizer={self.tokenizer is not None}, processor={self.processor is not None}, model={self.model is not None}")
 
         # Determine if we have visual inputs to process
         has_imgs = False
