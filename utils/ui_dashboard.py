@@ -32,6 +32,15 @@ def image_to_base64(img_path: pathlib.Path) -> str:
         return ""
 
 
+def execute_scripts_from_html(html_str: str) -> None:
+    """Extracts and displays script tags from HTML to force evaluation in Jupyter/Kaggle."""
+    import re
+    from IPython.display import HTML, display
+    scripts = re.findall(r'<script>(.*?)</script>', html_str, re.DOTALL)
+    for script_content in scripts:
+        display(HTML(f"<script>{script_content}</script>"))
+
+
 def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) -> str:
     """Generates the comparison HTML for viewpoints, respecting the strict false-preview guard."""
     reconstruction_meta = recon.get("reconstruction") or {}
@@ -687,7 +696,9 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                         btn.button_style = "info"
                 
                 # Generate comparison HTML respecting false-preview guard
-                state["image_box"].value = generate_comparison_html(state["session_path"], recon)
+                comparison_html_val = generate_comparison_html(state["session_path"], recon)
+                state["image_box"].value = comparison_html_val
+                execute_scripts_from_html(comparison_html_val)
                 
                 # Check for placement errors
                 placement_errors = recon.get("placement_errors", [])
@@ -942,6 +953,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 display(HTML(logs_html))
                 display(state["error_banner"])
                 display(state["image_box"])
+                execute_scripts_from_html(state["image_box"].value)
 
                 # Render dynamic catalog cards with "Try in Room" callback buttons
                 print("\n Recommended Products List (Click ' Place in Room' to test in layout):")
