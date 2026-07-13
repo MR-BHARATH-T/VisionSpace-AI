@@ -695,23 +695,58 @@ class ReconstructionAgent:
                     
                 if not placed:
                     if domain == "wall":
-                        final_x, final_y, final_z = w/2, room_d / 2, room_h * 0.7
-                    else:
+                        # Reject wall items if they overlap windows or doors (no candidates matched)
+                        placed = False
+                        status = "failed_no_space"
+                        placement_errors.append({
+                            "product_id": p_id,
+                            "type": "wall_overlap",
+                            "message": f"No vacant wall space available for '{item.get('title', 'item')}' due to windows or doors."
+                        })
+                    elif domain == "ceiling":
+                        # Ceiling items are always safe to center
+                        final_x, final_y, final_z = room_w / 2, room_d / 2, room_h - h/2
+                        placed = True
+                        status = "placed_adaptive"
+                        status_counts["adaptive"] += 1
+                    elif domain == "surface":
+                        placed = False
+                        status = "failed_no_space"
+                    elif domain == "floor":
                         if min_penalty < 1e8:
                             final_x, final_y = best_coords
-                        else:
-                            final_x, final_y = best_coords_with_collision
-                            
-                        if domain == "ceiling":
-                            final_z = room_h - h/2
-                        elif domain == "surface":
-                            final_z = 75.0 + h/2
-                        else:
                             final_z = h/2
+                            placed = True
+                            status = "placed_adaptive"
+                            status_counts["adaptive"] += 1
+                        else:
+                            placed = False
+                            status = "failed_no_space"
+                            placement_errors.append({
+                                "product_id": p_id,
+                                "type": "collision_no_space",
+                                "message": f"No collision-free floor space available to place '{item.get('title', 'item')}'."
+                            })
+
+                # Walkway clear space constraint check (Section 7)
+                if placed and (domain == "floor" or domain == "surface"):
+                    room_area = room_w * room_d
+                    total_floor_footprint = 0.0
+                    for ox1, ox2, oy1, oy2, oz1, oz2, o_label in occupied_3d_boxes:
+                        if oz1 < 10.0: # grounded on floor plane
+                            total_floor_footprint += (ox2 - ox1) * (oy2 - oy1)
                             
-                    placed = True
-                    status = "placed_adaptive"
-                    status_counts["adaptive"] += 1
+                    item_footprint = w * d
+                    remaining_clear_ratio = (room_area - (total_floor_footprint + item_footprint)) / room_area
+                    
+                    if remaining_clear_ratio < 0.35:
+                        placed = False
+                        status = "failed_no_space"
+                        placement_errors.append({
+                            "product_id": p_id,
+                            "type": "no_walking_space",
+                            "message": f"Placing '{item.get('title', 'item')}' leaves too little clear walking space (below 35% threshold) in the room."
+                        })
 
             # Grounding and Axes Boundary Assertions
             if placed:
