@@ -632,6 +632,8 @@ class ReconstructionAgent:
                     
                 min_penalty = 1e9
                 best_coords = (room_w / 2, room_d / 2)
+                min_penalty_with_collision = 1e9
+                best_coords_with_collision = (room_w / 2, room_d / 2)
                 
                 for test_x in candidate_x:
                     for test_y in candidate_y:
@@ -658,8 +660,9 @@ class ReconstructionAgent:
                             if x_overlap and y_overlap and z_overlap:
                                 if is_opening or "door" in o_label or "bed" in o_label:
                                     hard_collision = True
+                                    overlap_penalty += 1000.0
                                 else:
-                                    overlap_penalty += 100.0
+                                    overlap_penalty += 200.0
                                     
                             if "bed" in o_label:
                                 req_clear = clearance.get("bed_side_clearance", 45.0)
@@ -679,22 +682,33 @@ class ReconstructionAgent:
                             status = "placed_perfect"
                             status_counts["perfect"] += 1
                             break
-                        elif total_penalty < min_penalty:
+                        
+                        if not hard_collision and total_penalty < min_penalty:
                             min_penalty = total_penalty
                             best_coords = (test_x, test_y)
+                            
+                        if total_penalty < min_penalty_with_collision:
+                            min_penalty_with_collision = total_penalty
+                            best_coords_with_collision = (test_x, test_y)
                             
                     if placed: break
                     
                 if not placed:
-                    final_x, final_y = best_coords
-                    if domain == "ceiling":
-                        final_z = room_h - h/2
-                    elif domain == "wall":
-                        final_z = room_h * 0.7
-                    elif domain == "surface":
-                        final_z = 75.0 + h/2
+                    if domain == "wall":
+                        final_x, final_y, final_z = w/2, room_d / 2, room_h * 0.7
                     else:
-                        final_z = h/2
+                        if min_penalty < 1e8:
+                            final_x, final_y = best_coords
+                        else:
+                            final_x, final_y = best_coords_with_collision
+                            
+                        if domain == "ceiling":
+                            final_z = room_h - h/2
+                        elif domain == "surface":
+                            final_z = 75.0 + h/2
+                        else:
+                            final_z = h/2
+                            
                     placed = True
                     status = "placed_adaptive"
                     status_counts["adaptive"] += 1
