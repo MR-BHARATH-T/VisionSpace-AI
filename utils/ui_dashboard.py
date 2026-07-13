@@ -136,175 +136,207 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
             interactive_script_html = f"""
             <script>
             (function() {{
-                let activeElement = null;
-                let isDragging = false;
-                let startX = 0, startY = 0;
-                let startLeft = 0, startTop = 0;
-                
-                window.startItemDrag = function(e, el, viewIdx) {{
-                    if (viewIdx !== {idx}) return;
-                    e.preventDefault();
-                    e.stopPropagation();
+                if (!window.VisionSpaceCanvasInitialized) {{
+                    window.VisionSpaceCanvasInitialized = true;
+                    window.VisionSpaceState = {{}};
                     
-                    selectElement(el, viewIdx);
-                    isDragging = true;
-                    activeElement = el;
-                    
-                    const isTouch = e.type.startsWith('touch');
-                    const clientX = isTouch ? e.touches[0].clientX : e.clientX;
-                    const clientY = isTouch ? e.touches[0].clientY : e.clientY;
-                    
-                    startX = clientX;
-                    startY = clientY;
-                    startLeft = parseFloat(el.style.left) || 0;
-                    startTop = parseFloat(el.style.top) || 0;
-                }};
-                
-                window.roomBackgroundClicked = function(e, viewIdx) {{
-                    if (viewIdx !== {idx}) return;
-                    deselectAll(viewIdx);
-                }};
-                
-                document.addEventListener('mousemove', function(e) {{
-                    if (isDragging && activeElement) {{
-                        const dx = e.clientX - startX;
-                        const dy = e.clientY - startY;
-                        activeElement.style.left = (startLeft + dx) + 'px';
-                        activeElement.style.top = (startTop + dy) + 'px';
-                    }}
-                }}, {{ passive: true }});
-                
-                document.addEventListener('mouseup', function() {{
-                    isDragging = false;
-                }});
-                
-                document.addEventListener('touchmove', function(e) {{
-                    if (isDragging && activeElement) {{
-                        const touch = e.touches[0];
-                        const dx = touch.clientX - startX;
-                        const dy = touch.clientY - startY;
-                        activeElement.style.left = (startLeft + dx) + 'px';
-                        activeElement.style.top = (startTop + dy) + 'px';
-                    }}
-                }}, {{ passive: true }});
-                
-                document.addEventListener('touchend', function() {{
-                    isDragging = false;
-                }});
-                
-                document.addEventListener('dragstart', function(e) {{
-                    if (e.target.closest('.draggable-product')) {{
+                    window.startItemDrag = function(e, el, viewIdx) {{
                         e.preventDefault();
-                    }}
-                }});
-                
-                function selectElement(el, viewIdx) {{
-                    deselectAll(viewIdx);
-                    activeElement = el;
-                    activeElement.style.outline = '2px dashed #2563eb';
-                    activeElement.style.boxShadow = '0 0 12px rgba(37, 99, 235, 0.5)';
-                    
-                    const toolbar = document.getElementById('toolbar-' + viewIdx);
-                    const toolName = document.getElementById('tool-name-' + viewIdx);
-                    if (toolbar) toolbar.style.display = 'flex';
-                    if (toolName) toolName.innerText = el.getAttribute('data-name');
-                }}
-                
-                function deselectAll(viewIdx) {{
-                    activeElement = null;
-                    const container = document.getElementById('interactive-room-' + viewIdx);
-                    if (container) {{
-                        const products = container.parentElement.querySelectorAll('.draggable-product');
-                        products.forEach(p => {{
-                            p.style.outline = 'none';
-                            p.style.boxShadow = 'none';
-                        }});
-                    }}
-                    const toolbar = document.getElementById('toolbar-' + viewIdx);
-                    if (toolbar) toolbar.style.display = 'none';
-                }}
-                
-                window.rotateItem = function(viewIdx, deg) {{
-                    if (activeElement && viewIdx === {idx}) {{
-                        let currentRotation = 0;
-                        const transform = activeElement.style.transform || '';
-                        const match = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
-                        if (match) currentRotation = parseFloat(match[1]);
+                        e.stopPropagation();
                         
-                        let newRotation = (currentRotation + deg) % 360;
-                        activeElement.style.transform = `rotate(${{newRotation}}deg)`;
-                    }}
-                }};
-                
-                window.scaleItem = function(viewIdx, scale) {{
-                    if (activeElement && viewIdx === {idx}) {{
-                        const currentW = parseFloat(activeElement.style.width);
-                        const currentH = parseFloat(activeElement.style.height);
-                        const currentL = parseFloat(activeElement.style.left);
-                        const currentT = parseFloat(activeElement.style.top);
+                        if (!window.VisionSpaceState[viewIdx]) {{
+                            window.VisionSpaceState[viewIdx] = {{
+                                activeElement: null,
+                                isDragging: false,
+                                startX: 0,
+                                startY: 0,
+                                startLeft: 0,
+                                startTop: 0
+                            }};
+                        }}
                         
-                        const newW = currentW * scale;
-                        const newH = currentH * scale;
+                        const state = window.VisionSpaceState[viewIdx];
                         
-                        activeElement.style.width = newW + 'px';
-                        activeElement.style.height = newH + 'px';
-                        activeElement.style.left = (currentL - (newW - currentW)/2) + 'px';
-                        activeElement.style.top = (currentT - (newH - currentH)/2) + 'px';
-                    }}
-                }};
-                
-                window.deleteItem = function(viewIdx) {{
-                    if (activeElement && viewIdx === {idx}) {{
-                        activeElement.style.display = 'none';
-                        deselectAll(viewIdx);
-                    }}
-                }};
-                
-                window.downloadInteractiveLayout = function(viewIdx) {{
-                    const container = document.getElementById('interactive-room-' + viewIdx);
-                    const bgImgUrl = container.style.backgroundImage.slice(5, -2).replace(/"/g, "");
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    
-                    const bg = new Image();
-                    bg.src = bgImgUrl;
-                    bg.onload = function() {{
-                        canvas.width = bg.naturalWidth || 800;
-                        canvas.height = bg.naturalHeight || 600;
-                        ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+                        window.selectElement(el, viewIdx);
+                        state.isDragging = true;
+                        state.activeElement = el;
                         
-                        const displayW = container.clientWidth;
-                        const displayH = container.clientHeight;
-                        const scaleX = canvas.width / displayW;
-                        const scaleY = canvas.height / displayH;
+                        const isTouch = e.type.startsWith('touch');
+                        const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+                        const clientY = isTouch ? e.touches[0].clientY : e.clientY;
                         
-                        const layers = container.parentElement.querySelectorAll('.draggable-product');
-                        layers.forEach(layer => {{
-                            if (layer.style.display === 'none') return;
-                            const img = layer.querySelector('img');
-                            const layerW = parseFloat(layer.style.width) * scaleX;
-                            const layerH = parseFloat(layer.style.height) * scaleY;
-                            const layerX = (parseFloat(layer.style.left) + parseFloat(layer.style.width)/2) * scaleX;
-                            const layerY = (parseFloat(layer.style.top) + parseFloat(layer.style.height)/2) * scaleY;
-                            
-                            let angle = 0;
-                            const transform = layer.style.transform || '';
-                            const rotateMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
-                            if (rotateMatch) angle = parseFloat(rotateMatch[1]);
-                            
-                            ctx.save();
-                            ctx.translate(layerX, layerY);
-                            ctx.rotate(angle * Math.PI / 180);
-                            ctx.drawImage(img, -layerW / 2, -layerH / 2, layerW, layerH);
-                            ctx.restore();
-                        }});
-                        
-                        const link = document.createElement('a');
-                        link.download = 'reconstructed_layout_' + (viewIdx + 1) + '.png';
-                        link.href = canvas.toDataURL('image/png');
-                        link.click();
+                        state.startX = clientX;
+                        state.startY = clientY;
+                        state.startLeft = parseFloat(el.style.left) || 0;
+                        state.startTop = parseFloat(el.style.top) || 0;
                     }};
-                }};
+                    
+                    window.roomBackgroundClicked = function(e, viewIdx) {{
+                        window.deselectAll(viewIdx);
+                    }};
+                    
+                    window.selectElement = function(el, viewIdx) {{
+                        window.deselectAll(viewIdx);
+                        
+                        if (!window.VisionSpaceState[viewIdx]) {{
+                            window.VisionSpaceState[viewIdx] = {{ activeElement: null }};
+                        }}
+                        window.VisionSpaceState[viewIdx].activeElement = el;
+                        
+                        el.style.outline = '2px dashed #2563eb';
+                        el.style.boxShadow = '0 0 12px rgba(37, 99, 235, 0.5)';
+                        
+                        const toolbar = document.getElementById('toolbar-' + viewIdx);
+                        const toolName = document.getElementById('tool-name-' + viewIdx);
+                        if (toolbar) toolbar.style.display = 'flex';
+                        if (toolName) toolName.innerText = el.getAttribute('data-name');
+                    }};
+                    
+                    window.deselectAll = function(viewIdx) {{
+                        if (window.VisionSpaceState[viewIdx]) {{
+                            window.VisionSpaceState[viewIdx].activeElement = null;
+                        }}
+                        const container = document.getElementById('interactive-room-' + viewIdx);
+                        if (container) {{
+                            const products = container.parentElement.querySelectorAll('.draggable-product');
+                            products.forEach(p => {{
+                                p.style.outline = 'none';
+                                p.style.boxShadow = 'none';
+                            }});
+                        }}
+                        const toolbar = document.getElementById('toolbar-' + viewIdx);
+                        if (toolbar) toolbar.style.display = 'none';
+                    }};
+                    
+                    document.addEventListener('mousemove', function(e) {{
+                        for (const viewIdx in window.VisionSpaceState) {{
+                            const state = window.VisionSpaceState[viewIdx];
+                            if (state.isDragging && state.activeElement) {{
+                                const dx = e.clientX - state.startX;
+                                const dy = e.clientY - state.startY;
+                                state.activeElement.style.left = (state.startLeft + dx) + 'px';
+                                state.activeElement.style.top = (state.startTop + dy) + 'px';
+                            }}
+                        }}
+                    }}, {{ passive: true }});
+                    
+                    document.addEventListener('mouseup', function() {{
+                        for (const viewIdx in window.VisionSpaceState) {{
+                            window.VisionSpaceState[viewIdx].isDragging = false;
+                        }}
+                    }});
+                    
+                    document.addEventListener('touchmove', function(e) {{
+                        for (const viewIdx in window.VisionSpaceState) {{
+                            const state = window.VisionSpaceState[viewIdx];
+                            if (state.isDragging && state.activeElement) {{
+                                const touch = e.touches[0];
+                                const dx = touch.clientX - state.startX;
+                                const dy = touch.clientY - state.startY;
+                                state.activeElement.style.left = (state.startLeft + dx) + 'px';
+                                state.activeElement.style.top = (state.startTop + dy) + 'px';
+                            }}
+                        }}
+                    }}, {{ passive: true }});
+                    
+                    document.addEventListener('touchend', function() {{
+                        for (const viewIdx in window.VisionSpaceState) {{
+                            window.VisionSpaceState[viewIdx].isDragging = false;
+                        }}
+                    }});
+                    
+                    document.addEventListener('dragstart', function(e) {{
+                        if (e.target.closest('.draggable-product')) {{
+                            e.preventDefault();
+                        }}
+                    }});
+                    
+                    window.rotateItem = function(viewIdx, deg) {{
+                        const state = window.VisionSpaceState[viewIdx];
+                        if (state && state.activeElement) {{
+                            let currentRotation = 0;
+                            const transform = state.activeElement.style.transform || '';
+                            const match = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
+                            if (match) currentRotation = parseFloat(match[1]);
+                            
+                            let newRotation = (currentRotation + deg) % 360;
+                            state.activeElement.style.transform = `rotate(${{newRotation}}deg)`;
+                        }}
+                    }};
+                    
+                    window.scaleItem = function(viewIdx, scale) {{
+                        const state = window.VisionSpaceState[viewIdx];
+                        if (state && state.activeElement) {{
+                            const el = state.activeElement;
+                            const currentW = parseFloat(el.style.width);
+                            const currentH = parseFloat(el.style.height);
+                            const currentL = parseFloat(el.style.left);
+                            const currentT = parseFloat(el.style.top);
+                            
+                            const newW = currentW * scale;
+                            const newH = currentH * scale;
+                            
+                            el.style.width = newW + 'px';
+                            el.style.height = newH + 'px';
+                            el.style.left = (currentL - (newW - currentW)/2) + 'px';
+                            el.style.top = (currentT - (newH - currentH)/2) + 'px';
+                        }}
+                    }};
+                    
+                    window.deleteItem = function(viewIdx) {{
+                        const state = window.VisionSpaceState[viewIdx];
+                        if (state && state.activeElement) {{
+                            state.activeElement.style.display = 'none';
+                            window.deselectAll(viewIdx);
+                        }}
+                    }};
+                    
+                    window.downloadInteractiveLayout = function(viewIdx) {{
+                        const container = document.getElementById('interactive-room-' + viewIdx);
+                        const bgImgUrl = container.style.backgroundImage.slice(5, -2).replace(/"/g, "");
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        
+                        const bg = new Image();
+                        bg.src = bgImgUrl;
+                        bg.onload = function() {{
+                            canvas.width = bg.naturalWidth || 800;
+                            canvas.height = bg.naturalHeight || 600;
+                            ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+                            
+                            const displayW = container.clientWidth;
+                            const displayH = container.clientHeight;
+                            const scaleX = canvas.width / displayW;
+                            const scaleY = canvas.height / displayH;
+                            
+                            const layers = container.parentElement.querySelectorAll('.draggable-product');
+                            layers.forEach(layer => {{
+                                if (layer.style.display === 'none') return;
+                                const img = layer.querySelector('img');
+                                const layerW = parseFloat(layer.style.width) * scaleX;
+                                const layerH = parseFloat(layer.style.height) * scaleY;
+                                const layerX = (parseFloat(layer.style.left) + parseFloat(layer.style.width)/2) * scaleX;
+                                const layerY = (parseFloat(layer.style.top) + parseFloat(layer.style.height)/2) * scaleY;
+                                
+                                let angle = 0;
+                                const transform = layer.style.transform || '';
+                                const rotateMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
+                                if (rotateMatch) angle = parseFloat(rotateMatch[1]);
+                                
+                                ctx.save();
+                                ctx.translate(layerX, layerY);
+                                ctx.rotate(angle * Math.PI / 180);
+                                ctx.drawImage(img, -layerW / 2, -layerH / 2, layerW, layerH);
+                                ctx.restore();
+                            }});
+                            
+                            const link = document.createElement('a');
+                            link.download = 'reconstructed_layout_' + (viewIdx + 1) + '.png';
+                            link.href = canvas.toDataURL('image/png');
+                            link.click();
+                        }};
+                    }};
+                }}
             }})();
             </script>
             """
