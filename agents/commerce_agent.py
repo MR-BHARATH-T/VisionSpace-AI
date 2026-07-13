@@ -348,6 +348,8 @@ class CommerceAgent:
             quality_score = rating / 5.0 if rating > 0 else 0.8
             reviews_count = int(item.get("reviews", 50))
             image_url = item.get("thumbnail", "")
+            if not image_url or not (image_url.startswith("http://") or image_url.startswith("https://")):
+                return None
             
             # Parse dimensions from title
             w_cm, d_cm, h_cm = 120.0, 60.0, 75.0

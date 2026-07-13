@@ -21,7 +21,7 @@ class TestCommerceSearch(unittest.TestCase):
     def test_scenario_a_branded_success(self, mock_urlopen):
         # Scenario A: Branded search succeeds
         mock_response = MagicMock()
-        mock_response.read.return_value = b'{"shopping_results": [{"title": "IKEA Table", "price": "$100", "brand": "IKEA"}]}'
+        mock_response.read.return_value = b'{"shopping_results": [{"title": "IKEA Table", "price": "$100", "brand": "IKEA", "thumbnail": "https://example.com/img.png"}]}'
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
         
@@ -34,7 +34,7 @@ class TestCommerceSearch(unittest.TestCase):
     def test_scenario_b_branded_retry_success(self, mock_urlopen):
         # Scenario B: First branded search times out, retry succeeds
         mock_response = MagicMock()
-        mock_response.read.return_value = b'{"shopping_results": [{"title": "IKEA Table", "price": "$100", "brand": "IKEA"}]}'
+        mock_response.read.return_value = b'{"shopping_results": [{"title": "IKEA Table", "price": "$100", "brand": "IKEA", "thumbnail": "https://example.com/img.png"}]}'
         mock_response.__enter__.return_value = mock_response
         
         # Raise timeout exception on first call, succeed on second
@@ -49,7 +49,7 @@ class TestCommerceSearch(unittest.TestCase):
     def test_scenario_c_branded_fails_generic_succeeds(self, mock_urlopen):
         # Scenario C: All branded searches fail, generic fallback succeeds
         mock_response = MagicMock()
-        mock_response.read.return_value = b'{"shopping_results": [{"title": "Generic Table", "price": "$80", "brand": "Generic"}]}'
+        mock_response.read.return_value = b'{"shopping_results": [{"title": "Generic Table", "price": "$80", "brand": "Generic", "thumbnail": "https://example.com/img.png"}]}'
         mock_response.__enter__.return_value = mock_response
         
         # Fails twice for branded search, succeeds for generic fallback search
@@ -78,7 +78,7 @@ class TestCommerceSearch(unittest.TestCase):
     def test_scenario_e_partial_item_success(self, mock_urlopen):
         # Scenario E: One required item fails completely (returns mock or generic), other required items succeed
         mock_response_1 = MagicMock()
-        mock_response_1.read.return_value = b'{"shopping_results": [{"title": "IKEA Table", "price": "$120", "brand": "IKEA"}]}'
+        mock_response_1.read.return_value = b'{"shopping_results": [{"title": "IKEA Table", "price": "$120", "brand": "IKEA", "thumbnail": "https://example.com/img.png"}]}'
         mock_response_1.__enter__.return_value = mock_response_1
         
         # First category (table) succeeds, second category (cooler) times out on everything and returns mock
