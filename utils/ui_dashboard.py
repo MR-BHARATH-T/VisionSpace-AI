@@ -59,36 +59,273 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
         
         if before_path.exists() and preview_path.exists():
             b64_before = image_to_base64(before_path)
-            b64_after = image_to_base64(preview_path)
             view_title = f"Viewpoint {idx + 1}"
             
+            natural_w, natural_h = 800, 600
+            try:
+                with Image.open(before_path) as b_img:
+                    natural_w, natural_h = b_img.size
+            except Exception:
+                pass
+            
+            product_layers_html = ""
             if verified_count > 0:
-                header_title = f"Layout Reconstruction comparison - {view_title}"
+                product_results = recon.get("product_results", [])
+                for p in product_results:
+                    if p.get("feasibility_status") == "valid" and p.get("render_status") == "verified":
+                        p_id = p.get("product_id")
+                        b64_cutout = p.get("b64_cutout")
+                        coords = p.get("coords")
+                        if b64_cutout and coords:
+                            x1, y1, x2, y2 = coords
+                            left = x1 * (500 / natural_w)
+                            top = y1 * (375 / natural_h)
+                            width = (x2 - x1) * (500 / natural_w)
+                            height = (y2 - y1) * (375 / natural_h)
+                            
+                            product_layers_html += f"""
+                            <div class="draggable-product" data-id="{p_id}" data-name="{p.get('name', 'Product')}" style="position: absolute; left: {left:.1f}px; top: {top:.1f}px; width: {width:.1f}px; height: {height:.1f}px; cursor: move; transform: rotate(0deg); transform-origin: center; display: inline-block; z-index: 10;">
+                                <img src="data:image/png;base64,{b64_cutout}" style="width: 100%; height: 100%; pointer-events: none; object-fit: contain;">
+                            </div>
+                            """
+            
+            if verified_count > 0:
+                header_title = f"Interactive Layout Reconstruction - {view_title}"
                 header_color = "#38bdf8"
-                after_label = f"Reconstructed Layout Preview ({view_title})"
-                button_label = f"Download Reconstructed View {idx+1}"
+                after_label = f"Interactive Room Canvas ({view_title})"
+                
+                right_card_html = f"""
+                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                    <div style="position: relative; width: 500px; height: 375px; background: #000; border-radius: 6px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                        <div id="interactive-room-{idx}" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-image: url('data:image/png;base64,{b64_before}'); background-size: 100% 100%; pointer-events: none;"></div>
+                        {product_layers_html}
+                        
+                        <div id="toolbar-{idx}" style="position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(26, 32, 44, 0.95); border: 1px solid #4a5568; border-radius: 20px; padding: 4px 12px; display: none; gap: 8px; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.5); align-items: center;">
+                            <span id="tool-name-{idx}" style="color: #e2e8f0; font-size: 11px; font-family: sans-serif; font-weight: bold; margin-right: 4px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Item</span>
+                            <button onclick="rotateItem({idx}, -15)" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Left">↺</button>
+                            <button onclick="rotateItem({idx}, 15)" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Right">↻</button>
+                            <button onclick="scaleItem({idx}, 0.9)" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Down">−</button>
+                            <button onclick="scaleItem({idx}, 1.1)" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Up">+</button>
+                            <button onclick="deleteItem({idx})" style="background: #e53e3e; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Remove Item">🗑️</button>
+                        </div>
+                    </div>
+                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0; font-family: sans-serif;">{after_label}</div>
+                    <div style="margin-top: 10px; font-family: sans-serif;">
+                        <button onclick="downloadInteractiveLayout({idx})" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px;">Download Customized View {idx+1}</button>
+                    </div>
+                </div>
+                """
             else:
                 header_title = f"Original Room — No Products Successfully Rendered - {view_title}"
                 header_color = "#ef4444"
                 after_label = f"Original View (Reconstruction Failed/No Space Available) ({view_title})"
                 button_label = f"Download Original View {idx+1}"
+                b64_after = image_to_base64(preview_path)
                 
+                right_card_html = f"""
+                <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                    <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
+                    <div style="font-weight: bold; margin-top: 8px; color: #a0aec0; font-family: sans-serif;">{after_label}</div>
+                    <div style="margin-top: 10px; font-family: sans-serif;">
+                        <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-size: 12px;">{button_label}</a>
+                    </div>
+                </div>
+                """
+            
+            # Interactive scripting block injected per viewpoint card
+            interactive_script_html = f"""
+            <script>
+            (function() {{
+                let activeElement = null;
+                let isDragging = false;
+                let startX = 0, startY = 0;
+                let startLeft = 0, startTop = 0;
+                
+                const container = document.getElementById('interactive-room-{idx}');
+                if (!container) return;
+                const parent = container.parentElement;
+                
+                parent.addEventListener('mousedown', function(e) {{
+                    if (e.target === parent || e.target === container) {{
+                        deselectAll();
+                        return;
+                    }}
+                    const draggable = e.target.closest('.draggable-product');
+                    if (draggable) {{
+                        e.preventDefault();
+                        selectElement(draggable);
+                        isDragging = true;
+                        startX = e.clientX;
+                        startY = e.clientY;
+                        startLeft = parseFloat(draggable.style.left) || 0;
+                        startTop = parseFloat(draggable.style.top) || 0;
+                    }}
+                }});
+                
+                document.addEventListener('mousemove', function(e) {{
+                    if (isDragging && activeElement) {{
+                        const dx = e.clientX - startX;
+                        const dy = e.clientY - startY;
+                        activeElement.style.left = (startLeft + dx) + 'px';
+                        activeElement.style.top = (startTop + dy) + 'px';
+                    }}
+                }});
+                
+                document.addEventListener('mouseup', function() {{
+                    isDragging = false;
+                }});
+                
+                parent.addEventListener('touchstart', function(e) {{
+                    if (e.target === parent || e.target === container) {{
+                        deselectAll();
+                        return;
+                    }}
+                    const draggable = e.target.closest('.draggable-product');
+                    if (draggable) {{
+                        selectElement(draggable);
+                        isDragging = true;
+                        const touch = e.touches[0];
+                        startX = touch.clientX;
+                        startY = touch.clientY;
+                        startLeft = parseFloat(draggable.style.left) || 0;
+                        startTop = parseFloat(draggable.style.top) || 0;
+                    }}
+                }});
+                
+                parent.addEventListener('touchmove', function(e) {{
+                    if (isDragging && activeElement) {{
+                        e.preventDefault();
+                        const touch = e.touches[0];
+                        const dx = touch.clientX - startX;
+                        const dy = touch.clientY - startY;
+                        activeElement.style.left = (startLeft + dx) + 'px';
+                        activeElement.style.top = (startTop + dy) + 'px';
+                    }}
+                }});
+                
+                parent.addEventListener('touchend', function() {{
+                    isDragging = false;
+                }});
+                
+                function selectElement(el) {{
+                    deselectAll();
+                    activeElement = el;
+                    activeElement.style.outline = '2px solid #3182ce';
+                    activeElement.style.boxShadow = '0 0 10px rgba(49, 130, 206, 0.6)';
+                    
+                    const toolbar = document.getElementById('toolbar-{idx}');
+                    const toolName = document.getElementById('tool-name-{idx}');
+                    if (toolbar) toolbar.style.display = 'flex';
+                    if (toolName) toolName.innerText = el.getAttribute('data-name');
+                }}
+                
+                function deselectAll() {{
+                    activeElement = null;
+                    const products = parent.querySelectorAll('.draggable-product');
+                    products.forEach(p => {{
+                        p.style.outline = 'none';
+                        p.style.boxShadow = 'none';
+                    }});
+                    const toolbar = document.getElementById('toolbar-{idx}');
+                    if (toolbar) toolbar.style.display = 'none';
+                }}
+                
+                window.rotateItem = function(viewIdx, deg) {{
+                    if (activeElement && viewIdx === {idx}) {{
+                        let currentRotation = 0;
+                        const transform = activeElement.style.transform || '';
+                        const match = transform.match(/rotate\(([-0-9.]+)deg\)/);
+                        if (match) currentRotation = parseFloat(match[1]);
+                        
+                        let newRotation = (currentRotation + deg) % 360;
+                        activeElement.style.transform = `rotate(${{newRotation}}deg)`;
+                    }}
+                }};
+                
+                window.scaleItem = function(viewIdx, scale) {{
+                    if (activeElement && viewIdx === {idx}) {{
+                        const currentW = parseFloat(activeElement.style.width);
+                        const currentH = parseFloat(activeElement.style.height);
+                        const currentL = parseFloat(activeElement.style.left);
+                        const currentT = parseFloat(activeElement.style.top);
+                        
+                        const newW = currentW * scale;
+                        const newH = currentH * scale;
+                        
+                        activeElement.style.width = newW + 'px';
+                        activeElement.style.height = newH + 'px';
+                        activeElement.style.left = (currentL - (newW - currentW)/2) + 'px';
+                        activeElement.style.top = (currentT - (newH - currentH)/2) + 'px';
+                    }}
+                }};
+                
+                window.deleteItem = function(viewIdx) {{
+                    if (activeElement && viewIdx === {idx}) {{
+                        activeElement.style.display = 'none';
+                        deselectAll();
+                    }}
+                }};
+                
+                window.downloadInteractiveLayout = function(viewIdx) {{
+                    const container = document.getElementById('interactive-room-' + viewIdx);
+                    const bgImgUrl = container.style.backgroundImage.slice(5, -2).replace(/"/g, "");
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    const bg = new Image();
+                    bg.src = bgImgUrl;
+                    bg.onload = function() {{
+                        canvas.width = bg.naturalWidth || 800;
+                        canvas.height = bg.naturalHeight || 600;
+                        ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+                        
+                        const displayW = container.clientWidth;
+                        const displayH = container.clientHeight;
+                        const scaleX = canvas.width / displayW;
+                        const scaleY = canvas.height / displayH;
+                        
+                        const layers = container.parentElement.querySelectorAll('.draggable-product');
+                        layers.forEach(layer => {{
+                            if (layer.style.display === 'none') return;
+                            const img = layer.querySelector('img');
+                            const layerW = parseFloat(layer.style.width) * scaleX;
+                            const layerH = parseFloat(layer.style.height) * scaleY;
+                            const layerX = (parseFloat(layer.style.left) + parseFloat(layer.style.width)/2) * scaleX;
+                            const layerY = (parseFloat(layer.style.top) + parseFloat(layer.style.height)/2) * scaleY;
+                            
+                            let angle = 0;
+                            const transform = layer.style.transform || '';
+                            const rotateMatch = transform.match(/rotate\(([-0-9.]+)deg\)/);
+                            if (rotateMatch) angle = parseFloat(rotateMatch[1]);
+                            
+                            ctx.save();
+                            ctx.translate(layerX, layerY);
+                            ctx.rotate(angle * Math.PI / 180);
+                            ctx.drawImage(img, -layerW / 2, -layerH / 2, layerW, layerH);
+                            ctx.restore();
+                        }});
+                        
+                        const link = document.createElement('a');
+                        link.download = 'reconstructed_layout_' + (viewIdx + 1) + '.png';
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+                    }};
+                }};
+            }})();
+            </script>
+            """
+            
             comparison_html = f"""
             <div style="margin-top: 15px; border-top: 1px solid #2d3748; padding-top: 15px;">
                 <h4 style="color: {header_color}; font-family: 'Inter', sans-serif; margin-bottom: 10px;">{header_title}</h4>
                 <div class="image-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-                    <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
+                    <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
                         <img src="data:image/png;base64,{b64_before}" alt="Before View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-                        <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">Original Viewpoint ({view_title})</div>
+                        <div style="font-weight: bold; margin-top: 8px; color: #a0aec0; font-family: sans-serif;">Original Viewpoint ({view_title})</div>
                     </div>
-                    <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center;">
-                        <img src="data:image/png;base64,{b64_after}" alt="After View" style="max-width: 100%; border-radius: 6px; height: auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-                        <div style="font-weight: bold; margin-top: 8px; color: #a0aec0;">{after_label}</div>
-                        <div style="margin-top: 10px;">
-                            <a href="data:image/png;base64,{b64_after}" download="reconstructed_layout_{idx+1}.png" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; text-decoration: none; display: inline-block; font-weight: bold; font-family: sans-serif; font-size: 12px; transition: background 0.3s;">{button_label}</a>
-                        </div>
-                    </div>
+                    {right_card_html}
                 </div>
+                {interactive_script_html}
             </div>
             """
             comparison_html_list.append(comparison_html)

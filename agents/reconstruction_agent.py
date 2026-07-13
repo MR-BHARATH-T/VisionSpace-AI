@@ -581,7 +581,7 @@ class ReconstructionAgent:
                         
                         sw = sx2 - sx1
                         sd = sy2 - sy1
-                        if w <= sw and d <= sd:
+                        if w <= sw and d <= sd and sh + h <= room_h:
                             final_x = (sx1 + sx2) / 2
                             final_y = (sy1 + sy2) / 2
                             final_z = sh + h/2 # Sits on surface
@@ -597,7 +597,7 @@ class ReconstructionAgent:
                         if any(k in o_label for k in ["unit", "table", "stand", "dresser", "nightstand", "counter", "desk", "bookshelf", "cabinet"]):
                             sw = ox2 - ox1
                             sd = oy2 - oy1
-                            if w <= sw and d <= sd:
+                            if w <= sw and d <= sd and oz2 + h <= room_h:
                                 final_x = (ox1 + ox2) / 2
                                 final_y = (oy1 + oy2) / 2
                                 final_z = oz2 + h/2
@@ -1285,6 +1285,11 @@ class ReconstructionAgent:
                             if p["product_id"] not in verified_product_ids:
                                 verified_product_ids.append(p["product_id"])
                                     
+                            import io, base64
+                            p_buf = io.BytesIO()
+                            p_resized.save(p_buf, format="PNG")
+                            p["b64_cutout"] = base64.b64encode(p_buf.getvalue()).decode("utf-8")
+                            
                             p["identity_similarity"] = sim_score
                             p["coords"] = list(paste_box)
                             inpaint_targets.append((paste_box, p["item"], p_resized))
@@ -1319,6 +1324,7 @@ class ReconstructionAgent:
             r_status = "not_requested"
             sim_score = 0.0
             coords_list = []
+            b64_cutout = ""
             
             if f_status == "no_space":
                 summary["no_space_count"] += 1
@@ -1328,6 +1334,7 @@ class ReconstructionAgent:
                         r_status = p.get("render_status", "verified")
                         sim_score = p.get("identity_similarity", 0.85)
                         coords_list = p.get("coords", [])
+                        b64_cutout = p.get("b64_cutout", "")
                         break
                 if r_status == "verified":
                     summary["placed_count"] += 1
@@ -1352,6 +1359,7 @@ class ReconstructionAgent:
                 "render_status": r_status,
                 "identity_similarity": sim_score,
                 "coords": coords_list,
+                "b64_cutout": b64_cutout,
                 "message": f"Successfully placed and verified exact item." if r_status == "verified" else (f"No space available in the room to place '{name}'." if f_status == "no_space" else "Rendering failed or identity verification check failed.")
             })
             
