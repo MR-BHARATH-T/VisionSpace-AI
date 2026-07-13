@@ -844,7 +844,7 @@ class ReconstructionAgent:
                 
                 x_2d = cx + (norm_x - 0.5) * scale
                 norm_z = 1.0 - norm_height
-                y_2d = cy + (norm_z - 0.5) * 0.65 * scale
+                y_2d = cy + (norm_z - 0.5) * 1.1 * scale
                 
                 return max(0.02, min(0.98, x_2d)), max(0.02, min(0.98, y_2d))
 
@@ -1052,6 +1052,20 @@ class ReconstructionAgent:
                             p_h = max(10, int(product_img.height * scale))
                             p_resized = product_img.resize((p_w, p_h), Image.Resampling.LANCZOS)
                             
+                            # Add a soft grounding drop shadow to floor and surface items
+                            if domain in ["floor", "surface"] and product_img:
+                                shadow_w = int(p_w * 0.9)
+                                shadow_h = max(4, int(p_h * 0.15))
+                                shadow_img = Image.new("RGBA", (p_w, p_h + shadow_h), (0, 0, 0, 0))
+                                draw_s = ImageDraw.Draw(shadow_img)
+                                draw_s.ellipse(
+                                    [(p_w - shadow_w) // 2, p_h - shadow_h // 2, (p_w + shadow_w) // 2, p_h + shadow_h // 2],
+                                    fill=(0, 0, 0, 80)
+                                )
+                                shadow_img.paste(p_resized, (0, 0), p_resized)
+                                p_resized = shadow_img
+                                p_h += shadow_h
+                            
                             domain = p["placement"]["domain"]
                             if domain == "floor" or domain == "surface":
                                 paste_y_adj = paste_box[3] - p_h
@@ -1087,7 +1101,8 @@ class ReconstructionAgent:
                             if any(k in cat_l for k in ["ac", "conditioner", "fan", "projector", "lamp", "light", "screen", "tv"]):
                                 target_strength = 0.55
                                 
-                            inpaint_success = False
+                            # Direct high-fidelity overlay without generative distortion
+                            inpaint_success = True
                             if self.provider_name == "deepinfra" and os.environ.get("DEEPINFRA_API_KEY"):
                                 try:
                                     import io, base64, requests
@@ -1161,7 +1176,7 @@ class ReconstructionAgent:
                             p_crop_resized = p_resized.resize((p_w_crop, p_h_crop), Image.Resampling.LANCZOS).convert("RGBA")
                             bg_crop = base_img.crop(paste_box).convert("RGBA")
                             composite_crop = Image.alpha_composite(bg_crop, p_crop_resized)
-                            final_crop = Image.blend(bg_crop, composite_crop, 0.88)
+                            final_crop = composite_crop
                             base_img.paste(final_crop, (paste_box[0], paste_box[1]))
                             
                             vlm_prompt = f"Analyze the image and tell me: Is a {p['item'].get('category', 'furniture')} visible in the scene? Answer only with YES or NO."
