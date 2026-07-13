@@ -84,7 +84,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                             height = (y2 - y1) * (375 / natural_h)
                             
                             product_layers_html += f"""
-                            <div class="draggable-product" data-id="{p_id}" data-name="{p.get('name', 'Product')}" onmousedown="startItemDrag(event, this, {idx})" ontouchstart="startItemDrag(event, this, {idx})" style="position: absolute; left: {left:.1f}px; top: {top:.1f}px; width: {width:.1f}px; height: {height:.1f}px; cursor: move; transform: rotate(0deg); transform-origin: center; display: inline-block; z-index: 10; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; background: transparent;">
+                            <div class="draggable-product" data-id="{p_id}" data-name="{p.get('name', 'Product')}" style="position: absolute; left: {left:.1f}px; top: {top:.1f}px; width: {width:.1f}px; height: {height:.1f}px; cursor: move; transform: rotate(0deg); transform-origin: center; display: inline-block; z-index: 10; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; background: transparent;">
                                 <img src="data:image/png;base64,{b64_cutout}" style="width: 100%; height: 100%; pointer-events: none; object-fit: contain; user-select: none; -webkit-user-select: none; -moz-user-select: none;">
                             </div>
                             """
@@ -97,21 +97,21 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                 right_card_html = f"""
                 <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
                     <div style="position: relative; width: 500px; height: 375px; background: #000; border-radius: 6px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-                        <div id="interactive-room-{idx}" onmousedown="roomBackgroundClicked(event, {idx})" ontouchstart="roomBackgroundClicked(event, {idx})" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-image: url('data:image/png;base64,{b64_before}'); background-size: 100% 100%; pointer-events: auto; user-select: none; -webkit-user-select: none; -moz-user-select: none;"></div>
+                        <div id="interactive-room-{idx}" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-image: url('data:image/png;base64,{b64_before}'); background-size: 100% 100%; pointer-events: auto; user-select: none; -webkit-user-select: none; -moz-user-select: none;"></div>
                         {product_layers_html}
                         
                         <div id="toolbar-{idx}" style="position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(26, 32, 44, 0.95); border: 1px solid #4a5568; border-radius: 20px; padding: 4px 12px; display: none; gap: 8px; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.5); align-items: center;">
                             <span id="tool-name-{idx}" style="color: #e2e8f0; font-size: 11px; font-family: sans-serif; font-weight: bold; margin-right: 4px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Item</span>
-                            <button onclick="rotateItem({idx}, -15)" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Left">↺</button>
-                            <button onclick="rotateItem({idx}, 15)" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Right">↻</button>
-                            <button onclick="scaleItem({idx}, 0.9)" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Down">−</button>
-                            <button onclick="scaleItem({idx}, 1.1)" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Up">+</button>
-                            <button onclick="deleteItem({idx})" style="background: #e53e3e; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Remove Item">🗑️</button>
+                            <button class="btn-rot-l-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Left">↺</button>
+                            <button class="btn-rot-r-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Right">↻</button>
+                            <button class="btn-scale-d-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Down">−</button>
+                            <button class="btn-scale-u-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Up">+</button>
+                            <button class="btn-del-{idx}" style="background: #e53e3e; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Remove Item">🗑️</button>
                         </div>
                     </div>
                     <div style="font-weight: bold; margin-top: 8px; color: #a0aec0; font-family: sans-serif;">{after_label}</div>
                     <div style="margin-top: 10px; font-family: sans-serif;">
-                        <button onclick="downloadInteractiveLayout({idx})" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px;">Download Customized View {idx+1}</button>
+                        <button class="btn-download-{idx}" style="background-color: #2563eb; color: #ffffff; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px;">Download Customized View {idx+1}</button>
                     </div>
                 </div>
                 """
@@ -136,112 +136,216 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
             interactive_script_html = f"""
             <script>
             (function() {{
-                if (!window.VisionSpaceCanvasInitialized) {{
-                    window.VisionSpaceCanvasInitialized = true;
+                // 1. Redefine global helper functions every run to keep references fresh
+                window.startItemDrag = function(e, el, viewIdx) {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    if (!window.VisionSpaceState) {{
+                        window.VisionSpaceState = {{}};
+                    }}
+                    if (!window.VisionSpaceState[viewIdx]) {{
+                        window.VisionSpaceState[viewIdx] = {{
+                            activeElement: null,
+                            isDragging: false,
+                            startX: 0,
+                            startY: 0,
+                            startLeft: 0,
+                            startTop: 0
+                        }};
+                    }}
+                    
+                    const state = window.VisionSpaceState[viewIdx];
+                    
+                    window.selectElement(el, viewIdx);
+                    state.isDragging = true;
+                    state.activeElement = el;
+                    
+                    const isTouch = e.type.startsWith('touch');
+                    const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+                    const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+                    
+                    state.startX = clientX;
+                    state.startY = clientY;
+                    state.startLeft = parseFloat(el.style.left) || 0;
+                    state.startTop = parseFloat(el.style.top) || 0;
+                }};
+                
+                window.roomBackgroundClicked = function(e, viewIdx) {{
+                    window.deselectAll(viewIdx);
+                }};
+                
+                window.selectElement = function(el, viewIdx) {{
+                    window.deselectAll(viewIdx);
+                    
+                    if (!window.VisionSpaceState) window.VisionSpaceState = {{}};
+                    if (!window.VisionSpaceState[viewIdx]) {{
+                        window.VisionSpaceState[viewIdx] = {{ activeElement: null }};
+                    }}
+                    window.VisionSpaceState[viewIdx].activeElement = el;
+                    
+                    el.style.outline = '2px dashed #2563eb';
+                    el.style.boxShadow = '0 0 12px rgba(37, 99, 235, 0.5)';
+                    
+                    const toolbar = document.getElementById('toolbar-' + viewIdx);
+                    const toolName = document.getElementById('tool-name-' + viewIdx);
+                    if (toolbar) toolbar.style.display = 'flex';
+                    if (toolName) toolName.innerText = el.getAttribute('data-name');
+                }};
+                
+                window.deselectAll = function(viewIdx) {{
+                    if (window.VisionSpaceState && window.VisionSpaceState[viewIdx]) {{
+                        window.VisionSpaceState[viewIdx].activeElement = null;
+                    }}
+                    const container = document.getElementById('interactive-room-' + viewIdx);
+                    if (container) {{
+                        const products = container.parentElement.querySelectorAll('.draggable-product');
+                        products.forEach(p => {{
+                            p.style.outline = 'none';
+                            p.style.boxShadow = 'none';
+                        }});
+                    }}
+                    const toolbar = document.getElementById('toolbar-' + viewIdx);
+                    if (toolbar) toolbar.style.display = 'none';
+                }};
+                
+                window.rotateItem = function(viewIdx, deg) {{
+                    const state = window.VisionSpaceState ? window.VisionSpaceState[viewIdx] : null;
+                    if (state && state.activeElement) {{
+                        let currentRotation = 0;
+                        const transform = state.activeElement.style.transform || '';
+                        const match = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
+                        if (match) currentRotation = parseFloat(match[1]);
+                        
+                        let newRotation = (currentRotation + deg) % 360;
+                        state.activeElement.style.transform = `rotate(${{newRotation}}deg)`;
+                    }}
+                }};
+                
+                window.scaleItem = function(viewIdx, scale) {{
+                    const state = window.VisionSpaceState ? window.VisionSpaceState[viewIdx] : null;
+                    if (state && state.activeElement) {{
+                        const el = state.activeElement;
+                        const currentW = parseFloat(el.style.width);
+                        const currentH = parseFloat(el.style.height);
+                        const currentL = parseFloat(el.style.left);
+                        const currentT = parseFloat(el.style.top);
+                        
+                        const newW = currentW * scale;
+                        const newH = currentH * scale;
+                        
+                        el.style.width = newW + 'px';
+                        el.style.height = newH + 'px';
+                        el.style.left = (currentL - (newW - currentW)/2) + 'px';
+                        el.style.top = (currentT - (newH - currentH)/2) + 'px';
+                    }}
+                }};
+                
+                window.deleteItem = function(viewIdx) {{
+                    const state = window.VisionSpaceState ? window.VisionSpaceState[viewIdx] : null;
+                    if (state && state.activeElement) {{
+                        state.activeElement.style.display = 'none';
+                        window.deselectAll(viewIdx);
+                    }}
+                }};
+                
+                window.downloadInteractiveLayout = function(viewIdx) {{
+                    const container = document.getElementById('interactive-room-' + viewIdx);
+                    const bgImgUrl = container.style.backgroundImage.slice(5, -2).replace(/"/g, "");
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    const bg = new Image();
+                    bg.src = bgImgUrl;
+                    bg.onload = function() {{
+                        canvas.width = bg.naturalWidth || 800;
+                        canvas.height = bg.naturalHeight || 600;
+                        ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+                        
+                        const displayW = container.clientWidth;
+                        const displayH = container.clientHeight;
+                        const scaleX = canvas.width / displayW;
+                        const scaleY = canvas.height / displayH;
+                        
+                        const layers = container.parentElement.querySelectorAll('.draggable-product');
+                        layers.forEach(layer => {{
+                            if (layer.style.display === 'none') return;
+                            const img = layer.querySelector('img');
+                            const layerW = parseFloat(layer.style.width) * scaleX;
+                            const layerH = parseFloat(layer.style.height) * scaleY;
+                            const layerX = (parseFloat(layer.style.left) + parseFloat(layer.style.width)/2) * scaleX;
+                            const layerY = (parseFloat(layer.style.top) + parseFloat(layer.style.height)/2) * scaleY;
+                            
+                            let angle = 0;
+                            const transform = layer.style.transform || '';
+                            const rotateMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
+                            if (rotateMatch) angle = parseFloat(rotateMatch[1]);
+                            
+                            ctx.save();
+                            ctx.translate(layerX, layerY);
+                            ctx.rotate(angle * Math.PI / 180);
+                            ctx.drawImage(img, -layerW / 2, -layerH / 2, layerW, layerH);
+                            ctx.restore();
+                        }});
+                        
+                        const link = document.createElement('a');
+                        link.download = 'reconstructed_layout_' + (viewIdx + 1) + '.png';
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+                    }};
+                }};
+
+                // 2. Initialize document event listeners EXACTLY ONCE
+                if (!window.VisionSpaceListenersInitialized) {{
+                    window.VisionSpaceListenersInitialized = true;
                     window.VisionSpaceState = {{}};
                     
-                    window.startItemDrag = function(e, el, viewIdx) {{
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        if (!window.VisionSpaceState[viewIdx]) {{
-                            window.VisionSpaceState[viewIdx] = {{
-                                activeElement: null,
-                                isDragging: false,
-                                startX: 0,
-                                startY: 0,
-                                startLeft: 0,
-                                startTop: 0
-                            }};
-                        }}
-                        
-                        const state = window.VisionSpaceState[viewIdx];
-                        
-                        window.selectElement(el, viewIdx);
-                        state.isDragging = true;
-                        state.activeElement = el;
-                        
-                        const isTouch = e.type.startsWith('touch');
-                        const clientX = isTouch ? e.touches[0].clientX : e.clientX;
-                        const clientY = isTouch ? e.touches[0].clientY : e.clientY;
-                        
-                        state.startX = clientX;
-                        state.startY = clientY;
-                        state.startLeft = parseFloat(el.style.left) || 0;
-                        state.startTop = parseFloat(el.style.top) || 0;
-                    }};
-                    
-                    window.roomBackgroundClicked = function(e, viewIdx) {{
-                        window.deselectAll(viewIdx);
-                    }};
-                    
-                    window.selectElement = function(el, viewIdx) {{
-                        window.deselectAll(viewIdx);
-                        
-                        if (!window.VisionSpaceState[viewIdx]) {{
-                            window.VisionSpaceState[viewIdx] = {{ activeElement: null }};
-                        }}
-                        window.VisionSpaceState[viewIdx].activeElement = el;
-                        
-                        el.style.outline = '2px dashed #2563eb';
-                        el.style.boxShadow = '0 0 12px rgba(37, 99, 235, 0.5)';
-                        
-                        const toolbar = document.getElementById('toolbar-' + viewIdx);
-                        const toolName = document.getElementById('tool-name-' + viewIdx);
-                        if (toolbar) toolbar.style.display = 'flex';
-                        if (toolName) toolName.innerText = el.getAttribute('data-name');
-                    }};
-                    
-                    window.deselectAll = function(viewIdx) {{
-                        if (window.VisionSpaceState[viewIdx]) {{
-                            window.VisionSpaceState[viewIdx].activeElement = null;
-                        }}
-                        const container = document.getElementById('interactive-room-' + viewIdx);
-                        if (container) {{
-                            const products = container.parentElement.querySelectorAll('.draggable-product');
-                            products.forEach(p => {{
-                                p.style.outline = 'none';
-                                p.style.boxShadow = 'none';
-                            }});
-                        }}
-                        const toolbar = document.getElementById('toolbar-' + viewIdx);
-                        if (toolbar) toolbar.style.display = 'none';
-                    }};
-                    
                     document.addEventListener('mousemove', function(e) {{
-                        for (const viewIdx in window.VisionSpaceState) {{
-                            const state = window.VisionSpaceState[viewIdx];
-                            if (state.isDragging && state.activeElement) {{
-                                const dx = e.clientX - state.startX;
-                                const dy = e.clientY - state.startY;
-                                state.activeElement.style.left = (state.startLeft + dx) + 'px';
-                                state.activeElement.style.top = (state.startTop + dy) + 'px';
+                        if (window.VisionSpaceState) {{
+                            for (const viewIdx in window.VisionSpaceState) {{
+                                const state = window.VisionSpaceState[viewIdx];
+                                if (state && state.isDragging && state.activeElement) {{
+                                    const dx = e.clientX - state.startX;
+                                    const dy = e.clientY - state.startY;
+                                    state.activeElement.style.left = (state.startLeft + dx) + 'px';
+                                    state.activeElement.style.top = (state.startTop + dy) + 'px';
+                                }}
                             }}
                         }}
                     }}, {{ passive: true }});
                     
                     document.addEventListener('mouseup', function() {{
-                        for (const viewIdx in window.VisionSpaceState) {{
-                            window.VisionSpaceState[viewIdx].isDragging = false;
+                        if (window.VisionSpaceState) {{
+                            for (const viewIdx in window.VisionSpaceState) {{
+                                if (window.VisionSpaceState[viewIdx]) {{
+                                    window.VisionSpaceState[viewIdx].isDragging = false;
+                                }}
+                            }}
                         }}
                     }});
                     
                     document.addEventListener('touchmove', function(e) {{
-                        for (const viewIdx in window.VisionSpaceState) {{
-                            const state = window.VisionSpaceState[viewIdx];
-                            if (state.isDragging && state.activeElement) {{
-                                const touch = e.touches[0];
-                                const dx = touch.clientX - state.startX;
-                                const dy = touch.clientY - state.startY;
-                                state.activeElement.style.left = (state.startLeft + dx) + 'px';
-                                state.activeElement.style.top = (state.startTop + dy) + 'px';
+                        if (window.VisionSpaceState) {{
+                            for (const viewIdx in window.VisionSpaceState) {{
+                                const state = window.VisionSpaceState[viewIdx];
+                                if (state && state.isDragging && state.activeElement) {{
+                                    const touch = e.touches[0];
+                                    const dx = touch.clientX - state.startX;
+                                    const dy = touch.clientY - state.startY;
+                                    state.activeElement.style.left = (state.startLeft + dx) + 'px';
+                                    state.activeElement.style.top = (state.startTop + dy) + 'px';
+                                }}
                             }}
                         }}
                     }}, {{ passive: true }});
                     
                     document.addEventListener('touchend', function() {{
-                        for (const viewIdx in window.VisionSpaceState) {{
-                            window.VisionSpaceState[viewIdx].isDragging = false;
+                        if (window.VisionSpaceState) {{
+                            for (const viewIdx in window.VisionSpaceState) {{
+                                if (window.VisionSpaceState[viewIdx]) {{
+                                    window.VisionSpaceState[viewIdx].isDragging = false;
+                                }}
+                            }}
                         }}
                     }});
                     
@@ -250,92 +354,50 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                             e.preventDefault();
                         }}
                     }});
+                }}
+
+                // 3. Bind event listeners dynamically to DOM elements to bypass HTML sanitizers!
+                const container = document.getElementById('interactive-room-{idx}');
+                if (container) {{
+                    const products = container.parentElement.querySelectorAll('.draggable-product');
+                    products.forEach(p => {{
+                        p.addEventListener('mousedown', function(e) {{
+                            window.startItemDrag(e, p, {idx});
+                        }});
+                        p.addEventListener('touchstart', function(e) {{
+                            window.startItemDrag(e, p, {idx});
+                        }});
+                    }});
                     
-                    window.rotateItem = function(viewIdx, deg) {{
-                        const state = window.VisionSpaceState[viewIdx];
-                        if (state && state.activeElement) {{
-                            let currentRotation = 0;
-                            const transform = state.activeElement.style.transform || '';
-                            const match = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
-                            if (match) currentRotation = parseFloat(match[1]);
-                            
-                            let newRotation = (currentRotation + deg) % 360;
-                            state.activeElement.style.transform = `rotate(${{newRotation}}deg)`;
-                        }}
-                    }};
+                    container.addEventListener('mousedown', function(e) {{
+                        window.roomBackgroundClicked(e, {idx});
+                    }});
+                    container.addEventListener('touchstart', function(e) {{
+                        window.roomBackgroundClicked(e, {idx});
+                    }});
                     
-                    window.scaleItem = function(viewIdx, scale) {{
-                        const state = window.VisionSpaceState[viewIdx];
-                        if (state && state.activeElement) {{
-                            const el = state.activeElement;
-                            const currentW = parseFloat(el.style.width);
-                            const currentH = parseFloat(el.style.height);
-                            const currentL = parseFloat(el.style.left);
-                            const currentT = parseFloat(el.style.top);
-                            
-                            const newW = currentW * scale;
-                            const newH = currentH * scale;
-                            
-                            el.style.width = newW + 'px';
-                            el.style.height = newH + 'px';
-                            el.style.left = (currentL - (newW - currentW)/2) + 'px';
-                            el.style.top = (currentT - (newH - currentH)/2) + 'px';
-                        }}
-                    }};
-                    
-                    window.deleteItem = function(viewIdx) {{
-                        const state = window.VisionSpaceState[viewIdx];
-                        if (state && state.activeElement) {{
-                            state.activeElement.style.display = 'none';
-                            window.deselectAll(viewIdx);
-                        }}
-                    }};
-                    
-                    window.downloadInteractiveLayout = function(viewIdx) {{
-                        const container = document.getElementById('interactive-room-' + viewIdx);
-                        const bgImgUrl = container.style.backgroundImage.slice(5, -2).replace(/"/g, "");
-                        const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
+                    const toolbar = document.getElementById('toolbar-{idx}');
+                    if (toolbar) {{
+                        const btnRotL = toolbar.querySelector('.btn-rot-l-{idx}');
+                        const btnRotR = toolbar.querySelector('.btn-rot-r-{idx}');
+                        const btnScaleD = toolbar.querySelector('.btn-scale-d-{idx}');
+                        const btnScaleU = toolbar.querySelector('.btn-scale-u-{idx}');
+                        const btnDel = toolbar.querySelector('.btn-del-{idx}');
                         
-                        const bg = new Image();
-                        bg.src = bgImgUrl;
-                        bg.onload = function() {{
-                            canvas.width = bg.naturalWidth || 800;
-                            canvas.height = bg.naturalHeight || 600;
-                            ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-                            
-                            const displayW = container.clientWidth;
-                            const displayH = container.clientHeight;
-                            const scaleX = canvas.width / displayW;
-                            const scaleY = canvas.height / displayH;
-                            
-                            const layers = container.parentElement.querySelectorAll('.draggable-product');
-                            layers.forEach(layer => {{
-                                if (layer.style.display === 'none') return;
-                                const img = layer.querySelector('img');
-                                const layerW = parseFloat(layer.style.width) * scaleX;
-                                const layerH = parseFloat(layer.style.height) * scaleY;
-                                const layerX = (parseFloat(layer.style.left) + parseFloat(layer.style.width)/2) * scaleX;
-                                const layerY = (parseFloat(layer.style.top) + parseFloat(layer.style.height)/2) * scaleY;
-                                
-                                let angle = 0;
-                                const transform = layer.style.transform || '';
-                                const rotateMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
-                                if (rotateMatch) angle = parseFloat(rotateMatch[1]);
-                                
-                                ctx.save();
-                                ctx.translate(layerX, layerY);
-                                ctx.rotate(angle * Math.PI / 180);
-                                ctx.drawImage(img, -layerW / 2, -layerH / 2, layerW, layerH);
-                                ctx.restore();
-                            }});
-                            
-                            const link = document.createElement('a');
-                            link.download = 'reconstructed_layout_' + (viewIdx + 1) + '.png';
-                            link.href = canvas.toDataURL('image/png');
-                            link.click();
-                        }};
-                    }};
+                        if (btnRotL) btnRotL.addEventListener('click', function() {{ window.rotateItem({idx}, -15); }});
+                        if (btnRotR) btnRotR.addEventListener('click', function() {{ window.rotateItem({idx}, 15); }});
+                        if (btnScaleD) btnScaleD.addEventListener('click', function() {{ window.scaleItem({idx}, 0.9); }});
+                        if (btnScaleU) btnScaleU.addEventListener('click', function() {{ window.scaleItem({idx}, 1.1); }});
+                        if (btnDel) btnDel.addEventListener('click', function() {{ window.deleteItem({idx}); }});
+                    }}
+                    
+                    const card = container.parentElement;
+                    const btnDownload = card.querySelector('.btn-download-{idx}');
+                    if (btnDownload) {{
+                        btnDownload.addEventListener('click', function() {{
+                            window.downloadInteractiveLayout({idx});
+                        }});
+                    }}
                 }}
             }})();
             </script>
