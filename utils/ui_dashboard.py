@@ -84,8 +84,8 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                             height = (y2 - y1) * (375 / natural_h)
                             
                             product_layers_html += f"""
-                            <div class="draggable-product" data-id="{p_id}" data-name="{p.get('name', 'Product')}" style="position: absolute; left: {left:.1f}px; top: {top:.1f}px; width: {width:.1f}px; height: {height:.1f}px; cursor: move; transform: rotate(0deg); transform-origin: center; display: inline-block; z-index: 10;">
-                                <img src="data:image/png;base64,{b64_cutout}" style="width: 100%; height: 100%; pointer-events: none; object-fit: contain;">
+                            <div class="draggable-product" data-id="{p_id}" data-name="{p.get('name', 'Product')}" onmousedown="startItemDrag(event, this, {idx})" ontouchstart="startItemDrag(event, this, {idx})" style="position: absolute; left: {left:.1f}px; top: {top:.1f}px; width: {width:.1f}px; height: {height:.1f}px; cursor: move; transform: rotate(0deg); transform-origin: center; display: inline-block; z-index: 10; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; background: transparent;">
+                                <img src="data:image/png;base64,{b64_cutout}" style="width: 100%; height: 100%; pointer-events: none; object-fit: contain; user-select: none; -webkit-user-select: none; -moz-user-select: none;">
                             </div>
                             """
             
@@ -97,7 +97,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                 right_card_html = f"""
                 <div class="image-card" style="background: #1a202c; border-radius: 8px; padding: 12px; border: 1px solid #2d3748; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center;">
                     <div style="position: relative; width: 500px; height: 375px; background: #000; border-radius: 6px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);">
-                        <div id="interactive-room-{idx}" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-image: url('data:image/png;base64,{b64_before}'); background-size: 100% 100%; pointer-events: none;"></div>
+                        <div id="interactive-room-{idx}" onmousedown="roomBackgroundClicked(event, {idx})" ontouchstart="roomBackgroundClicked(event, {idx})" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-image: url('data:image/png;base64,{b64_before}'); background-size: 100% 100%; pointer-events: auto; user-select: none; -webkit-user-select: none; -moz-user-select: none;"></div>
                         {product_layers_html}
                         
                         <div id="toolbar-{idx}" style="position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(26, 32, 44, 0.95); border: 1px solid #4a5568; border-radius: 20px; padding: 4px 12px; display: none; gap: 8px; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.5); align-items: center;">
@@ -141,26 +141,29 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                 let startX = 0, startY = 0;
                 let startLeft = 0, startTop = 0;
                 
-                const container = document.getElementById('interactive-room-{idx}');
-                if (!container) return;
-                const parent = container.parentElement;
+                window.startItemDrag = function(e, el, viewIdx) {{
+                    if (viewIdx !== {idx}) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    selectElement(el, viewIdx);
+                    isDragging = true;
+                    activeElement = el;
+                    
+                    const isTouch = e.type.startsWith('touch');
+                    const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+                    const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+                    
+                    startX = clientX;
+                    startY = clientY;
+                    startLeft = parseFloat(el.style.left) || 0;
+                    startTop = parseFloat(el.style.top) || 0;
+                }};
                 
-                parent.addEventListener('mousedown', function(e) {{
-                    if (e.target === parent || e.target === container) {{
-                        deselectAll();
-                        return;
-                    }}
-                    const draggable = e.target.closest('.draggable-product');
-                    if (draggable) {{
-                        e.preventDefault();
-                        selectElement(draggable);
-                        isDragging = true;
-                        startX = e.clientX;
-                        startY = e.clientY;
-                        startLeft = parseFloat(draggable.style.left) || 0;
-                        startTop = parseFloat(draggable.style.top) || 0;
-                    }}
-                }});
+                window.roomBackgroundClicked = function(e, viewIdx) {{
+                    if (viewIdx !== {idx}) return;
+                    deselectAll(viewIdx);
+                }};
                 
                 document.addEventListener('mousemove', function(e) {{
                     if (isDragging && activeElement) {{
@@ -169,64 +172,55 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         activeElement.style.left = (startLeft + dx) + 'px';
                         activeElement.style.top = (startTop + dy) + 'px';
                     }}
-                }});
+                }}, {{ passive: true }});
                 
                 document.addEventListener('mouseup', function() {{
                     isDragging = false;
                 }});
                 
-                parent.addEventListener('touchstart', function(e) {{
-                    if (e.target === parent || e.target === container) {{
-                        deselectAll();
-                        return;
-                    }}
-                    const draggable = e.target.closest('.draggable-product');
-                    if (draggable) {{
-                        selectElement(draggable);
-                        isDragging = true;
-                        const touch = e.touches[0];
-                        startX = touch.clientX;
-                        startY = touch.clientY;
-                        startLeft = parseFloat(draggable.style.left) || 0;
-                        startTop = parseFloat(draggable.style.top) || 0;
-                    }}
-                }});
-                
-                parent.addEventListener('touchmove', function(e) {{
+                document.addEventListener('touchmove', function(e) {{
                     if (isDragging && activeElement) {{
-                        e.preventDefault();
                         const touch = e.touches[0];
                         const dx = touch.clientX - startX;
                         const dy = touch.clientY - startY;
                         activeElement.style.left = (startLeft + dx) + 'px';
                         activeElement.style.top = (startTop + dy) + 'px';
                     }}
-                }});
+                }}, {{ passive: true }});
                 
-                parent.addEventListener('touchend', function() {{
+                document.addEventListener('touchend', function() {{
                     isDragging = false;
                 }});
                 
-                function selectElement(el) {{
-                    deselectAll();
+                document.addEventListener('dragstart', function(e) {{
+                    if (e.target.closest('.draggable-product')) {{
+                        e.preventDefault();
+                    }}
+                }});
+                
+                function selectElement(el, viewIdx) {{
+                    deselectAll(viewIdx);
                     activeElement = el;
-                    activeElement.style.outline = '2px solid #3182ce';
-                    activeElement.style.boxShadow = '0 0 10px rgba(49, 130, 206, 0.6)';
+                    activeElement.style.outline = '2px dashed #2563eb';
+                    activeElement.style.boxShadow = '0 0 12px rgba(37, 99, 235, 0.5)';
                     
-                    const toolbar = document.getElementById('toolbar-{idx}');
-                    const toolName = document.getElementById('tool-name-{idx}');
+                    const toolbar = document.getElementById('toolbar-' + viewIdx);
+                    const toolName = document.getElementById('tool-name-' + viewIdx);
                     if (toolbar) toolbar.style.display = 'flex';
                     if (toolName) toolName.innerText = el.getAttribute('data-name');
                 }}
                 
-                function deselectAll() {{
+                function deselectAll(viewIdx) {{
                     activeElement = null;
-                    const products = parent.querySelectorAll('.draggable-product');
-                    products.forEach(p => {{
-                        p.style.outline = 'none';
-                        p.style.boxShadow = 'none';
-                    }});
-                    const toolbar = document.getElementById('toolbar-{idx}');
+                    const container = document.getElementById('interactive-room-' + viewIdx);
+                    if (container) {{
+                        const products = container.parentElement.querySelectorAll('.draggable-product');
+                        products.forEach(p => {{
+                            p.style.outline = 'none';
+                            p.style.boxShadow = 'none';
+                        }});
+                    }}
+                    const toolbar = document.getElementById('toolbar-' + viewIdx);
                     if (toolbar) toolbar.style.display = 'none';
                 }}
                 
@@ -234,7 +228,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                     if (activeElement && viewIdx === {idx}) {{
                         let currentRotation = 0;
                         const transform = activeElement.style.transform || '';
-                        const match = transform.match(/rotate\(([-0-9.]+)deg\)/);
+                        const match = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
                         if (match) currentRotation = parseFloat(match[1]);
                         
                         let newRotation = (currentRotation + deg) % 360;
@@ -262,7 +256,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                 window.deleteItem = function(viewIdx) {{
                     if (activeElement && viewIdx === {idx}) {{
                         activeElement.style.display = 'none';
-                        deselectAll();
+                        deselectAll(viewIdx);
                     }}
                 }};
                 
@@ -295,7 +289,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                             
                             let angle = 0;
                             const transform = layer.style.transform || '';
-                            const rotateMatch = transform.match(/rotate\(([-0-9.]+)deg\)/);
+                            const rotateMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
                             if (rotateMatch) angle = parseFloat(rotateMatch[1]);
                             
                             ctx.save();
