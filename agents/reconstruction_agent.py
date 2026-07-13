@@ -389,27 +389,21 @@ class ReconstructionAgent:
 
         existing_objects = vision_output.get("objects", []) if vision_output else []
         for obj in existing_objects:
-            pos = obj.get("room_position") or obj.get("position")
+            pos = obj.get("position") or obj.get("room_position")
             dims = obj.get("estimated_dimensions") or {}
             if pos:
-                cx_old = float(pos.get("x_cm") or pos.get("x") or 0.0)
-                cy_old = float(pos.get("y_cm") or pos.get("y") or 0.0)
-                cz_old = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                cx = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                cy = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                cz = float(pos.get("z_cm") or pos.get("z") or 0.0)
                 
-                if abs(cx_old) < 15.0: cx_old *= 100.0
-                if abs(cy_old) < 15.0: cy_old *= 100.0
-                if abs(cz_old) < 15.0: cz_old *= 100.0
+                if abs(cx) < 15.0: cx *= 100.0
+                if abs(cy) < 15.0: cy *= 100.0
+                if abs(cz) < 15.0: cz *= 100.0
                 
                 w_cm = float(dims.get("width_cm") or dims.get("width") or 80.0)
                 d_cm = float(dims.get("depth_cm") or dims.get("depth") or 80.0)
                 h_cm = float(dims.get("height_cm") or dims.get("height") or 80.0)
                 
-                # Shift to new coordinate system
-                cx = cx_old + room_w / 2
-                cy = cz_old
-                cz = room_h / 2 - cy_old # height axis mapping
-                
-                # Ensure coordinate axes boundaries
                 cx = max(w_cm/2, min(room_w - w_cm/2, cx))
                 cy = max(d_cm/2, min(room_d - d_cm/2, cy))
                 cz = max(h_cm/2, min(room_h - h_cm/2, cz))
@@ -423,23 +417,24 @@ class ReconstructionAgent:
 
         doors = vision_output.get("doors", []) if vision_output else []
         for door in doors:
-            pos = door.get("room_position")
+            pos = door.get("position") or door.get("room_position")
             dims = door.get("estimated_dimensions") or {}
             if pos:
-                cx_old = float(pos.get("x_cm") or pos.get("x") or 0.0)
-                cy_old = float(pos.get("y_cm") or pos.get("y") or 0.0)
-                cz_old = float(pos.get("z_cm") or pos.get("z") or 0.0)
-                if abs(cx_old) < 15.0: cx_old *= 100.0
-                if abs(cy_old) < 15.0: cy_old *= 100.0
-                if abs(cz_old) < 15.0: cz_old *= 100.0
+                cx = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                cy = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                cz = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                
+                if abs(cx) < 15.0: cx *= 100.0
+                if abs(cy) < 15.0: cy *= 100.0
+                if abs(cz) < 15.0: cz *= 100.0
                 
                 w_cm = float(dims.get("width_cm") or dims.get("width") or 90.0)
                 d_cm = float(dims.get("depth_cm") or dims.get("depth") or 10.0)
                 h_cm = float(dims.get("height_cm") or dims.get("height") or 200.0)
                 
-                cx = cx_old + room_w / 2
-                cy = cz_old
-                cz = room_h / 2 - cy_old
+                cx = max(w_cm/2, min(room_w - w_cm/2, cx))
+                cy = max(d_cm/2, min(room_d - d_cm/2, cy))
+                cz = max(h_cm/2, min(room_h - h_cm/2, cz))
                 
                 occupied_3d_boxes.append((
                     cx - w_cm/2, cx + w_cm/2,
@@ -450,23 +445,24 @@ class ReconstructionAgent:
 
         windows = vision_output.get("windows", []) if vision_output else []
         for win in windows:
-            pos = win.get("room_position")
+            pos = win.get("position") or win.get("room_position")
             dims = win.get("estimated_dimensions") or {}
             if pos:
-                cx_old = float(pos.get("x_cm") or pos.get("x") or 0.0)
-                cy_old = float(pos.get("y_cm") or pos.get("y") or 0.0)
-                cz_old = float(pos.get("z_cm") or pos.get("z") or 0.0)
-                if abs(cx_old) < 15.0: cx_old *= 100.0
-                if abs(cy_old) < 15.0: cy_old *= 100.0
-                if abs(cz_old) < 15.0: cz_old *= 100.0
+                cx = float(pos.get("x_cm") or pos.get("x") or 0.0)
+                cy = float(pos.get("y_cm") or pos.get("y") or 0.0)
+                cz = float(pos.get("z_cm") or pos.get("z") or 0.0)
+                
+                if abs(cx) < 15.0: cx *= 100.0
+                if abs(cy) < 15.0: cy *= 100.0
+                if abs(cz) < 15.0: cz *= 100.0
                 
                 w_cm = float(dims.get("width_cm") or dims.get("width") or 120.0)
                 d_cm = float(dims.get("depth_cm") or dims.get("depth") or 10.0)
                 h_cm = float(dims.get("height_cm") or dims.get("height") or 120.0)
                 
-                cx = cx_old + room_w / 2
-                cy = cz_old
-                cz = room_h / 2 - cy_old
+                cx = max(w_cm/2, min(room_w - w_cm/2, cx))
+                cy = max(d_cm/2, min(room_d - d_cm/2, cy))
+                cz = max(h_cm/2, min(room_h - h_cm/2, cz))
                 
                 occupied_3d_boxes.append((
                     cx - w_cm/2, cx + w_cm/2,
