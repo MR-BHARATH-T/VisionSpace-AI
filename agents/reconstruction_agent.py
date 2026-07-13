@@ -46,30 +46,11 @@ def make_background_transparent(img: Any) -> Any:
     """Converts solid or near-solid backgrounds of product thumbnails to transparent."""
     original_img = img.copy()
     
-    # 1. Attempt to use rembg if installed for professional AR background removal
-    try:
-        # Pre-check onnxruntime to avoid rembg module-level sys.exit(1) execution
-        import onnxruntime
-        from rembg import remove
-        removed = remove(img)
-        if removed:
-            feathered = apply_edge_feathering(removed, feather_radius=8)
-            # Autocrop transparent margins to make the product fill the canvas
-            bbox = feathered.getbbox()
-            if bbox:
-                logger.info("Successfully removed showroom background using rembg library.")
-                return feathered.crop(bbox)
-            else:
-                logger.warning("rembg produced a completely transparent image. Discarding and falling back to chroma keying.")
-    except BaseException as rembg_err:
-        logger.warning("rembg failed, not installed, or exited: %s. Falling back to corner-sample keying.", str(rembg_err))
-
-    # 2. Fallback: Corner-sample chroma keying (works on gray/off-white studio backdrops)
-    img = img.convert("RGBA")
-    width, height = img.size
-    pixels = img.load()
+    # Pre-calculate to check if we have a clean studio solid backdrop
+    img_rgba = img.convert("RGBA")
+    width, height = img_rgba.size
+    pixels = img_rgba.load()
     
-    # Sample the four corners
     corners = [
         pixels[0, 0],
         pixels[width - 1, 0],
@@ -77,44 +58,50 @@ def make_background_transparent(img: Any) -> Any:
         pixels[width - 1, height - 1]
     ]
     
-    # Calculate average corner color (RGB)
     avg_r = sum(c[0] for c in corners) // 4
     avg_g = sum(c[1] for c in corners) // 4
     avg_b = sum(c[2] for c in corners) // 4
     
-    # Standard deviation threshold check to verify it's a solid backdrop
     import math
     dists = [math.sqrt((c[0]-avg_r)**2 + (c[1]-avg_g)**2 + (c[2]-avg_b)**2) for c in corners]
-    is_solid_backdrop = all(d < 15 for d in dists) # corners are highly similar
+    is_solid_backdrop = all(d < 15 for d in dists)
     
-    new_data = []
-    datas = img.getdata()
-    
-    # Define match threshold
-    threshold = 32
-    
-    for item in datas:
-        r, g, b, a = item
-        
-        # Check distance to average corner color
-        dist = math.sqrt((r - avg_r)**2 + (g - avg_g)**2 + (b - avg_b)**2)
-        
-        # Key out light backdrops and near-white pixels
-        if r > 218 and g > 218 and b > 218:
-            new_data.append((r, g, b, 0))
-        elif dist < threshold:
-            new_data.append((r, g, b, 0))
-        else:
-            new_data.append(item)
-            
-    img.putdata(new_data)
-    feathered = apply_edge_feathering(img, feather_radius=12)
-    # Autocrop transparent margins to make the product fill the canvas
-    bbox = feathered.getbbox()
-    if bbox:
-        return feathered.crop(bbox)
-        
-    logger.warning("All background removal attempts resulted in an empty image. Returning original image.")
+    # If it is a solid studio background, prioritize chroma keying!
+    # This avoids rembg segmenter (u2net) hallucinating/fragmenting furniture structures (like beds/chairs)
+    if is_solid_backdrop:
+        new_data = []
+        datas = img_rgba.getdata()
+        threshold = 32
+        for item in datas:
+            r, g, b, a = item
+            dist = math.sqrt((r - avg_r)**2 + (g - avg_g)**2 + (b - avg_b)**2)
+            if r > 218 and g > 218 and b > 218:
+                new_data.append((r, g, b, 0))
+            elif dist < threshold:
+                new_data.append((r, g, b, 0))
+            else:
+                new_data.append(item)
+        img_rgba.putdata(new_data)
+        feathered = apply_edge_feathering(img_rgba, feather_radius=12)
+        bbox = feathered.getbbox()
+        if bbox:
+            return feathered.crop(bbox)
+
+    # Otherwise, fall back to rembg if installed for complex/showroom backgrounds
+    try:
+        import onnxruntime
+        from rembg import remove
+        removed = remove(img)
+        if removed:
+            feathered = apply_edge_feathering(removed, feather_radius=8)
+            bbox = feathered.getbbox()
+            if bbox:
+                logger.info("Successfully removed showroom background using rembg library.")
+                return feathered.crop(bbox)
+    except BaseException as rembg_err:
+        logger.warning("rembg failed, not installed, or exited: %s.", str(rembg_err))
+
+    # Final fallback if both failed or produced empty
     return original_img
 
 

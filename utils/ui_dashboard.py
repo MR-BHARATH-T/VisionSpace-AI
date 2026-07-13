@@ -295,7 +295,62 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                     }};
                 }};
 
-                // 2. Initialize document event listeners EXACTLY ONCE
+                window.bindCustomizerEvents = function(viewIdx) {{
+                    const container = document.getElementById('interactive-room-' + viewIdx);
+                    if (!container) return;
+                    
+                    window.deselectAll(viewIdx);
+                    
+                    const products = container.parentElement.querySelectorAll('.draggable-product');
+                    products.forEach(p => {{
+                        if (p.getAttribute('data-listeners-bound') === 'true') return;
+                        p.setAttribute('data-listeners-bound', 'true');
+                        
+                        p.addEventListener('mousedown', function(e) {{
+                            window.startItemDrag(e, p, viewIdx);
+                        }});
+                        p.addEventListener('touchstart', function(e) {{
+                            window.startItemDrag(e, p, viewIdx);
+                        }});
+                    }});
+                    
+                    if (container.getAttribute('data-listeners-bound') !== 'true') {{
+                        container.setAttribute('data-listeners-bound', 'true');
+                        container.addEventListener('mousedown', function(e) {{
+                            window.roomBackgroundClicked(e, viewIdx);
+                        }});
+                        container.addEventListener('touchstart', function(e) {{
+                            window.roomBackgroundClicked(e, viewIdx);
+                        }});
+                    }}
+                    
+                    const toolbar = document.getElementById('toolbar-' + viewIdx);
+                    if (toolbar && toolbar.getAttribute('data-listeners-bound') !== 'true') {{
+                        toolbar.setAttribute('data-listeners-bound', 'true');
+                        const btnRotL = toolbar.querySelector('.btn-rot-l-' + viewIdx);
+                        const btnRotR = toolbar.querySelector('.btn-rot-r-' + viewIdx);
+                        const btnScaleD = toolbar.querySelector('.btn-scale-d-' + viewIdx);
+                        const btnScaleU = toolbar.querySelector('.btn-scale-u-' + viewIdx);
+                        const btnDel = toolbar.querySelector('.btn-del-' + viewIdx);
+                        
+                        if (btnRotL) btnRotL.addEventListener('click', function() {{ window.rotateItem(viewIdx, -15); }});
+                        if (btnRotR) btnRotR.addEventListener('click', function() {{ window.rotateItem(viewIdx, 15); }});
+                        if (btnScaleD) btnScaleD.addEventListener('click', function() {{ window.scaleItem(viewIdx, 0.9); }});
+                        if (btnScaleU) btnScaleU.addEventListener('click', function() {{ window.scaleItem(viewIdx, 1.1); }});
+                        if (btnDel) btnDel.addEventListener('click', function() {{ window.deleteItem(viewIdx); }});
+                    }}
+                    
+                    const card = container.parentElement;
+                    const btnDownload = card.querySelector('.btn-download-' + viewIdx);
+                    if (btnDownload && btnDownload.getAttribute('data-listeners-bound') !== 'true') {{
+                        btnDownload.setAttribute('data-listeners-bound', 'true');
+                        btnDownload.addEventListener('click', function() {{
+                            window.downloadInteractiveLayout(viewIdx);
+                        }});
+                    }}
+                }};
+
+                // 2. Initialize document-level event listeners EXACTLY ONCE
                 if (!window.VisionSpaceListenersInitialized) {{
                     window.VisionSpaceListenersInitialized = true;
                     window.VisionSpaceState = {{}};
@@ -356,49 +411,33 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                     }});
                 }}
 
-                // 3. Bind event listeners dynamically to DOM elements to bypass HTML sanitizers!
-                const container = document.getElementById('interactive-room-{idx}');
-                if (container) {{
-                    const products = container.parentElement.querySelectorAll('.draggable-product');
-                    products.forEach(p => {{
-                        p.addEventListener('mousedown', function(e) {{
-                            window.startItemDrag(e, p, {idx});
-                        }});
-                        p.addEventListener('touchstart', function(e) {{
-                            window.startItemDrag(e, p, {idx});
-                        }});
+                // 3. Register Mutation Observer to automatically bind events on dynamic IPyWidgets updates
+                if (!window.VisionSpaceObserverInitialized) {{
+                    window.VisionSpaceObserverInitialized = true;
+                    
+                    const observer = new MutationObserver(function(mutations) {{
+                        for (let mutation of mutations) {{
+                            for (let node of mutation.addedNodes) {{
+                                if (node.nodeType === Node.ELEMENT_NODE) {{
+                                    const containers = node.querySelectorAll ? node.querySelectorAll('[id^="interactive-room-"]') : [];
+                                    containers.forEach(container => {{
+                                        const idx = parseInt(container.id.replace('interactive-room-', ''));
+                                        window.bindCustomizerEvents(idx);
+                                    }});
+                                    if (node.id && node.id.startsWith('interactive-room-')) {{
+                                        const idx = parseInt(node.id.replace('interactive-room-', ''));
+                                        window.bindCustomizerEvents(idx);
+                                    }}
+                                }}
+                            }}
+                        }}
                     }});
                     
-                    container.addEventListener('mousedown', function(e) {{
-                        window.roomBackgroundClicked(e, {idx});
-                    }});
-                    container.addEventListener('touchstart', function(e) {{
-                        window.roomBackgroundClicked(e, {idx});
-                    }});
-                    
-                    const toolbar = document.getElementById('toolbar-{idx}');
-                    if (toolbar) {{
-                        const btnRotL = toolbar.querySelector('.btn-rot-l-{idx}');
-                        const btnRotR = toolbar.querySelector('.btn-rot-r-{idx}');
-                        const btnScaleD = toolbar.querySelector('.btn-scale-d-{idx}');
-                        const btnScaleU = toolbar.querySelector('.btn-scale-u-{idx}');
-                        const btnDel = toolbar.querySelector('.btn-del-{idx}');
-                        
-                        if (btnRotL) btnRotL.addEventListener('click', function() {{ window.rotateItem({idx}, -15); }});
-                        if (btnRotR) btnRotR.addEventListener('click', function() {{ window.rotateItem({idx}, 15); }});
-                        if (btnScaleD) btnScaleD.addEventListener('click', function() {{ window.scaleItem({idx}, 0.9); }});
-                        if (btnScaleU) btnScaleU.addEventListener('click', function() {{ window.scaleItem({idx}, 1.1); }});
-                        if (btnDel) btnDel.addEventListener('click', function() {{ window.deleteItem({idx}); }});
-                    }}
-                    
-                    const card = container.parentElement;
-                    const btnDownload = card.querySelector('.btn-download-{idx}');
-                    if (btnDownload) {{
-                        btnDownload.addEventListener('click', function() {{
-                            window.downloadInteractiveLayout({idx});
-                        }});
-                    }}
+                    observer.observe(document.body, {{ childList: true, subtree: true }});
                 }}
+
+                // 4. Bind events to the current viewport container immediately
+                window.bindCustomizerEvents({idx});
             }})();
             </script>
             """
