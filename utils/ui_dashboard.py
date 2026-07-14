@@ -279,7 +279,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         const rotMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
                         if (rotMatch) currentRotation = parseFloat(rotMatch[1]);
                         
-                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\\s*([-0-9.]+)\\)/);
                         if (scaleMatch) {{
                             scaleX = parseFloat(scaleMatch[1]);
                             scaleY = parseFloat(scaleMatch[2]);
@@ -297,7 +297,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         let scaleY = 1;
                         
                         const transform = state.activeElement.style.transform || '';
-                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\\s*([-0-9.]+)\\)/);
                         if (scaleMatch) {{
                             scaleX = parseFloat(scaleMatch[1]);
                             scaleY = parseFloat(scaleMatch[2]);
@@ -325,7 +325,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         const rotMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
                         if (rotMatch) currentRotation = parseFloat(rotMatch[1]);
                         
-                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\\s*([-0-9.]+)\\)/);
                         if (scaleMatch) {{
                             scaleX = parseFloat(scaleMatch[1]);
                             scaleY = parseFloat(scaleMatch[2]);
@@ -347,7 +347,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         const rotMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
                         if (rotMatch) currentRotation = parseFloat(rotMatch[1]);
                         
-                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\\s*([-0-9.]+)\\)/);
                         if (scaleMatch) {{
                             scaleX = parseFloat(scaleMatch[1]);
                             scaleY = parseFloat(scaleMatch[2]);
@@ -420,7 +420,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                             const rotateMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
                             if (rotateMatch) angle = parseFloat(rotateMatch[1]);
                             
-                            const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                            const scaleMatch = transform.match(/scale\\(([-0-9.]+),\\s*([-0-9.]+)\\)/);
                             if (scaleMatch) {{
                                 sX = parseFloat(scaleMatch[1]);
                                 sY = parseFloat(scaleMatch[2]);
