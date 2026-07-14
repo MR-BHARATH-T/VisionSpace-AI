@@ -640,12 +640,33 @@ class ReconstructionAgent:
                             y_overlap = (iy2 - 2 > oy1 and iy1 + 2 < oy2)
                             z_overlap = (iz2 - 2 > oz1 and iz1 + 2 < oz2)
                             
+                            # Strict zero-overlap collision constraint (Phase 7 Section 7)
                             if x_overlap and y_overlap and z_overlap:
-                                if is_opening or "door" in o_label or "bed" in o_label:
+                                hard_collision = True
+                                overlap_penalty += 1000.0
+                                
+                            # Strict walking space clear passage check (gap >= 50cm between floor items)
+                            if domain == "floor" and oz1 < 10.0:
+                                dx_gap = 0.0
+                                if ix2 < ox1:
+                                    dx_gap = ox1 - ix2
+                                elif ix1 > ox2:
+                                    dx_gap = ix1 - ox2
+                                    
+                                dy_gap = 0.0
+                                if iy2 < oy1:
+                                    dy_gap = oy1 - iy2
+                                elif iy1 > oy2:
+                                    dy_gap = iy1 - iy2
+                                    
+                                gap = math.sqrt(dx_gap*dx_gap + dy_gap*dy_gap)
+                                
+                                is_chair_desk = ("chair" in category and any(k in o_label for k in ["desk", "table", "counter"]))
+                                is_desk_chair = (any(k in category for k in ["desk", "table"]) and "chair" in o_label)
+                                
+                                if gap < 50.0 and not (is_chair_desk or is_desk_chair):
                                     hard_collision = True
-                                    overlap_penalty += 1000.0
-                                else:
-                                    overlap_penalty += 200.0
+                                    walkway_penalty += 1000.0
                                     
                             if "bed" in o_label:
                                 req_clear = clearance.get("bed_side_clearance", 45.0)

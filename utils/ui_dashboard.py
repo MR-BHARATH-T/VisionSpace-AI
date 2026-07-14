@@ -93,7 +93,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                             height = (y2 - y1) * (375 / natural_h)
                             
                             product_layers_html += f"""
-                            <div class="draggable-product" data-id="{p_id}" data-name="{p.get('name', 'Product')}" style="position: absolute; left: {left:.1f}px; top: {top:.1f}px; width: {width:.1f}px; height: {height:.1f}px; cursor: move; transform: rotate(0deg); transform-origin: center; display: inline-block; z-index: 10; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; background: transparent;">
+                            <div class="draggable-product" data-id="{p_id}" data-name="{p.get('name', 'Product')}" style="position: absolute; left: {left:.1f}px; top: {top:.1f}px; width: {width:.1f}px; height: {height:.1f}px; cursor: move; transform: rotate(0deg) scale(1, 1); transform-origin: center; display: inline-block; z-index: 10; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; background: transparent;">
                                 <img src="data:image/png;base64,{b64_cutout}" style="width: 100%; height: 100%; pointer-events: none; object-fit: contain; user-select: none; -webkit-user-select: none; -moz-user-select: none;">
                             </div>
                             """
@@ -113,6 +113,8 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                             <span id="tool-name-{idx}" style="color: #e2e8f0; font-size: 11px; font-family: sans-serif; font-weight: bold; margin-right: 4px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Item</span>
                             <button class="btn-rot-l-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Left">↺</button>
                             <button class="btn-rot-r-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Right">↻</button>
+                            <button class="btn-flip-h-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Flip Horizontal">↔</button>
+                            <button class="btn-flip-v-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Flip Vertical">↕</button>
                             <button class="btn-scale-d-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Down">−</button>
                             <button class="btn-scale-u-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Up">+</button>
                             <button class="btn-del-{idx}" style="background: #e53e3e; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Remove Item">🗑️</button>
@@ -222,12 +224,65 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                     const state = window.VisionSpaceState ? window.VisionSpaceState[viewIdx] : null;
                     if (state && state.activeElement) {{
                         let currentRotation = 0;
+                        let scaleX = 1;
+                        let scaleY = 1;
+                        
                         const transform = state.activeElement.style.transform || '';
-                        const match = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
-                        if (match) currentRotation = parseFloat(match[1]);
+                        const rotMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
+                        if (rotMatch) currentRotation = parseFloat(rotMatch[1]);
+                        
+                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                        if (scaleMatch) {{
+                            scaleX = parseFloat(scaleMatch[1]);
+                            scaleY = parseFloat(scaleMatch[2]);
+                        }}
                         
                         let newRotation = (currentRotation + deg) % 360;
-                        state.activeElement.style.transform = `rotate(${{newRotation}}deg)`;
+                        state.activeElement.style.transform = `rotate(${{newRotation}}deg) scale(${{scaleX}}, ${{scaleY}})`;
+                    }}
+                }};
+                
+                window.flipItemHorizontal = function(viewIdx) {{
+                    const state = window.VisionSpaceState ? window.VisionSpaceState[viewIdx] : null;
+                    if (state && state.activeElement) {{
+                        let currentRotation = 0;
+                        let scaleX = 1;
+                        let scaleY = 1;
+                        
+                        const transform = state.activeElement.style.transform || '';
+                        const rotMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
+                        if (rotMatch) currentRotation = parseFloat(rotMatch[1]);
+                        
+                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                        if (scaleMatch) {{
+                            scaleX = parseFloat(scaleMatch[1]);
+                            scaleY = parseFloat(scaleMatch[2]);
+                        }}
+                        
+                        scaleX = -scaleX;
+                        state.activeElement.style.transform = `rotate(${{currentRotation}}deg) scale(${{scaleX}}, ${{scaleY}})`;
+                    }}
+                }};
+
+                window.flipItemVertical = function(viewIdx) {{
+                    const state = window.VisionSpaceState ? window.VisionSpaceState[viewIdx] : null;
+                    if (state && state.activeElement) {{
+                        let currentRotation = 0;
+                        let scaleX = 1;
+                        let scaleY = 1;
+                        
+                        const transform = state.activeElement.style.transform || '';
+                        const rotMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
+                        if (rotMatch) currentRotation = parseFloat(rotMatch[1]);
+                        
+                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                        if (scaleMatch) {{
+                            scaleX = parseFloat(scaleMatch[1]);
+                            scaleY = parseFloat(scaleMatch[2]);
+                        }}
+                        
+                        scaleY = -scaleY;
+                        state.activeElement.style.transform = `rotate(${{currentRotation}}deg) scale(${{scaleX}}, ${{scaleY}})`;
                     }}
                 }};
                 
@@ -286,21 +341,88 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                             const layerY = (parseFloat(layer.style.top) + parseFloat(layer.style.height)/2) * scaleY;
                             
                             let angle = 0;
+                            let sX = 1;
+                            let sY = 1;
+                            
                             const transform = layer.style.transform || '';
                             const rotateMatch = transform.match(/rotate\\(([-0-9.]+)deg\\)/);
                             if (rotateMatch) angle = parseFloat(rotateMatch[1]);
                             
+                            const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                            if (scaleMatch) {{
+                                sX = parseFloat(scaleMatch[1]);
+                                sY = parseFloat(scaleMatch[2]);
+                            }}
+                            
                             ctx.save();
                             ctx.translate(layerX, layerY);
                             ctx.rotate(angle * Math.PI / 180);
+                            ctx.scale(sX, sY);
                             ctx.drawImage(img, -layerW / 2, -layerH / 2, layerW, layerH);
                             ctx.restore();
                         }});
                         
-                        const link = document.createElement('a');
-                        link.download = 'reconstructed_layout_' + (viewIdx + 1) + '.png';
-                        link.href = canvas.toDataURL('image/png');
-                        link.click();
+                        // 1. Attempt automatic file download
+                        try {{
+                            const link = document.createElement('a');
+                            link.download = 'reconstructed_layout_' + (viewIdx + 1) + '.png';
+                            link.href = canvas.toDataURL('image/png');
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        }} catch (e) {{
+                            console.log("Automatic download blocked by browser sandbox restrictions.");
+                        }}
+                        
+                        // 2. Fallback: Render a premium right-click modal overlay so users can download in sandboxed environments like Kaggle/Colab
+                        const modal = document.createElement('div');
+                        modal.style.position = 'fixed';
+                        modal.style.left = '0';
+                        modal.style.top = '0';
+                        modal.style.width = '100%';
+                        modal.style.height = '100%';
+                        modal.style.backgroundColor = 'rgba(10, 15, 26, 0.95)';
+                        modal.style.zIndex = '99999';
+                        modal.style.display = 'flex';
+                        modal.style.flexDirection = 'column';
+                        modal.style.alignItems = 'center';
+                        modal.style.justifyContent = 'center';
+                        
+                        const closeBtn = document.createElement('button');
+                        closeBtn.innerText = 'Close Preview [X]';
+                        closeBtn.style.padding = '10px 20px';
+                        closeBtn.style.marginBottom = '20px';
+                        closeBtn.style.background = '#ef4444';
+                        closeBtn.style.color = '#fff';
+                        closeBtn.style.border = 'none';
+                        closeBtn.style.borderRadius = '6px';
+                        closeBtn.style.cursor = 'pointer';
+                        closeBtn.style.fontWeight = 'bold';
+                        closeBtn.style.fontSize = '14px';
+                        closeBtn.onclick = function() {{
+                            document.body.removeChild(modal);
+                        }};
+                        
+                        const helpText = document.createElement('p');
+                        helpText.innerText = 'Right-click on the customized layout below and select \"Save image as...\" to download.';
+                        helpText.style.color = '#38bdf8';
+                        helpText.style.fontFamily = 'Inter, sans-serif';
+                        helpText.style.fontSize = '16px';
+                        helpText.style.fontWeight = 'bold';
+                        helpText.style.marginBottom = '15px';
+                        
+                        const imgEl = document.createElement('img');
+                        imgEl.src = canvas.toDataURL('image/png');
+                        imgEl.style.maxWidth = '90%';
+                        imgEl.style.maxHeight = '75%';
+                        imgEl.style.border = '3px solid #38bdf8';
+                        imgEl.style.borderRadius = '8px';
+                        imgEl.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
+                        
+                        modal.appendChild(closeBtn);
+                        modal.appendChild(helpText);
+                        modal.appendChild(imgEl);
+                        document.body.appendChild(modal);
                     }};
                 }};
 
@@ -338,12 +460,16 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         toolbar.setAttribute('data-listeners-bound', 'true');
                         const btnRotL = toolbar.querySelector('.btn-rot-l-' + viewIdx);
                         const btnRotR = toolbar.querySelector('.btn-rot-r-' + viewIdx);
+                        const btnFlipH = toolbar.querySelector('.btn-flip-h-' + viewIdx);
+                        const btnFlipV = toolbar.querySelector('.btn-flip-v-' + viewIdx);
                         const btnScaleD = toolbar.querySelector('.btn-scale-d-' + viewIdx);
                         const btnScaleU = toolbar.querySelector('.btn-scale-u-' + viewIdx);
                         const btnDel = toolbar.querySelector('.btn-del-' + viewIdx);
                         
                         if (btnRotL) btnRotL.addEventListener('click', function() {{ window.rotateItem(viewIdx, -15); }});
                         if (btnRotR) btnRotR.addEventListener('click', function() {{ window.rotateItem(viewIdx, 15); }});
+                        if (btnFlipH) btnFlipH.addEventListener('click', function() {{ window.flipItemHorizontal(viewIdx); }});
+                        if (btnFlipV) btnFlipV.addEventListener('click', function() {{ window.flipItemVertical(viewIdx); }});
                         if (btnScaleD) btnScaleD.addEventListener('click', function() {{ window.scaleItem(viewIdx, 0.9); }});
                         if (btnScaleU) btnScaleU.addEventListener('click', function() {{ window.scaleItem(viewIdx, 1.1); }});
                         if (btnDel) btnDel.addEventListener('click', function() {{ window.deleteItem(viewIdx); }});
