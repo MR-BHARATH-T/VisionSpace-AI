@@ -47,6 +47,44 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
     verified_product_ids = reconstruction_meta.get("verified_product_ids") or []
     verified_count = len(verified_product_ids)
     
+    # 1. Parse layout clearance space alerts (failures due to no space)
+    placement_errors = reconstruction_meta.get("placement_errors") or recon.get("placement_errors") or []
+    product_results = reconstruction_meta.get("product_results") or recon.get("validated_results") or []
+    
+    failed_items = []
+    for r in product_results:
+        f_status = r.get("feasibility_status")
+        p_status = r.get("placement_status")
+        r_status = r.get("render_status")
+        
+        if f_status == "no_space" or p_status == "failed_no_space" or "failed" in str(r_status or ""):
+            p_id = r.get("product_id")
+            message = "Insufficient empty space to place item without colliding with walls, openings, or other furniture."
+            for err in placement_errors:
+                if err.get("product_id") == p_id:
+                    message = err.get("message", message)
+                    break
+            failed_items.append({
+                "name": r.get("name", "Product"),
+                "message": message
+            })
+            
+    alerts_html = ""
+    if failed_items:
+        alerts_html += """
+        <div style="background-color: #fffaf0; border: 1px solid #feebc8; border-left: 5px solid #dd6b20; border-radius: 8px; padding: 15px; margin-bottom: 20px; font-family: 'Inter', sans-serif;">
+            <h5 style="color: #dd6b20; margin: 0 0 8px 0; font-size: 15px; font-weight: bold; display: flex; align-items: center; gap: 6px;">
+                ⚠️ Layout Space & Clearance Alerts:
+            </h5>
+            <ul style="color: #744210; margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6;">
+        """
+        for item in failed_items:
+            alerts_html += f"<li><strong>{item['name']}</strong>: {item['message']}</li>"
+        alerts_html += """
+            </ul>
+        </div>
+        """
+    
     reconstructed_views = sorted(list(session_path.glob("processed_reconstructed_*.png")))
     if not reconstructed_views:
         reconstructed_views = [session_path / "processed_reconstructed.png"]
@@ -117,6 +155,16 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                             <button class="btn-flip-v-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Flip Vertical">↕</button>
                             <button class="btn-scale-d-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Down">−</button>
                             <button class="btn-scale-u-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Scale Up">+</button>
+                            <select class="sel-orient-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 4px; padding: 2px 4px; font-size: 11px; cursor: pointer; font-family: sans-serif; height: 22px;" title="Preset Orientations">
+                                <option value="0">North (0°)</option>
+                                <option value="45">North-East (45°)</option>
+                                <option value="90">East (90°)</option>
+                                <option value="135">South-East (135°)</option>
+                                <option value="180">South (180°)</option>
+                                <option value="225">South-West (225°)</option>
+                                <option value="270">West (270°)</option>
+                                <option value="315">North-West (315°)</option>
+                            </select>
                             <button class="btn-del-{idx}" style="background: #e53e3e; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Remove Item">🗑️</button>
                         </div>
                     </div>
@@ -239,6 +287,30 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         
                         let newRotation = (currentRotation + deg) % 360;
                         state.activeElement.style.transform = `rotate(${{newRotation}}deg) scale(${{scaleX}}, ${{scaleY}})`;
+                    }}
+                }};
+                
+                window.setAngle = function(viewIdx, angle) {{
+                    const state = window.VisionSpaceState ? window.VisionSpaceState[viewIdx] : null;
+                    if (state && state.activeElement) {{
+                        let scaleX = 1;
+                        let scaleY = 1;
+                        
+                        const transform = state.activeElement.style.transform || '';
+                        const scaleMatch = transform.match(/scale\\(([-0-9.]+),\s*([-0-9.]+)\\)/);
+                        if (scaleMatch) {{
+                            scaleX = parseFloat(scaleMatch[1]);
+                            scaleY = parseFloat(scaleMatch[2]);
+                        }}
+                        
+                        state.activeElement.style.transform = `rotate(${{angle}}deg) scale(${{scaleX}}, ${{scaleY}})`;
+                        
+                        // Sync select dropdown in toolbar if exists
+                        const toolbar = document.getElementById('toolbar-' + viewIdx);
+                        if (toolbar) {{
+                            const selOrient = toolbar.querySelector('.sel-orient-' + viewIdx);
+                            if (selOrient) selOrient.value = angle;
+                        }}
                     }}
                 }};
                 
@@ -464,6 +536,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         const btnFlipV = toolbar.querySelector('.btn-flip-v-' + viewIdx);
                         const btnScaleD = toolbar.querySelector('.btn-scale-d-' + viewIdx);
                         const btnScaleU = toolbar.querySelector('.btn-scale-u-' + viewIdx);
+                        const selOrient = toolbar.querySelector('.sel-orient-' + viewIdx);
                         const btnDel = toolbar.querySelector('.btn-del-' + viewIdx);
                         
                         if (btnRotL) btnRotL.addEventListener('click', function() {{ window.rotateItem(viewIdx, -15); }});
@@ -472,6 +545,7 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         if (btnFlipV) btnFlipV.addEventListener('click', function() {{ window.flipItemVertical(viewIdx); }});
                         if (btnScaleD) btnScaleD.addEventListener('click', function() {{ window.scaleItem(viewIdx, 0.9); }});
                         if (btnScaleU) btnScaleU.addEventListener('click', function() {{ window.scaleItem(viewIdx, 1.1); }});
+                        if (selOrient) selOrient.addEventListener('change', function() {{ window.setAngle(viewIdx, parseInt(selOrient.value)); }});
                         if (btnDel) btnDel.addEventListener('click', function() {{ window.deleteItem(viewIdx); }});
                     }}
                     
@@ -607,7 +681,10 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
         """
         comparison_html_list.append(reasons_html)
         
-    return "\n".join(comparison_html_list)
+    final_html = "\n".join(comparison_html_list)
+    if alerts_html:
+        final_html = alerts_html + final_html
+    return final_html
 
 
 def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None:
