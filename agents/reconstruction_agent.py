@@ -569,7 +569,7 @@ class ReconstructionAgent:
                         
                         sw = sx2 - sx1
                         sd = sy2 - sy1
-                        if w <= sw and d <= sd and sh + h <= room_h:
+                        if w <= sw and d <= sd and sh + h <= room_h and 50.0 <= sh <= 110.0:
                             final_x = (sx1 + sx2) / 2
                             final_y = (sy1 + sy2) / 2
                             final_z = sh + h/2 # Sits on surface
@@ -585,7 +585,8 @@ class ReconstructionAgent:
                         if any(k in o_label for k in ["unit", "table", "stand", "dresser", "nightstand", "counter", "desk", "bookshelf", "cabinet"]):
                             sw = ox2 - ox1
                             sd = oy2 - oy1
-                            if w <= sw and d <= sd and oz2 + h <= room_h:
+                            sh = oz2
+                            if w <= sw and d <= sd and oz2 + h <= room_h and 50.0 <= sh <= 110.0:
                                 final_x = (ox1 + ox2) / 2
                                 final_y = (oy1 + oy2) / 2
                                 final_z = oz2 + h/2
@@ -658,7 +659,7 @@ class ReconstructionAgent:
                                 if iy2 < oy1:
                                     dy_gap = oy1 - iy2
                                 elif iy1 > oy2:
-                                    dy_gap = iy1 - iy2
+                                    dy_gap = iy1 - oy2
                                     
                                 gap = math.sqrt(dx_gap*dx_gap + dy_gap*dy_gap)
                                 
@@ -1268,15 +1269,30 @@ class ReconstructionAgent:
                                                 if "," in img_b64: img_b64 = img_b64.split(",")[1]
                                                 base_img = Image.open(io.BytesIO(base64.b64decode(img_b64))).convert("RGBA")
                                     else:
-                                        inpainted_img = self.inpaint_pipe(
-                                            prompt=clip_inpaint_prompt,
-                                            image=temp_base.convert("RGB"),
-                                            mask_image=mask_img,
-                                            num_inference_steps=20,
-                                            strength=0.80,
-                                            guidance_scale=8.5
-                                        ).images[0]
-                                        base_img = inpainted_img.convert("RGBA")
+                                        if not hasattr(self, "inpaint_pipe") or self.inpaint_pipe is None:
+                                            try:
+                                                import torch
+                                                from diffusers import StableDiffusionInpaintPipeline
+                                                self.inpaint_pipe = StableDiffusionInpaintPipeline.from_pretrained(
+                                                    "runwayml/stable-diffusion-inpainting",
+                                                    torch_dtype=torch.float16, safety_checker=None
+                                                ).to("cuda")
+                                            except Exception as load_err:
+                                                logger.warning("Could not load inpaint pipe for retry: %s", str(load_err))
+                                                self.inpaint_pipe = None
+                                                
+                                        if self.inpaint_pipe is not None:
+                                            inpainted_img = self.inpaint_pipe(
+                                                prompt=clip_inpaint_prompt,
+                                                image=temp_base.convert("RGB"),
+                                                mask_image=mask_img,
+                                                num_inference_steps=20,
+                                                strength=0.80,
+                                                guidance_scale=8.5
+                                            ).images[0]
+                                            base_img = inpainted_img.convert("RGBA")
+                                        else:
+                                            base_img = temp_base
                                         
                                     bg_crop = base_img.crop(paste_box).convert("RGBA")
                                     composite_crop = Image.alpha_composite(bg_crop, p_crop_resized)

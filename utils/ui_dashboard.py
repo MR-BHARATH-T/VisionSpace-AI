@@ -147,8 +147,8 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         <div id="interactive-room-{idx}" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background-image: url('data:image/png;base64,{b64_before}'); background-size: 100% 100%; pointer-events: auto; user-select: none; -webkit-user-select: none; -moz-user-select: none;"></div>
                         {product_layers_html}
                         
-                        <div id="toolbar-{idx}" style="position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(26, 32, 44, 0.95); border: 1px solid #4a5568; border-radius: 20px; padding: 4px 12px; display: none; gap: 8px; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.5); align-items: center;">
-                            <span id="tool-name-{idx}" style="color: #e2e8f0; font-size: 11px; font-family: sans-serif; font-weight: bold; margin-right: 4px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Item</span>
+                        <div id="toolbar-{idx}" style="position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(26, 32, 44, 0.95); border: 1px solid #4a5568; border-radius: 20px; padding: 4px 8px; display: none; gap: 4px; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.5); align-items: center;">
+                            <span id="tool-name-{idx}" style="color: #e2e8f0; font-size: 11px; font-family: sans-serif; font-weight: bold; margin-right: 4px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Item</span>
                             <button class="btn-rot-l-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Left">↺</button>
                             <button class="btn-rot-r-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Rotate Right">↻</button>
                             <button class="btn-flip-h-{idx}" style="background: #2d3748; color: #fff; border: 1px solid #4a5568; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center;" title="Flip Horizontal">↔</button>
@@ -387,7 +387,8 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                 
                 window.downloadInteractiveLayout = function(viewIdx) {{
                     const container = document.getElementById('interactive-room-' + viewIdx);
-                    const bgImgUrl = container.style.backgroundImage.slice(5, -2).replace(/"/g, "");
+                    const match = container.style.backgroundImage.match(/url\\(['"]?(.*?)['"]?\\)/);
+                    const bgImgUrl = match ? match[1] : "";
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     
@@ -700,6 +701,12 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         )
 
     # 1. Inputs control form widgets
+    room_type_widget = widgets.Dropdown(
+        options=["bedroom", "living_room", "office", "dining_room"],
+        value="bedroom",
+        description="Room Type:"
+    )
+    
     style_widget = widgets.Dropdown(
         options=["modern", "minimalist", "scandinavian", "contemporary", "industrial"],
         value="modern",
@@ -752,6 +759,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         widgets.HTML("<b>1. Upload Room Snaps (Select one or more images):</b>"),
         uploader_widget,
         widgets.HTML("<br><b>2. Set Curation & Aesthetic Parameters:</b>"),
+        room_type_widget,
         style_widget,
         budget_widget,
         brands_widget,
@@ -1016,7 +1024,7 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                 out = pipeline.run_pipeline(
                     images=images,
                     user_preferences=user_prefs,
-                    room_type="bedroom",
+                    room_type=room_type_widget.value,
                     progress_callback=lambda step: print(f"  [Step] {step}")
                 )
                 session_path = pathlib.Path(out["session_path"])
