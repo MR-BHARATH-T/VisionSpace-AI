@@ -234,7 +234,8 @@ class CommerceAgent:
                     cat_lower = cat.lower()
                     matched_color = None
                     for c_name in colors_list:
-                        if c_name in cat_lower:
+                        # Use word boundary to avoid false matching substrings (e.g. "red" in "textured" or "shared")
+                        if re.search(r'\b' + re.escape(c_name) + r'\b', cat_lower):
                             matched_color = c_name
                             break
                     if matched_color:

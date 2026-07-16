@@ -878,34 +878,114 @@ class ReconstructionAgent:
             }
             
             # Apply theme rules
-            if "minimal" in theme_l:
-                brightness_factor = 1.08
+            if "japandi" in theme_l:
+                # Japandi: warm light cream/beige tone, bright, soft low contrast
+                brightness_factor = 1.06
+                contrast_factor = 0.96
+                color_factor = 0.88
+                tint_color = (245, 238, 220, 20) # Soft warm cream-beige wash
+            elif "minimal" in theme_l:
+                # Minimalism: monochromatic, clean lines, bright, desaturated
+                brightness_factor = 1.1
                 contrast_factor = 0.95
-                color_factor = 0.85
+                color_factor = 0.8
+                tint_color = (255, 255, 255, 10)
+            elif "contemporary" in theme_l:
+                # Contemporary: clean, crisp, moderate contrast
+                brightness_factor = 1.02
+                contrast_factor = 1.05
+                color_factor = 1.05
+            elif any(k in theme_l for k in ["mid-century", "mid century", "mcm"]):
+                # Mid-Century Modern: warm wood tones, organic shapes, retro gold/amber tint
+                brightness_factor = 1.02
+                contrast_factor = 1.02
+                color_factor = 1.1
+                tint_color = (210, 130, 60, 20)
+            elif "farmhouse" in theme_l:
+                # Modern Farmhouse: neutral warm-grey wash, cozy contrast
+                brightness_factor = 1.05
+                contrast_factor = 1.02
+                color_factor = 0.95
+                tint_color = (240, 235, 225, 15)
+            elif "rustic" in theme_l:
+                # Rustic: warm natural wood/brick brown tint, rich raw contrast
+                brightness_factor = 0.96
+                contrast_factor = 1.08
+                color_factor = 1.05
+                tint_color = (139, 90, 43, 20)
+            elif any(k in theme_l for k in ["french country", "provincial"]):
+                # French Country: cabriole style, muted soft lavender/sage wash
+                brightness_factor = 1.04
+                contrast_factor = 0.98
+                color_factor = 0.95
+                tint_color = (230, 220, 240, 20)
+            elif any(k in theme_l for k in ["bohemian", "boho"]):
+                # Bohemian: rich global colors, high saturation, warm golden tint
+                brightness_factor = 1.02
+                contrast_factor = 1.05
+                color_factor = 1.18
+                tint_color = (220, 160, 80, 20)
+            elif "eclectic" in theme_l:
+                # Eclectic: rich diverse textures, high contrast and vibrancy
+                brightness_factor = 1.02
+                contrast_factor = 1.1
+                color_factor = 1.2
+            elif "mediterranean" in theme_l:
+                # Mediterranean: warm terracotta stone tint
+                brightness_factor = 1.06
+                contrast_factor = 1.05
+                color_factor = 1.1
+                tint_color = (230, 150, 80, 22)
+            elif "industrial" in theme_l or "steel" in theme_l:
+                # Industrial: raw metal grey/slate wash, high contrast, low saturation
+                brightness_factor = 0.95
+                contrast_factor = 1.1
+                color_factor = 0.75
+                tint_color = (100, 120, 140, 15)
+            elif any(k in theme_l for k in ["art deco", "glam"]):
+                # Art Deco: geometric luxury brass/gold tint, high contrast
+                brightness_factor = 0.98
+                contrast_factor = 1.15
+                color_factor = 1.15
+                tint_color = (212, 175, 55, 18)
+            elif any(k in theme_l for k in ["traditional", "classic"]):
+                # Traditional: rich European wood tones
+                brightness_factor = 0.98
+                contrast_factor = 1.02
+                color_factor = 1.05
+                tint_color = (210, 180, 140, 15)
+            elif "transitional" in theme_l:
+                # Transitional: neutral organic warm-grey wash
+                brightness_factor = 1.04
+                contrast_factor = 1.0
+                color_factor = 0.95
+                tint_color = (245, 240, 230, 15)
+            elif any(k in theme_l for k in ["coastal", "beach"]):
+                # Coastal: airy sea blue/white wash
+                brightness_factor = 1.08
+                contrast_factor = 1.02
+                color_factor = 1.0
+                tint_color = (180, 210, 255, 15)
             elif "scandinavian" in theme_l or "nordic" in theme_l:
                 brightness_factor = 1.06
                 contrast_factor = 1.05
                 color_factor = 0.9
-            elif any(k in theme_l for k in ["cozy", "warm", "bohemian", "rustic"]) or "warm" in lighting_type:
+            elif any(k in theme_l for k in ["cozy", "warm", "vintage"]) or "warm" in lighting_type:
                 color_factor = 1.15
                 tint_color = (255, 200, 150, 25)
             elif any(k in theme_l for k in ["cyberpunk", "neon", "futuristic"]):
                 contrast_factor = 1.2
                 color_factor = 1.25
                 tint_color = (180, 0, 255, 20)
-            elif any(k in theme_l for k in ["industrial", "steel"]):
-                brightness_factor = 0.95
-                contrast_factor = 1.1
-                color_factor = 0.7
-                tint_color = (100, 120, 140, 15)
             elif "dark" in theme_l:
                 brightness_factor = 0.8
                 contrast_factor = 1.05
 
             # Dynamic check: if theme string contains a color name, apply a subtle ambient wash
             if not tint_color:
+                import re
                 for c_name, rgba in color_map.items():
-                    if c_name in theme_l:
+                    if re.search(r'\b' + re.escape(c_name) + r'\b', theme_l):
                         tint_color = (rgba[0], rgba[1], rgba[2], 15) # Subtle 6% color wash
                         break
                         
@@ -973,8 +1053,9 @@ class ReconstructionAgent:
             }
             
             detected_color = None
+            import re
             for color_name, rgba in color_map.items():
-                if color_name in title_l:
+                if re.search(r'\b' + re.escape(color_name) + r'\b', title_l):
                     detected_color = rgba
                     break
                     
