@@ -550,8 +550,8 @@ def generate_comparison_html(session_path: pathlib.Path, recon: Dict[str, Any]) 
                         if (btnDel) btnDel.addEventListener('click', function() {{ window.deleteItem(viewIdx); }});
                     }}
                     
-                    const card = container.parentElement;
-                    const btnDownload = card.querySelector('.btn-download-' + viewIdx);
+                    const card = container.closest('.image-card');
+                    const btnDownload = card ? card.querySelector('.btn-download-' + viewIdx) : null;
                     if (btnDownload && btnDownload.getAttribute('data-listeners-bound') !== 'true') {{
                         btnDownload.setAttribute('data-listeners-bound', 'true');
                         btnDownload.addEventListener('click', function() {{
@@ -707,9 +707,9 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
         description="Room Type:"
     )
     
-    style_widget = widgets.Dropdown(
-        options=["modern", "minimalist", "scandinavian", "contemporary", "industrial"],
-        value="modern",
+    style_widget = widgets.Text(
+        value="contemporary",
+        placeholder="e.g. contemporary, cozy warm golden, industrial, minimalist",
         description="Style Theme:"
     )
     
@@ -852,7 +852,8 @@ def display_interactive_dashboard(uploader_widget: Optional[Any] = None) -> None
                     vision_output=state["out"]["vision"]["merged_scene"],
                     commerce_output={"recommended_products": state["selected_products"]},
                     session_path=state["session_path"],
-                    spatial_output=state["out"]["spatial"]
+                    spatial_output=state["out"]["spatial"],
+                    design_output=state["out"].get("design")
                 )
                 
                 # Re-initialize placement states

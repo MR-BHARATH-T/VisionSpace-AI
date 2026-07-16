@@ -219,6 +219,32 @@ class CommerceAgent:
         # 4. Rank products
         ranked = self.rank_products(scored)
         
+        # Color match enrichment: check if required product inputs specify colors and tag recommendations
+        colors_list = [
+            "red", "crimson", "maroon", "blue", "navy", "teal", "cyan", "green", "olive", "emerald", "mint", 
+            "yellow", "gold", "amber", "orange", "peach", "coral", "brown", "beige", "cream", "black", 
+            "charcoal", "white", "grey", "gray", "silver", "pink", "rose", "purple", "violet", "lavender", 
+            "magenta", "indigo", "bronze"
+        ]
+        for item in ranked:
+            for cat in req_products:
+                if (is_category_match(item.get("category", ""), cat) or 
+                    is_category_match(item.get("name", ""), cat) or 
+                    is_category_match(item.get("title", ""), cat)):
+                    cat_lower = cat.lower()
+                    matched_color = None
+                    for c_name in colors_list:
+                        if c_name in cat_lower:
+                            matched_color = c_name
+                            break
+                    if matched_color:
+                        item_name = item.get("name", "")
+                        item_title = item.get("title", "")
+                        if matched_color not in item_name.lower():
+                            item["name"] = f"{item_name} ({matched_color.capitalize()})"
+                        if matched_color not in item_title.lower():
+                            item["title"] = f"{item_title} ({matched_color.capitalize()})"
+        
         # Keep top 10 per category first to prevent crowding out
         category_grouped = {}
         for cat in req_products:
@@ -488,7 +514,7 @@ class CommerceAgent:
             matches = []
             for cat in categories:
                 normalized_cat = cat.lower()
-                words = ["bed", "desk", "chair", "table", "bookshelf", "shelf", "fan", "ac", "conditioner", "projector", "screen", "lamp", "light", "cooler", "coffee", "laptop", "holder", "stand", "maker"]
+                words = ["bed", "sofa", "couch", "television", "tv", "desk", "chair", "table", "bookshelf", "shelf", "fan", "ac", "conditioner", "projector", "screen", "lamp", "light", "cooler", "coffee", "laptop", "holder", "stand", "maker"]
                 match_words = [w for w in words if w in normalized_cat]
                 
                 cat_matches = []

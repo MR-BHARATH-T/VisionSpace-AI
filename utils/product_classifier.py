@@ -73,6 +73,14 @@ class ProductClassifier:
         if re.search(r'\btv\b', text):
             return "television", "wall_or_surface"
             
+        # Sofa / Couch
+        if any(k in text for k in ["sofa", "couch", "loveseat"]):
+            return "sofa", "floor"
+            
+        # Bed
+        if any(k in text for k in ["bed", "daybed", "mattress"]):
+            return "bed", "floor"
+            
         # 6. Bookcase / Bookshelf
         if any(k in text for k in ["bookcase", "bookshelf", "book shelf"]):
             return "bookcase", "floor_wall_adjacent"

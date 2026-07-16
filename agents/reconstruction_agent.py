@@ -821,12 +821,181 @@ class ReconstructionAgent:
             "w_mode": w_mode
         }
 
+    def apply_theme_styling(self, image: Any, theme: str, design_output: Optional[Dict[str, Any]] = None) -> Any:
+        """Applies dynamic PIL-based color grading, contrast, and brightness adjustments matching the style theme."""
+        try:
+            from PIL import ImageEnhance, Image
+            img = image.convert("RGBA")
+            theme_l = str(theme).lower()
+            
+            wall_color = ""
+            lighting_type = ""
+            if design_output:
+                wall_color = str(design_output.get("wall_color", "")).lower()
+                lighting_type = str(design_output.get("lighting_type", "")).lower()
+                
+            brightness_factor = 1.0
+            contrast_factor = 1.0
+            color_factor = 1.0
+            tint_color = None
+            
+            # Rich expanded color map for matching custom theme naming
+            color_map = {
+                "red": (255, 50, 50, 60),
+                "crimson": (220, 20, 60, 60),
+                "maroon": (128, 0, 0, 60),
+                "blue": (50, 100, 255, 60),
+                "navy": (0, 0, 128, 60),
+                "teal": (0, 128, 128, 60),
+                "cyan": (0, 255, 255, 50),
+                "green": (50, 200, 50, 60),
+                "olive": (128, 128, 0, 60),
+                "emerald": (80, 200, 120, 60),
+                "mint": (152, 255, 152, 50),
+                "yellow": (255, 220, 0, 60),
+                "gold": (255, 215, 0, 60),
+                "amber": (255, 191, 0, 60),
+                "orange": (255, 140, 0, 60),
+                "peach": (255, 218, 185, 60),
+                "coral": (255, 127, 80, 60),
+                "brown": (139, 90, 43, 60),
+                "beige": (245, 245, 220, 50),
+                "cream": (255, 253, 208, 50),
+                "black": (20, 20, 20, 80),
+                "charcoal": (54, 69, 79, 70),
+                "white": (255, 255, 255, 50),
+                "grey": (128, 128, 128, 60),
+                "gray": (128, 128, 128, 60),
+                "silver": (192, 192, 192, 50),
+                "pink": (255, 105, 180, 60),
+                "rose": (255, 0, 127, 60),
+                "purple": (147, 112, 219, 60),
+                "violet": (238, 130, 238, 60),
+                "lavender": (230, 230, 250, 60),
+                "magenta": (255, 0, 255, 60),
+                "indigo": (75, 0, 130, 60),
+                "bronze": (205, 127, 50, 60)
+            }
+            
+            # Apply theme rules
+            if "minimal" in theme_l:
+                brightness_factor = 1.08
+                contrast_factor = 0.95
+                color_factor = 0.85
+            elif "scandinavian" in theme_l or "nordic" in theme_l:
+                brightness_factor = 1.06
+                contrast_factor = 1.05
+                color_factor = 0.9
+            elif any(k in theme_l for k in ["cozy", "warm", "bohemian", "rustic"]) or "warm" in lighting_type:
+                color_factor = 1.15
+                tint_color = (255, 200, 150, 25)
+            elif any(k in theme_l for k in ["cyberpunk", "neon", "futuristic"]):
+                contrast_factor = 1.2
+                color_factor = 1.25
+                tint_color = (180, 0, 255, 20)
+            elif any(k in theme_l for k in ["industrial", "steel"]):
+                brightness_factor = 0.95
+                contrast_factor = 1.1
+                color_factor = 0.7
+                tint_color = (100, 120, 140, 15)
+            elif "dark" in theme_l:
+                brightness_factor = 0.8
+                contrast_factor = 1.05
+
+            # Dynamic check: if theme string contains a color name, apply a subtle ambient wash
+            if not tint_color:
+                for c_name, rgba in color_map.items():
+                    if c_name in theme_l:
+                        tint_color = (rgba[0], rgba[1], rgba[2], 15) # Subtle 6% color wash
+                        break
+                        
+            if "warm" in lighting_type and not tint_color:
+                tint_color = (255, 210, 160, 20)
+            elif "cool" in lighting_type and not tint_color:
+                tint_color = (180, 210, 255, 15)
+                
+            if brightness_factor != 1.0:
+                img = ImageEnhance.Brightness(img).enhance(brightness_factor)
+            if contrast_factor != 1.0:
+                img = ImageEnhance.Contrast(img).enhance(contrast_factor)
+            if color_factor != 1.0:
+                img = ImageEnhance.Color(img).enhance(color_factor)
+                
+            if tint_color:
+                tint_layer = Image.new("RGBA", img.size, tint_color)
+                img = Image.alpha_composite(img, tint_layer)
+                
+            return img
+        except Exception as e:
+            logger.warning("Theme styling failed: %s", str(e))
+            return image
+
+    def apply_product_color_tint(self, product_img: Any, product_title: str) -> Any:
+        """Applies a soft color tint overlay to match requested colors like red, blue, green, brown, etc."""
+        try:
+            from PIL import Image
+            title_l = product_title.lower()
+            color_map = {
+                "red": (255, 50, 50, 60),
+                "crimson": (220, 20, 60, 60),
+                "maroon": (128, 0, 0, 60),
+                "blue": (50, 100, 255, 60),
+                "navy": (0, 0, 128, 60),
+                "teal": (0, 128, 128, 60),
+                "cyan": (0, 255, 255, 50),
+                "green": (50, 200, 50, 60),
+                "olive": (128, 128, 0, 60),
+                "emerald": (80, 200, 120, 60),
+                "mint": (152, 255, 152, 50),
+                "yellow": (255, 220, 0, 60),
+                "gold": (255, 215, 0, 60),
+                "amber": (255, 191, 0, 60),
+                "orange": (255, 140, 0, 60),
+                "peach": (255, 218, 185, 60),
+                "coral": (255, 127, 80, 60),
+                "brown": (139, 90, 43, 60),
+                "beige": (245, 245, 220, 50),
+                "cream": (255, 253, 208, 50),
+                "black": (20, 20, 20, 80),
+                "charcoal": (54, 69, 79, 70),
+                "white": (255, 255, 255, 50),
+                "grey": (128, 128, 128, 60),
+                "gray": (128, 128, 128, 60),
+                "silver": (192, 192, 192, 50),
+                "pink": (255, 105, 180, 60),
+                "rose": (255, 0, 127, 60),
+                "purple": (147, 112, 219, 60),
+                "violet": (238, 130, 238, 60),
+                "lavender": (230, 230, 250, 60),
+                "magenta": (255, 0, 255, 60),
+                "indigo": (75, 0, 130, 60),
+                "bronze": (205, 127, 50, 60)
+            }
+            
+            detected_color = None
+            for color_name, rgba in color_map.items():
+                if color_name in title_l:
+                    detected_color = rgba
+                    break
+                    
+            if detected_color and product_img:
+                img_rgba = product_img.convert("RGBA")
+                tint_layer = Image.new("RGBA", img_rgba.size, detected_color)
+                tinted = Image.alpha_composite(img_rgba, tint_layer)
+                tinted.putalpha(img_rgba.getchannel("A"))
+                return Image.blend(img_rgba, tinted, 0.7)
+                
+            return product_img
+        except Exception:
+            return product_img
+
     def plan_reconstruction(
         self,
         vision_output: Dict[str, Any],
         commerce_output: Dict[str, Any],
         session_path: Optional[Any] = None,
         spatial_output: Optional[Dict[str, Any]] = None,
+        design_output: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Runs the Phase 7 reconstruction analysis."""
         logger.info("Running Phase 7 Reconstruction Agent layout delta mapping...")
@@ -965,6 +1134,10 @@ class ReconstructionAgent:
                 if orig_image_path.exists():
                     try:
                         base_img = Image.open(orig_image_path).convert("RGBA")
+                        theme = "modern"
+                        if design_output:
+                            theme = design_output.get("design_theme", "modern")
+                        base_img = self.apply_theme_styling(base_img, theme, design_output)
                         width, height = base_img.size
                         temp_filename = None
                         
@@ -1069,6 +1242,8 @@ class ReconstructionAgent:
                                 d_p.rectangle([15, 15, 285, 285], outline=(255,255,255,220), width=6)
                                 d_p.text((150, 150), p["name"][:20], fill=(255,255,255,255), anchor="mm")
                                 product_img = placeholder
+                            if product_img:
+                                product_img = self.apply_product_color_tint(product_img, p["name"])
                             # Calculate perspective rotation and affine shear based on room position (left, center, right)
                             rotation_angle = 0.0
                             shear_x = 0.0
